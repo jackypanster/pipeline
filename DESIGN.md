@@ -31,7 +31,7 @@ write one md/test + commit → print handoff`.
 prd:    [grill-me, think]
 arch:   grill-with-docs
 task:   think
-impl:   goal
+impl:   goal-driven-implementation   # drives the Hermes /goal loop
 review: check
 hunt:   hunt
 ```

@@ -6,7 +6,7 @@
 prd:    [grill-me, think]   # grill-me clarifies the rough idea, then think produces the plan
 arch:   grill-with-docs     # walks the design tree against the codebase; emits CONTEXT.md + ADRs
 task:   think               # decomposes into atomic cards (the agent writes the red tests)
-impl:   goal                # think → design tests → code → check loop
+impl:   goal-driven-implementation   # Hermes skill that drives the /goal autonomous loop (think→design-tests→code→check)
 review: check               # semantic review of the diff/PR
 hunt:   hunt                # root-cause a blocked card before re-queue
 
