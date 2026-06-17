@@ -16,21 +16,25 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
 3. **think** to split the work into atomic sub-tasks. **Concreteness gate:** if you cannot write a
    failing red test for a sub-task, it is not atomic — split it further (re-think). One card = one
    observable behaviour.
-4. For each card, write `.pipeline/<feature>/tasks/NN.md` with frontmatter:
-   `status: todo`, `attempts: 0`, `verify: [<build cmd>, <test cmd>]`,
-   `spec-paths: <glob>`, `impl-paths: <dir>`, `spec-rev: <filled after commit>`.
-   Then **write the failing red test** into `spec-paths:` (happy path + key errors/boundaries,
-   ~3–5 assertions — appropriate, not 100% coverage).
+4. For each card, **write the failing red test** into `spec-paths:` (happy path + key errors/boundaries,
+   ~3–5 assertions — appropriate, not 100% coverage). The test must compile and **FAIL** now (a green
+   "spec" is a no-op). Do NOT write the card yet — the card is a separate commit (step 6b).
 5. **Freeze-coverage check.** Can the *meaningful* correctness test live in `spec-paths:`? Some test
    architectures can't freeze it — e.g. a **pure binary crate** (no `lib.rs`): `tests/` can only
    black-box-invoke the binary, so unit/formatter correctness lives **inline in `src/`** (= `impl-paths`,
    coder-owned, not frozen). When that happens the freeze gate only protects the **CLI/black-box
-   contract**, not the core logic. Add a `## Freeze coverage` section to the card naming exactly what
-   the frozen test covers vs **what pipeline-review must verify by reading** (e.g. "frozen: `--help`/CLI
-   contract; review must read: formatter output logic + inline tests"). This tells the cold reviewer
-   where the real correctness gate is.
-6. Commit the cards + red tests; record each commit sha into the card's `spec-rev:`. Push to `main`
-   (this is queue authoring, distinct from the only-reviewer-merges rule).
+   contract**, not the core logic. Note what the frozen test covers vs **what pipeline-review must verify
+   by reading** (e.g. "frozen: `--help`/CLI contract; review must read: formatter output logic + inline
+   tests") — you record it in the card's `## Freeze coverage` section in step 6b.
+6. **Freeze the spec in TWO ordered commits to `main`** (CONTRACT §spec-rev double-commit protocol).
+   NEVER mix the test and the card in one commit — that breaks the freeze the gate relies on:
+   a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s), commit. Its sha = `spec-rev`.
+   b. **Record commit** — now write `.pipeline/<feature>/tasks/NN.md` frontmatter
+      (`status: todo`, `attempts: 0`, `verify: [<build cmd>, <test cmd>]`, `spec-paths`, `impl-paths`
+      — disjoint from `spec-paths` — `spec-rev: <sha from 6a>`) + any `## Freeze coverage` note;
+      `git add` ONLY the card (never the test), commit.
+   Then advance `current.json.stage` to `task`; push to `main` (queue authoring, distinct from the
+   only-reviewer-merges rule).
 7. Print the handoff to **pipeline-impl** per CONTRACT §handoff — point at the card + arch.md + CONTEXT.md,
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put
    the freeze-coverage note in **Feature gotchas** so review knows what to scrutinize.

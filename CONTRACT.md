@@ -60,8 +60,10 @@ Accepted ONLY under two load-bearing assumptions — **no blocking CI gate on tr
 flight at a time**. If either stops holding (CI added, or parallel features), move the red test onto the
 feature branch and make `spec-rev` a branch commit instead.
 
-**Each stage writes only its declared set.** Every stage also advances `current.json.stage` to its own
-name; beyond that the artifact write-sets are:
+**Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
+**most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
+merged) — a cold node reads it to see where the pipeline last left off; the *next* node to run is named
+in the handoff, not inferred from `stage`. Beyond `stage`, the artifact write-sets are:
 
 | stage | write-set (may create/modify) | must NOT touch |
 |---|---|---|
