@@ -28,7 +28,8 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 
    Only ask the human on genuine ambiguity that code cannot resolve.
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
-   grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Commit, push.
+   grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Set `current.json.stage: arch` (most-recently-
+   completed = arch). `git add` those artifacts **+ `current.json`**, commit, push.
 5. Print the handoff to **pipeline-task**: `do: decompose into atomic cards, write a red test per card`.
 
 ## Hard rules

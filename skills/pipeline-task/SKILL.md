@@ -31,10 +31,10 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s), commit. Its sha = `spec-rev`.
    b. **Record commit** — now write `.pipeline/<feature>/tasks/NN.md` frontmatter
       (`status: todo`, `attempts: 0`, `verify: [<build cmd>, <test cmd>]`, `spec-paths`, `impl-paths`
-      — disjoint from `spec-paths` — `spec-rev: <sha from 6a>`) + any `## Freeze coverage` note;
-      `git add` ONLY the card (never the test), commit.
-   Then advance `current.json.stage` to `task`; push to `main` (queue authoring, distinct from the
-   only-reviewer-merges rule).
+      — disjoint from `spec-paths` — `spec-rev: <sha from 6a>`) + any `## Freeze coverage` note, and set
+      `current.json.stage: task`. `git add` the card **+ `current.json`** (metadata only — **never the
+      test / `spec-paths`**), commit.
+   Push to `main` (queue authoring, distinct from the only-reviewer-merges rule).
 7. Print the handoff to **pipeline-impl** per CONTRACT §handoff — point at the card + arch.md + CONTEXT.md,
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put
    the freeze-coverage note in **Feature gotchas** so review knows what to scrutinize.
