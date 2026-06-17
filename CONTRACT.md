@@ -16,8 +16,9 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
 4. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot. Verify the named skill is
    installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
 5. **Invoke that skill** — it does the REASONING/interview. It does NOT write files.
-6. **Write exactly one artifact** under `.pipeline/<feature>/` (the I/O is YOURS, not the skill's),
-   `git add <that one file>`, commit.
+6. **Write only within your stage's declared write-set** (see *State authority & write-sets* below) —
+   the I/O is YOURS, not the skill's. `git add` only those paths, commit. Writing outside your
+   write-set is a contract violation, symmetric to the freeze gate.
 7. **Print the handoff block** (below) and stop. The human relays it to the next bot.
 
 ## State machine (frozen — do not change)
@@ -41,12 +42,52 @@ and a `blocked` card routes to `pipeline-hunt`, never blind retry.
 
 One feature in flight at a time (the human serializes; `current.json` is a single pointer).
 
-## Test ownership (anti-cheat)
+## State authority & write-sets
 
-`pipeline-task` writes the **failing red test** into `spec-paths:` and records the commit as
-`spec-rev:` in the card. `pipeline-impl` only makes it green, may add white-box tests in
-`impl-paths:`, and must NOT touch `spec-paths:`. `pipeline-review` runs
-`git diff <spec-rev> -- <spec-paths>` and **FAILS if the frozen spec changed**. Git-only, no CI.
+**Trunk is the single state authority.** All `.pipeline/` metadata (`current.json`, `PRD.md`,
+`arch.md`, `CONTEXT.md`, ADRs, cards, reviews) AND the frozen red test live on trunk (`main`/`master`),
+committed straight there. Metadata is the orchestration audit log, not reviewed product code — it is
+never gated through PR review. `current.json` MUST be on trunk: it is the cold-node bootstrap pointer,
+read before the node knows any branch name.
+
+**A feature branch carries ONLY the reviewable code diff.** Name it `feat/<feature>`. `pipeline-impl`
+cuts it from trunk, writes `src` + white-box tests there, opens the PR. `pipeline-review` squash-merges
+it (the only merge). One branch convention, one merge style — no `task/*` names, no local non-PR merges.
+
+**The frozen red test is committed to trunk by `pipeline-task`**, so `spec-rev` is a trunk commit the
+branch inherits. Consequence: trunk's test suite is RED from the task commit until the impl merge.
+Accepted ONLY under two load-bearing assumptions — **no blocking CI gate on trunk, and one feature in
+flight at a time**. If either stops holding (CI added, or parallel features), move the red test onto the
+feature branch and make `spec-rev` a branch commit instead.
+
+**Each stage writes only its declared set.** Every stage also advances `current.json.stage` to its own
+name; beyond that the artifact write-sets are:
+
+| stage | write-set (may create/modify) | must NOT touch |
+|---|---|---|
+| prd | `PRD.md` | src, tests |
+| arch | `arch.md`, `CONTEXT.md`, `docs/adr/*` | src, tests |
+| task | spec-paths (the red test), `tasks/*` | src implementation |
+| impl | impl-paths, `src/**`, the card's `status` field | **spec-paths** (the freeze gate) |
+| review | `reviews/*`, card `status`→done | any product code (it merges, never authors) |
+
+The freeze gate is just the impl row enforced. Enforcement is a documented invariant + one
+`git diff --name-only` eyeball at review — NOT a hook, CI, or script.
+
+## Test ownership (anti-cheat) — the spec-rev double-commit protocol
+
+`pipeline-task` freezes the spec in **two ordered commits**:
+1. **Freeze commit** — write the failing red test, touching **only `spec-paths`**. Its hash = `spec-rev`.
+   The test must compile and FAIL here (a green "spec" is a no-op).
+2. **Record commit** — write `spec-rev`, `spec-paths`, `impl-paths` (all exact paths) into the card.
+   This commit touches **only the card, never `spec-paths`** — so the freeze stays intact.
+
+Invariant: `spec-paths ∩ impl-paths = ∅` (task asserts, review re-checks). `pipeline-impl` makes the
+test green via `src` + `impl-paths` only, and must NOT create/modify/delete anything under `spec-paths`.
+`pipeline-review` runs the **two-commit** diff `git diff <spec-rev> <review-tip> -- <spec-paths>`
+(deterministic, not working-tree) FIRST; **non-empty ⇒ reject** (`attempts++`, route to impl, or hunt
+at ≥3). If the spec itself is wrong, that is NOT an impl fix — re-route to `pipeline-task` to re-freeze
+(new `spec-rev`); the coder never edits the frozen spec. Git-only, no CI.
 
 ## Handoff block — a self-contained briefing for a COLD next node
 
