@@ -90,3 +90,20 @@ Keyed on `git config --get remote.origin.url`:
 - **anything else / no forge** → `git fetch && git diff base..branch`
 
 Merge is always human-confirmed. The pipeline performs no destructive forge operations.
+
+## Self-improvement — skills propose, review gates (never self-edit)
+
+A running bot must **NEVER edit a live/installed skill in place** — that mutates the contract
+mid-flight, untracked and ungated, and can silently break every future run. A bot's pipeline clone is
+a **read-only consumer**: `git fetch && git reset --hard origin/main` each run; it does not carry local
+skill edits.
+
+When a run reveals a skill gap, **emit a proposal — do not apply it**: add a line to your report/handoff
+`SKILL-PROPOSAL: <skill> — <what to change + why, one line>`. A proposal reaches `main` ONLY through the
+gated path: **`pipeline-improve` opens a PR against the pipeline repo → `pipeline-review` reviews the
+skill diff (real improvement, not a weakening? every existing hard rule preserved?) → a human confirms
+the merge.** No auto-merge; the agent never merges its own proposal.
+
+The **frozen invariants** (state machine · only-reviewer-merges · the freeze gate · never-force-push)
+are **not auto-improvable** — a proposal touching them is STOPPED for explicit human decision. Skills are
+markdown + git: a bad edit only mis-guides the next run (caught by review), and is one `git revert` away.

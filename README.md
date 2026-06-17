@@ -21,6 +21,7 @@ swappable `roles.yaml` slot.
 | pipeline-impl | goal | card → green + PR (zero spec tests) |
 | pipeline-review | check | diff/PR → review + merge (only stage that merges) |
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
+| pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
 
 ## Install
 
