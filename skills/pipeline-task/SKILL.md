@@ -21,9 +21,19 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    `spec-paths: <glob>`, `impl-paths: <dir>`, `spec-rev: <filled after commit>`.
    Then **write the failing red test** into `spec-paths:` (happy path + key errors/boundaries,
    ~3–5 assertions — appropriate, not 100% coverage).
-5. Commit the cards + red tests; record each commit sha into the card's `spec-rev:`. Push to `main`
-   (this is queue authoring, distinct from the only-reviewer-merges rule). 
-6. Print the handoff to **pipeline-impl**: `do: pick oldest todo card, make its red test green`.
+5. **Freeze-coverage check.** Can the *meaningful* correctness test live in `spec-paths:`? Some test
+   architectures can't freeze it — e.g. a **pure binary crate** (no `lib.rs`): `tests/` can only
+   black-box-invoke the binary, so unit/formatter correctness lives **inline in `src/`** (= `impl-paths`,
+   coder-owned, not frozen). When that happens the freeze gate only protects the **CLI/black-box
+   contract**, not the core logic. Add a `## Freeze coverage` section to the card naming exactly what
+   the frozen test covers vs **what pipeline-review must verify by reading** (e.g. "frozen: `--help`/CLI
+   contract; review must read: formatter output logic + inline tests"). This tells the cold reviewer
+   where the real correctness gate is.
+6. Commit the cards + red tests; record each commit sha into the card's `spec-rev:`. Push to `main`
+   (this is queue authoring, distinct from the only-reviewer-merges rule).
+7. Print the handoff to **pipeline-impl** per CONTRACT §handoff — point at the card + arch.md + CONTEXT.md,
+   give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put
+   the freeze-coverage note in **Feature gotchas** so review knows what to scrutinize.
 
 ## Hard rules
 - The red test you write IS the spec and gets frozen — the coder cannot edit it.

@@ -6,14 +6,19 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
 ## The shim loop (every command runs exactly this)
 
 1. **`git pull --rebase`** — always your first act (no shared memory; rebuild from git).
-2. **Read `.pipeline/current.json`** → `{repo, branch, pr?, feature, stage}`. Missing + you are
+2. **Load the repo's local config if present.** Most projects keep config/secrets in a dotenv-style
+   file (`.env`, sometimes `.env.local`/`.envrc`). The delegated skill, the build, and any forge CLI
+   may need it. If such a file exists, load its vars into the environment before step 5. Do NOT assume
+   a fixed name or casing — read what the repo actually uses and adapt (e.g. a lowercase `gitee_token`
+   may need exporting as the upper-case `GITEE_TOKEN` a tool expects). **Never print secret values.**
+3. **Read `.pipeline/current.json`** → `{repo, branch, pr?, feature, stage}`. Missing + you are
    `pipeline-prd` ⇒ create it. Missing + any other command ⇒ STOP, ask the operator.
-3. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot. Verify the named skill is
+4. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot. Verify the named skill is
    installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
-4. **Invoke that skill** — it does the REASONING/interview. It does NOT write files.
-5. **Write exactly one artifact** under `.pipeline/<feature>/` (the I/O is YOURS, not the skill's),
+5. **Invoke that skill** — it does the REASONING/interview. It does NOT write files.
+6. **Write exactly one artifact** under `.pipeline/<feature>/` (the I/O is YOURS, not the skill's),
    `git add <that one file>`, commit.
-6. **Print the handoff block** (below) and stop. The human relays it to the next bot.
+7. **Print the handoff block** (below) and stop. The human relays it to the next bot.
 
 ## State machine (frozen — do not change)
 
@@ -43,20 +48,39 @@ One feature in flight at a time (the human serializes; `current.json` is a singl
 `impl-paths:`, and must NOT touch `spec-paths:`. `pipeline-review` runs
 `git diff <spec-rev> -- <spec-paths>` and **FAILS if the frozen spec changed**. Git-only, no CI.
 
-## Handoff block (TG-friendly: no tables, short lines, conclusion then bullets)
+## Handoff block — a self-contained briefing for a COLD next node
+
+**The next node is a FRESH session — possibly a different TG bot / different frontier LLM — with ZERO
+prior context.** It has only: this repo (via `git pull`), `CONTRACT.md`, and your handoff. So the
+handoff must carry everything it needs to ACT, not a one-liner. Point at artifacts (git is the bus —
+never paste bodies), give **concrete numbered steps**, and name **feature-specific gotchas**. A cold
+frontier bot with a thin handoff guesses wrong — err toward MORE next-step detail, not less.
+TG-friendly: plain text, short lines, no tables.
 
 ```
 >>> NEXT
-Run pipeline-<next>.
-repo=<git-remote-url> branch=<branch> pr=<url|none>
-- artifact: <path just written>
-- do: <one-line instruction for the next command>
-- attempts=<n>/3 — two more failures ⇒ blocked ⇒ run pipeline-hunt
-- on success: <status transition> then run pipeline-<after>
+Run pipeline-<next> on a FRESH session (assume you know nothing — rebuild from the repo + CONTRACT.md).
+repo=<url> branch=<branch> pr=<url|none>
+First: git pull --rebase; load repo config (.env if present, per CONTRACT step 2).
+Read for context (before acting):
+  - <path/PRD.md>      — what
+  - <path/arch.md>     — how / component boundaries / data flow
+  - <path/CONTEXT.md>  — domain glossary + conventions
+  - <path/tasks/NN.md , docs/adr/*> — the card / binding decisions
+Your task (concrete, numbered):
+  1. <step>
+  2. <step>
+  3. <step>
+Feature gotchas (project-specific traps the next node MUST know):
+  - <e.g. binary crate → review carries formatter correctness; mirror <existing pattern>;
+    config var is lowercase X; this repo uses branch `master` not `main`>
+Done when: <success criterion>. On success: <status transition>, then run pipeline-<after>.
+On failure: attempts++; >=3 ⇒ blocked ⇒ run pipeline-hunt.
 <<< END
 ```
 
-Carry the path, never the body — git is the bus.
+Carry artifact PATHS, never bodies — git is the bus. The "Your task" + "Feature gotchas" sections are
+what let a different LLM on a different bot execute this stage correctly with no shared memory.
 
 ## Forge adapter (review/merge only)
 

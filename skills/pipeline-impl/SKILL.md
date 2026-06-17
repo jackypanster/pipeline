@@ -21,8 +21,10 @@ acceptance tests" is the cheap seam if needed).
    `status: in-progress`, commit on the branch.
 3. **goal**: implement inside `impl-paths:` until the card's `verify:` commands all exit 0 (its red
    test goes green). Loop think→code→check within the turn budget.
-4. **Green** ⇒ set `status: review`, push the branch, open a PR/branch via the forge adapter. Print
-   the handoff to **pipeline-review**.
+4. **Green** ⇒ set `status: review`, push the branch, open a PR via the forge adapter. Opening the PR
+   needs the repo's forge token (loaded per CONTRACT step 2 from `.env` etc.). If the token is absent,
+   **do NOT fail** — push the branch + set `status: review` anyway, and say in the handoff that the PR
+   must be opened manually (branch + base named). Then print the handoff to **pipeline-review**.
 5. **Fail / budget exhausted** ⇒ `attempts++`; `attempts < 3` ⇒ back to `status: todo` (re-queue);
    `attempts >= 3` ⇒ `status: blocked`. Either way print the handoff to **pipeline-hunt** with the
    reason, and append a `## Attempt N` note to the card (the next run reads only the card).
