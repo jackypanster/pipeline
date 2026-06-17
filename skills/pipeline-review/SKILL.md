@@ -31,7 +31,7 @@ the freeze gate are YOUR I/O, not check's.
 ## Completion checklist (cold bots skip these — do ALL, in order)
 
 Merge is NOT the end. After the human's go and the merge, you MUST, in order:
-- [ ] freeze gate ran (`git diff <spec-rev> -- <spec-paths>` — empty before you proceeded)
+- [ ] freeze gate ran (the two-commit `git diff <spec-rev> <review-tip> -- <spec-paths>`, review-tip = PR head — empty before you proceeded)
 - [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
 - [ ] every merged card's `status` → `done`
 - [ ] set `.pipeline/current.json` `stage: done` (the top-level pointer = most-recently-completed stage
@@ -45,6 +45,6 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 
 ## Hard rules
 - The human's "go" is your authorization to merge — never merge without it.
-- Never force-push; deleting the task's own branch on merge is the only deletion allowed.
+- Never force-push; deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
