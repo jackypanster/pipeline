@@ -35,6 +35,25 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put
    the freeze-coverage note in **Feature gotchas** so review knows what to scrutinize.
 
+## Pitfalls
+
+### Binary-only crate: `tests/` cannot import internal modules
+
+If the target crate has no `lib.rs` (binary-only, modules are `mod` not `pub mod`), integration tests
+in `tests/` **cannot** call internal formatter/utility functions — the frozen red test is limited to
+**smoke/CLI-subprocess assertions**. Internal-logic tests (formatter with sample JSON, parsing) live
+in `#[cfg(test)] mod tests` **inside** the source file (`impl-paths`), written by the coder, NOT frozen.
+
+- **Detect:** `src/lib.rs` present? If only `src/main.rs` → binary-only. Also check `mod foo;` (private)
+  vs `pub mod foo;`.
+- **Impact:** card granularity may coarsen (1 card, not 2-3) since the formatter layer has no frozen
+  `tests/` spec. The smoke help test is still a valid red — observable CLI behaviour.
+- **Concrete red-test pair (gitee-cli pattern):** (1) `smoke_<parent>_help` → `"<parent> --help"`
+  stdout contains the new subcommand name (fails: not registered); (2) `smoke_<parent>_<sub>_help` →
+  `"<parent> <sub> --help"` exits success (fails: clap rejects the unknown subcommand). Both freeze,
+  both fail genuinely, both go green when impl adds the enum variant + opts.
+- This is the freeze-coverage case from step 5 — record it in the card's `## Freeze coverage`.
+
 ## Hard rules
 - The red test you write IS the spec and gets frozen — the coder cannot edit it.
 - No implementation. No prose acceptance the coder could misread — the test is the contract.

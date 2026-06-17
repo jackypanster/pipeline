@@ -16,6 +16,17 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 2. Resolve `arch` slot from `roles.yaml`; verify installed (else STOP).
 3. **grill-with-docs** against the PRD + codebase: resolve cross-decision dependencies one at a
    time, record irreversible/surprising choices as ADRs, sharpen the domain language in CONTEXT.md.
+   **Code-first verification — check every PRD claim against real code BEFORE asking the human:**
+
+   | Verify | How |
+   |---|---|
+   | Cited code patterns exist as described | `grep` the named function/file (e.g. "group_get uses urlencoding" → read `group.rs`) |
+   | Encoding / URL construction consistency | cross-check ALL sites building the same path; variants may differ (`urlencoding::encode` vs `replace('/', "%2F")`) |
+   | File-organization conventions | if PRD says "add to X.rs", check whether the pattern uses separate `_detail.rs` files |
+   | CLI flag conventions | existing structs may use `short = 'v'`, specific defaults, `conflicts_with` — PRD must match |
+   | Error-handling claims | verify the quirk exists in `error.rs`/`client.rs` (e.g. "500 not 404" → check `friendly_error(500)`) |
+
+   Only ask the human on genuine ambiguity that code cannot resolve.
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
    grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Commit, push.
 5. Print the handoff to **pipeline-task**: `do: decompose into atomic cards, write a red test per card`.
