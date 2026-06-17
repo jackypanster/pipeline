@@ -24,7 +24,20 @@ the freeze gate are YOUR I/O, not check's.
    branch, or local squash-merge), set the card `status: done`, commit/push `main`. **Rejected** ⇒
    `attempts++`, append required fixes to the card, handoff to **pipeline-impl** (or hunt at ≥3).
 
+## Completion checklist (cold bots skip these — do ALL, in order)
+
+Merge is NOT the end. After the human's go and the merge, you MUST, in order:
+- [ ] freeze gate ran (`git diff <spec-rev> -- <spec-paths>` — empty before you proceeded)
+- [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
+- [ ] every merged card's `status` → `done`
+- [ ] committed + pushed the above to the trunk branch
+
+Observed: cold review bots have TWICE done only the merge and skipped `review-NN.md` + the card→done
+flip. These are NOT optional bookkeeping — they are the audit contract. A merge without them is an
+incomplete review.
+
 ## Hard rules
 - The human's "go" is your authorization to merge — never merge without it.
 - Never force-push; deleting the task's own branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
+- **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
