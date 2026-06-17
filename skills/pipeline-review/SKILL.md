@@ -12,7 +12,8 @@ that merges, and only after an explicit human confirm.**
 the freeze gate are YOUR I/O, not check's.
 
 ## Steps
-1. `git pull --rebase`. Read `current.json` + the `status: review` card.
+1. `git pull --rebase`. Read `current.json` + **all of the feature's cards** (this stage runs on a
+   COMPLETE feature — expect every card `status: review`; see the pre-merge guard in step 6).
 2. Resolve `review` slot; verify installed (else STOP).
 3. **Freeze gate (deterministic, run FIRST):** the **two-commit** diff
    `git diff <card.spec-rev> <review-tip> -- <card.spec-paths>`, where `<review-tip>` is the PR head
@@ -23,10 +24,13 @@ the freeze gate are YOUR I/O, not check's.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings). Commit.
-6. **Approved** ⇒ ask the operator to confirm. On confirm: **squash-merge** the `feat/<feature>` PR via
-   the forge adapter (delete the merged branch; no local non-PR merges), set the card `status: done` and
-   `current.json.stage: done`, commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes to
-   the card, handoff to **pipeline-impl** (or hunt at ≥3).
+6. **Approved** ⇒ ask the operator to confirm. **Pre-merge guard (multi-card features):** every card in
+   the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
+   do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). On confirm:
+   **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
+   non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
+   now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
+   to the card, handoff to **pipeline-impl** (or hunt at ≥3).
 
 ## Completion checklist (cold bots skip these — do ALL, in order)
 
@@ -34,9 +38,9 @@ Merge is NOT the end. After the human's go and the merge, you MUST, in order:
 - [ ] freeze gate ran (the two-commit `git diff <spec-rev> <review-tip> -- <spec-paths>`, review-tip = PR head — empty before you proceeded)
 - [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
 - [ ] every merged card's `status` → `done`
-- [ ] set `.pipeline/current.json` `stage: done` (the top-level pointer = most-recently-completed stage
-      per CONTRACT; after the merge the feature is done. Cold bots flip the cards but leave `stage` stale
-      at an earlier value, misleading the next node)
+- [ ] set `.pipeline/current.json` `stage: done` — **only when EVERY card in the feature is `done`**
+      (multi-card guard, step 6); the top-level pointer = most-recently-completed stage per CONTRACT.
+      Cold bots flip the cards but leave `stage` stale at an earlier value, misleading the next node
 - [ ] committed + pushed the above to the trunk branch
 
 Observed: cold review bots have TWICE done only the merge and skipped `review-NN.md` + the card→done
