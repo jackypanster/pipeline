@@ -30,11 +30,13 @@ Merge is NOT the end. After the human's go and the merge, you MUST, in order:
 - [ ] freeze gate ran (`git diff <spec-rev> -- <spec-paths>` — empty before you proceeded)
 - [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
 - [ ] every merged card's `status` → `done`
+- [ ] updated `.pipeline/current.json` `stage` (the top-level pointer — advance it to `review`/`done`;
+      cold bots flip the cards but leave `stage` stale at an earlier value, misleading the next node)
 - [ ] committed + pushed the above to the trunk branch
 
 Observed: cold review bots have TWICE done only the merge and skipped `review-NN.md` + the card→done
-flip. These are NOT optional bookkeeping — they are the audit contract. A merge without them is an
-incomplete review.
+flip; one also left `current.json.stage` stale at `task` after completing the review. These are NOT
+optional bookkeeping — they are the audit contract. A merge without them is an incomplete review.
 
 ## Hard rules
 - The human's "go" is your authorization to merge — never merge without it.
