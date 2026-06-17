@@ -21,19 +21,23 @@ acceptance tests" is the cheap seam if needed).
 2. Resolve `impl` slot; verify installed (else STOP). Create/checkout the feature branch
    **`feat/<feature>`** (per CONTRACT §State authority — one branch per feature, NOT per card). Flip the
    card `status: in-progress` and commit it to **`main`** (card status is trunk-authoritative metadata —
-   a cold node must read the live status from trunk; never leave a status flip on the branch). Advance
-   `current.json.stage` to `impl` on `main`.
+   a cold node must read the live status from trunk; never leave a status flip on the branch). **Leave
+   `current.json.stage` at `task`** — `stage` = most-recently-COMPLETED stage (CONTRACT); it advances to
+   `impl` only when this card actually completes (step 4), not when work begins.
 3. **goal**: implement inside `impl-paths:` (+ `src/**`) on `feat/<feature>` until the card's `verify:`
    commands all exit 0 (its red test goes green). Loop think→code→check within the turn budget. Only
    code lives on the branch; never touch `spec-paths:`.
-4. **Green** ⇒ push `feat/<feature>`, open/update a PR via the forge adapter, and flip the card
-   `status: review` **on `main`**. Opening the PR needs the repo's forge token (loaded per CONTRACT
-   step 2 from `.env` etc.). If the token is absent, **do NOT fail** — push the branch + set
-   `status: review` on `main` anyway, and say in the handoff that the PR must be opened manually (branch
-   + base named). Then print the handoff to **pipeline-review**.
+4. **Green** ⇒ push `feat/<feature>`, open/update a PR via the forge adapter, flip the card
+   `status: review` **on `main`**, and now advance `current.json.stage` to `impl` on `main` (this card
+   completed — stage = most-recently-completed). Opening the PR needs the repo's forge token (loaded per
+   CONTRACT step 2 from `.env` etc.). If the token is absent, **do NOT fail** — push the branch + set
+   `status: review` (+ `stage: impl`) on `main` anyway, and say in the handoff that the PR must be opened
+   manually (branch + base named). Then print the handoff to **pipeline-review**.
 5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`; `attempts < 3` ⇒ back to `status: todo`
-   (re-queue); `attempts >= 3` ⇒ `status: blocked`. Either way print the handoff to **pipeline-hunt**
-   with the reason, and append a `## Attempt N` note to the card (the next run reads only the card).
+   (re-queue); `attempts >= 3` ⇒ `status: blocked`. **Leave `current.json.stage` unchanged** (impl did
+   NOT complete — keep the last completed stage, `task`). Either way print the handoff to
+   **pipeline-hunt** with the reason, and append a `## Attempt N` note to the card (the next run reads
+   only the card).
 
 ## Hard rules
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.

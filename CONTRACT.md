@@ -81,8 +81,10 @@ The freeze gate is just the impl row enforced. Enforcement is a documented invar
 `pipeline-task` freezes the spec in **two ordered commits**:
 1. **Freeze commit** — write the failing red test, touching **only `spec-paths`**. Its hash = `spec-rev`.
    The test must compile and FAIL here (a green "spec" is a no-op).
-2. **Record commit** — write `spec-rev`, `spec-paths`, `impl-paths` (all exact paths) into the card.
-   This commit touches **only the card, never `spec-paths`** — so the freeze stays intact.
+2. **Record commit** — write `spec-rev`, `spec-paths`, `impl-paths` (all exact paths) into the card and
+   advance `current.json.stage`. This commit touches **metadata only (the card + `current.json`), never
+   `spec-paths`** — so the freeze stays intact (the load-bearing rule is "never `spec-paths`", not "card
+   alone"; `current.json` is metadata and is safe to ride along).
 
 Invariant: `spec-paths ∩ impl-paths = ∅` (task asserts, review re-checks). `pipeline-impl` makes the
 test green via `src` + `impl-paths` only, and must NOT create/modify/delete anything under `spec-paths`.

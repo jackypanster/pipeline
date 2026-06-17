@@ -13,7 +13,7 @@ of that is the **shim's** contract, never assumed of the skill. (Verified: `thin
 
 Each command body (~20 lines):
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
-write one md/test + commit → print handoff`.
+write only your stage's declared write-set + commit → print handoff`.
 
 ## Commands
 
@@ -76,8 +76,9 @@ attempts/blocked path, the first action (`git pull`). Self-contained: the next b
 
 `pipeline-task` writes the failing red test and freezes it into `spec-paths:` (recording `spec-rev`).
 `pipeline-impl` only makes it green and may add white-box tests in `impl-paths:` — it must not touch
-`spec-paths:`. `pipeline-review` enforces this with `git diff <spec-rev> -- <spec-paths>` and **fails
-if the frozen spec changed**. Deterministic, git-only, no CI required. The coder tool (`goal`) writes
+`spec-paths:`. `pipeline-review` enforces this with the two-commit `git diff <spec-rev> <review-tip> --
+<spec-paths>` (review-tip = PR head) and **fails if the frozen spec changed**. Deterministic, git-only,
+no CI required. The coder tool (`goal`) writes
 its own tests by default — we don't fight it; the diff gate is what guarantees the exam wasn't edited.
 
 ## Forge / review surface
