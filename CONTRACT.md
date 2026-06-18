@@ -41,7 +41,10 @@ edge, so `pipeline-impl` (which picks the oldest `todo`) has an actionable targe
 to pick. (This completes the already-implied "reject routes to impl" semantics; the `>= 3 ⇒ blocked`
 circuit-breaker is unchanged.)
 **Only `pipeline-review` merges**, and only after an explicit human confirm.
-**Never force-push; never delete anything beyond a task's own branch; never touch another card.**
+**Never force-push trunk or any shared/published ref; never delete anything beyond a task's own branch;
+never touch another card.** (Scope: an in-flight `feat/<feature>` branch is the coder's own — `pipeline-impl`
+MAY rebase it onto trunk + force-push to absorb new spec commits from a re-freeze / append-card. That is
+standard PR hygiene on your own branch, NOT a trunk force-push; trunk/shared refs are never force-pushed.)
 
 ## Layout (`.pipeline/` lives in the TARGET repo)
 
@@ -68,6 +71,14 @@ read before the node knows any branch name.
 **A feature branch carries ONLY the reviewable code diff.** Name it `feat/<feature>`. `pipeline-impl`
 cuts it from trunk, writes `src` + white-box tests there, opens the PR. `pipeline-review` squash-merges
 it (the only merge). One branch convention, one merge style — no `task/*` names, no local non-PR merges.
+
+**Reconcile an in-flight branch with advanced trunk spec.** If trunk's frozen spec advances after the
+branch was cut — a **re-freeze** (new shared `spec-rev`) or an **append-card** (a new card's red test) —
+the existing `feat/<feature>` carries the STALE spec. `pipeline-impl` must **rebase `feat/<feature>` onto
+trunk + force-push** before continuing, so the branch carries the current frozen tests. Otherwise review's
+freeze gate diffs the new `spec-rev` against a stale branch tip and **falsely rejects**. This rebase +
+force-push of the coder's own branch is the sanctioned exception to never-force-push (trunk is never
+force-pushed; see State machine scope).
 
 **The frozen red test is committed to trunk by `pipeline-task`**, so `spec-rev` is a trunk commit the
 branch inherits. Consequence: trunk's test suite is RED from the task commit until the impl merge.
@@ -152,6 +163,13 @@ updates **only `spec-rev`** and **preserves each card's `status`/`attempts`/`ver
 the named re-spec'd card may change otherwise); it is NOT initial authoring, so it **never resets siblings
 to `todo`/`0`** — that would silently restart cards mid-impl or in review. The coder never edits the
 frozen spec. Git-only, no CI.
+
+**Append-card** (hunt routes an integration fix, or a new card is needed on an in-flight feature) is a
+re-freeze **variant**: re-freeze the whole feature in a new single commit that ALSO includes the new
+card's red test (new shared `spec-rev` on every card), **create ONLY the new card** (`status: todo`,
+`attempts: 0`), and **preserve every existing card's `status`/`attempts`/`verify`/`impl-paths`**. Both
+re-freeze and append-card advance trunk's spec under any in-flight branch, so the handoff to impl must
+say **rebase `feat/<feature>` onto trunk + force-push** before continuing (see *State authority*).
 
 ## Handoff block — a self-contained briefing for a COLD next node
 

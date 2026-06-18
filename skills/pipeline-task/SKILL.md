@@ -54,6 +54,14 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    **Preserve each card's existing `status` / `attempts` / `verify` / `impl-paths` / `## Freeze coverage`** —
    change other fields ONLY on the card(s) the handoff names as re-spec'd. **NEVER blanket-reset siblings
    to `todo` / `0`** — that destroys in-flight state (a card mid-impl or in review would silently restart).
+
+   **Append-card (third mode).** If re-routed here to **add a card to an in-flight feature** (hunt routes
+   an integration fix, or a new sub-task surfaced), it is a **re-freeze variant**: write the new card's
+   red test, make a NEW single freeze commit covering the **whole feature** (new shared `spec-rev`),
+   **create ONLY the new card** (`status: todo`, `attempts: 0`), and **preserve every existing card's
+   `status` / `attempts` / `verify` / `impl-paths`** (their `spec-rev` updates to the new sha; nothing
+   else). Both this and re-freeze advance trunk's spec under the in-flight branch, so the impl handoff
+   MUST say **rebase `feat/<feature>` onto trunk + force-push** first (CONTRACT §State authority).
 7. **Print the handoff** to **pipeline-impl** per CONTRACT §handoff (already journaled in step 6b) —
    point at the card + arch.md + CONTEXT.md,
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put

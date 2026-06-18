@@ -34,8 +34,10 @@ especially "used to work / can't fix it after N tries").
      on its first fail (`attempts` was already at the `>= 3` threshold). The card is the only memory.
    - **Cross-card integration failure** (target = a `reviews/integration-NN.md` incident report) ⇒ the
      cards each pass alone but break together. Diagnose the interaction, append findings to the report,
-     and hand back to **pipeline-task** to author a proper fix (a new card with its own frozen test, or
-     re-freeze the implicated cards) — the integration gap needs a real spec, not a blind re-queue. The
+     and hand back to **pipeline-task via its append-card mode** to author a proper fix — a new card with
+     its own frozen test (preserving the existing cards' state), or re-freeze the implicated cards. The
+     integration gap needs a real spec, not a blind re-queue; the task→impl handoff rebases the feature
+     branch onto trunk (CONTRACT §State authority). The
      report is evidence under `reviews/`, **not** a `tasks/` card — nothing lingers to block the next
      merge guard; the new fix card(s) carry the work forward through the normal flow.
 4. Write the root-cause findings into **your target** — if it is a blocked **card**, update/reset it per
