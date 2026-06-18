@@ -112,9 +112,14 @@ write-sets are:
 | task | spec-paths (the red test), `tasks/*` | src implementation |
 | impl | impl-paths, `src/**`, the card's `status` field | **spec-paths** (the freeze gate) |
 | review | `reviews/*`, card `status`→done | any product code (it merges, never authors) |
+| hunt | the routed **target** only — the blocked card (its body / `status` / `attempts`) OR the `reviews/integration-NN.md` report (append findings) | product code, unrelated cards, unrelated reviews |
 
 The freeze gate is just the impl row enforced. Enforcement is a documented invariant + one
 `git diff --name-only` eyeball at review — NOT a hook, CI, or script.
+
+`hunt` on a **report target** appends findings to `reviews/integration-NN.md` but must **NOT flip any card
+status** (there is no card on that path) — `pipeline-task` authors the real fix card/spec afterward. On a
+**card target** it updates that card per its classification (re-queue / re-split / re-spec).
 
 Every stage additionally **appends one entry to `journal.md`** (append-only metadata, same class as
 `current.json` — not gated, rides the metadata commit). This is universal, so it is omitted from the
