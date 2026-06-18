@@ -12,6 +12,7 @@ idea until shared understanding, then `think` to produce the decision-complete p
 files; YOU write the PRD.
 
 ## Steps
+
 1. `git pull --rebase`. Read/seed `.pipeline/current.json`; this command may CREATE it (set
    `feature` from the idea's slug, `stage: prd`).
 2. Resolve `prd` slot from `.pipeline/roles.yaml`; verify those skills are installed (else STOP).
@@ -33,5 +34,6 @@ files; YOU write the PRD.
    repo, branch, artifact path, `do: read PRD.md, grill the architecture against the codebase`.
 
 ## Hard rules
+
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata). No code, no architecture yet.

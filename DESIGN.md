@@ -44,7 +44,7 @@ command verifies every slot resolves to an installed skill (hard gate — no sil
 
 ## State convention (git + md, zero forge dependency)
 
-```
+```text
 .pipeline/
   current.json              {repo, branch, pr?, feature, stage, full-verify?}  # fast cache (journal tail authoritative); full-verify = whole-suite cmd for review's integration gate
   <feature>/
@@ -71,7 +71,7 @@ fast bootstrap cache; on disagreement the journal tail wins.
 
 ## Handoff string (human copies to the next bot)
 
-```
+```text
 >>> NEXT
 Run pipeline-impl.
 repo=<git-remote-url> branch=feat/login pr=none

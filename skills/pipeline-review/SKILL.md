@@ -23,6 +23,7 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
 **target-repo feature PR**; do not run them against a skill PR.
 
 ## Steps
+
 1. `git pull --rebase`. Read `current.json` + **all of the feature's cards** (this stage runs on a
    COMPLETE feature — expect every card `status: review`; see the pre-merge guard in step 6).
 2. Resolve `review` slot; verify installed (else STOP).
@@ -72,6 +73,7 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
 ## Completion checklist (cold bots skip these — do ALL, in order)
 
 Merge is NOT the end. After the human's go and the merge, you MUST, in order:
+
 - [ ] freeze gate ran (the two-commit `git diff <spec-rev> <review-tip> -- <spec-paths>`, review-tip = PR head — empty before you proceeded)
 - [ ] **final full-suite gate ran GREEN** on the `feat/<feature>` branch HEAD before the merge (card `verify`s are card-scoped — this is the only cross-card integration check)
 - [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
@@ -88,6 +90,7 @@ flip; one also left `current.json.stage` stale at `task` after completing the re
 optional bookkeeping — they are the audit contract. A merge without them is an incomplete review.
 
 ## Hard rules
+
 - The human's "go" is your authorization to merge — never merge without it.
 - Never force-push; deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.

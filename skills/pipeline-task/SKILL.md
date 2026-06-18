@@ -11,6 +11,7 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
 **YOU write the red-test code and the card frontmatter** — that is the shim's I/O, not think's.
 
 ## Steps
+
 1. `git pull --rebase`. Read `current.json` (STOP if missing), `<feature>/arch.md`, `CONTEXT.md`.
 2. Resolve `task` slot; verify installed (else STOP).
 3. **think** to split the work into atomic sub-tasks. **Concreteness gate:** if you cannot write a
@@ -78,5 +79,6 @@ in `#[cfg(test)] mod tests` **inside** the source file (`impl-paths`), written b
 - This is the freeze-coverage case from step 5 — record it in the card's `## Freeze coverage`.
 
 ## Hard rules
+
 - The red test you write IS the spec and gets frozen — the coder cannot edit it.
 - No implementation. No prose acceptance the coder could misread — the test is the contract.

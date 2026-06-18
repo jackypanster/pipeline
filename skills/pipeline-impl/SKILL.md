@@ -15,6 +15,7 @@ real skill name `goal-driven-implementation`, not the bare word "goal". It write
 acceptance tests" is the cheap seam if needed).
 
 ## Steps
+
 1. `git pull --rebase`. Read `current.json`. Pick the **oldest** `status: todo` card (or the given
    card-id). Idempotency: if `feat/<feature>` already has an open PR and the card reads
    `status: review`, skip — already in flight.
@@ -54,6 +55,7 @@ acceptance tests" is the cheap seam if needed).
    card).
 
 ## Hard rules
+
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
 - Code (`impl-paths`/`src`) lives on `feat/<feature>`; card `status` flips commit to `main` (trunk
   authority — never leave card state stranded on the branch). White-box tests in `impl-paths:` are fine;

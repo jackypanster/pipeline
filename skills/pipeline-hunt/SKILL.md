@@ -13,6 +13,7 @@ A `blocked` **card** — OR a feature-level **integration incident report** (`re
 especially "used to work / can't fix it after N tries").
 
 ## Steps
+
 1. `git pull --rebase`. Read `current.json` + your target. Usual target = the `blocked` **card**
    (every `## Attempt N` note + the latest `verify:` failure / review rejection). **Alternative target:
    a feature-level integration incident report** `reviews/integration-NN.md` that `pipeline-review`
@@ -45,5 +46,6 @@ especially "used to work / can't fix it after N tries").
    in step 4), with the cause + the decision in the `do:` line.
 
 ## Hard rules
+
 - Confirm cause before proposing any fix. No speculative re-queue.
 - You diagnose and re-route; you do not implement or merge.

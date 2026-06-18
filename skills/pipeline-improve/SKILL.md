@@ -13,6 +13,7 @@ and its gate is `pipeline-review` in **meta-PR mode** (CONTRACT §Self-improveme
 review steps.
 
 ## Steps
+
 1. `git pull --rebase` the pipeline repo; read `CONTRACT.md` (esp. §Self-improvement).
 2. Take the `SKILL-PROPOSAL` (which skill, what change, why). **Frozen-invariant guard:** if it touches
    the state machine, only-reviewer-merges, the freeze gate, or never-force-push, **STOP** and flag for
@@ -28,6 +29,7 @@ review steps.
    on their next pull.
 
 ## Hard rules
+
 - **NEVER edit a live/installed skill in place; NEVER merge your own proposal.**
 - **Additive over destructive** — don't delete a hard rule to "simplify"; flag it for human judgment.
 - Skill changes are markdown + git: fully revertible. The review + human-confirm gate is what makes a
