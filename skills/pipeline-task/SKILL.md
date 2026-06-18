@@ -38,7 +38,9 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
       `cargo test smoke_login_help` / `pytest -k` / `go test -run`, or a dedicated test file), **never the
       whole suite** (CONTRACT §State authority): all cards are frozen RED up front, so a full-suite
       `verify` can never go green while sibling cards are still red. The full suite is review's gate, not
-      the card's.
+      the card's — so **also set `current.json.full-verify`** = `[<build cmd>, <whole-suite test cmd>]`
+      (the UNFILTERED runner, e.g. `["cargo build", "cargo test"]`) once for the feature, so
+      `pipeline-review` runs its integration gate from an exact recorded command, never a guess.
    Push to `main` (queue authoring, distinct from the only-reviewer-merges rule).
 7. **Print the handoff** to **pipeline-impl** per CONTRACT §handoff (already journaled in step 6b) —
    point at the card + arch.md + CONTEXT.md,

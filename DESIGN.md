@@ -43,7 +43,7 @@ command verifies every slot resolves to an installed skill (hard gate — no sil
 
 ```
 .pipeline/
-  current.json              {repo, branch, pr?, feature, stage}   # fast cache (journal tail is authoritative)
+  current.json              {repo, branch, pr?, feature, stage, full-verify?}  # fast cache (journal tail authoritative); full-verify = whole-suite cmd for review's integration gate
   <feature>/
     journal.md              append-only run log — one entry per completed stage
     PRD.md  arch.md  CONTEXT.md  docs/adr/*.md

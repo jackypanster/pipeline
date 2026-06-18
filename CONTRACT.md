@@ -43,7 +43,7 @@ circuit-breaker is unchanged.)
 
 ```
 .pipeline/
-  current.json            {repo, branch, pr?, feature, stage}   # fast pointer (cache — journal tail is authoritative)
+  current.json            {repo, branch, pr?, feature, stage, full-verify?}  # fast pointer (cache — journal tail is authoritative); full-verify = [<build>, <whole-suite test>], set by task
   <feature>/
     journal.md            append-only run log — one entry per completed stage (see Run journal)
     PRD.md  arch.md  CONTEXT.md  docs/adr/*.md
@@ -80,7 +80,12 @@ is the task author's choice — a **test-name filter** (`cargo test smoke_login_
 file** — the invariant is *card-scoped, not full-suite*. The cross-card integration check is a separate
 **final full-suite gate**: `pipeline-review` runs the WHOLE suite once on the `feat/<feature>` branch HEAD
 (which carries all frozen tests inherited from trunk + all cards' code) and must see it GREEN before the
-squash-merge. Red ⇒ the feature is not done ⇒ reject (impl/hunt), do not merge.
+squash-merge. The whole-suite command is **not derived/guessed** — `pipeline-task` records it as
+`current.json.full-verify` (`[<build cmd>, <whole-suite test cmd>]`, the unfiltered runner) so a cold
+review node runs an exact command, never "drop the filter" or read project docs. Red ⇒ the feature is
+not done ⇒ do not merge; flip a card back ONLY if the failing test(s)/diff attribute the break to a
+specific card (then `attempts++`, that card → `todo`/`blocked`, route impl/hunt) — a cross-card
+integration failure with no single owner ⇒ **STOP and route `pipeline-hunt`**, never blind-flip a card.
 
 **Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
 **most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
