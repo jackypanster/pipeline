@@ -89,7 +89,13 @@ squash-merge. The whole-suite command is **not derived/guessed** — `pipeline-t
 review node runs an exact command, never "drop the filter" or read project docs. Red ⇒ the feature is
 not done ⇒ do not merge; flip a card back ONLY if the failing test(s)/diff attribute the break to a
 specific card (then `attempts++`, that card → `todo`/`blocked`, route impl/hunt) — a cross-card
-integration failure with no single owner ⇒ **STOP and route `pipeline-hunt`**, never blind-flip a card.
+integration failure with no single owner ⇒ `pipeline-review` writes a **feature-level integration
+incident report** `reviews/integration-NN.md` (its OWN write-set — evidence, **not** a `tasks/` card, so
+it never trips the "every card must be `review`" merge guard), appends a `journal.md` entry
+(`status=blocked`, transition `review→hunt`, output = the report path), commits, and routes
+`pipeline-hunt` to that report. Never blind-flip a real card; never route hunt with no target (hunt
+accepts a feature-level incident report, see its step 1). **No synthetic `tasks/` card** — a lingering
+`blocked` card would deadlock every future merge.
 
 **Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
 **most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
@@ -106,9 +112,14 @@ write-sets are:
 | task | spec-paths (the red test), `tasks/*` | src implementation |
 | impl | impl-paths, `src/**`, the card's `status` field | **spec-paths** (the freeze gate) |
 | review | `reviews/*`, card `status`→done | any product code (it merges, never authors) |
+| hunt | the routed **target** only — the blocked card (its body / `status` / `attempts`) OR the `reviews/integration-NN.md` report (append findings) | product code, unrelated cards, unrelated reviews |
 
 The freeze gate is just the impl row enforced. Enforcement is a documented invariant + one
 `git diff --name-only` eyeball at review — NOT a hook, CI, or script.
+
+`hunt` on a **report target** appends findings to `reviews/integration-NN.md` but must **NOT flip any card
+status** (there is no card on that path) — `pipeline-task` authors the real fix card/spec afterward. On a
+**card target** it updates that card per its classification (re-queue / re-split / re-spec).
 
 Every stage additionally **appends one entry to `journal.md`** (append-only metadata, same class as
 `current.json` — not gated, rides the metadata commit). This is universal, so it is omitted from the
