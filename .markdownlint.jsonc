@@ -1,0 +1,6 @@
+{
+  // pipeline docs are agent-facing, LLM-first, deliberately dense (see CONTRACT.md / repo intent).
+  // Disable the rules that fight that style; keep the ones that aid structure parsing.
+  "MD013": false,  // line-length: intentional long-line density, not a defect
+  "MD060": false   // table-column-style: cosmetic alignment/padding, irrelevant to agents
+}

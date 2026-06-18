@@ -45,7 +45,7 @@ circuit-breaker is unchanged.)
 
 ## Layout (`.pipeline/` lives in the TARGET repo)
 
-```
+```text
 .pipeline/
   current.json            {repo, branch, pr?, feature, stage, full-verify?}  # fast pointer (cache — journal tail is authoritative); full-verify = [<build>, <whole-suite test>], set by task
   <feature>/
@@ -128,6 +128,7 @@ per-stage rows above.
 ## Test ownership (anti-cheat) — the spec-rev double-commit protocol
 
 `pipeline-task` freezes the spec in **two ordered commits**:
+
 1. **Freeze commit** — write **all of the feature's** failing red tests, touching **only `spec-paths`**,
    in **ONE** commit. Its hash = the **feature's single `spec-rev`**, recorded by *every* card. The tests
    must compile and FAIL here (a green "spec" is a no-op). **One commit for the whole feature, NOT
@@ -161,7 +162,7 @@ never paste bodies), give **concrete numbered steps**, and name **feature-specif
 frontier bot with a thin handoff guesses wrong — err toward MORE next-step detail, not less.
 TG-friendly: plain text, short lines, no tables.
 
-```
+```text
 >>> NEXT
 Run pipeline-<next> on a FRESH session (assume you know nothing — rebuild from the repo + CONTRACT.md).
 repo=<url> branch=<branch> pr=<url|none>
@@ -198,7 +199,7 @@ anyone** (a human or another LLM reads the tail to take over).
 
 One entry per completed stage, appended (never edited or deleted — the git history is the audit trail):
 
-```
+```text
 ## seq=N · <ISO8601 UTC> · <from-stage>→<to-stage> · <completed|failed|blocked> · by=<bot/LLM tag|?>
 done:   <1–3 lines: what this stage actually produced>
 output: <artifact path(s)>        # paths, never bodies — git is the bus
@@ -209,6 +210,7 @@ output: <artifact path(s)>        # paths, never bodies — git is the bus
 ```
 
 Rules:
+
 - **`seq`** — per-feature monotonic integer. Read the current tail, add 1 (first entry `seq=1`). It is
   the run ordinal: "we are at step N".
 - **Append-only.** Never rewrite or delete a prior entry. A correction is a NEW entry, not an edit.
@@ -224,6 +226,7 @@ Rules:
 ## Forge adapter (review/merge only)
 
 Keyed on `git config --get remote.origin.url`:
+
 - **github.com** → `gh` (`gh pr diff` / `gh pr merge`)
 - **gitee** → `gitee-cli` against the instance's PR API
 - **anything else / no forge** → `git fetch && git diff base..branch`

@@ -12,6 +12,7 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 `CONTEXT.md` + ADRs inline. YOU ensure the artifacts land under `.pipeline/<feature>/`.
 
 ## Steps
+
 1. `git pull --rebase`. Read `.pipeline/current.json` (STOP if missing) and `<feature>/PRD.md`.
 2. Resolve `arch` slot from `roles.yaml`; verify installed (else STOP).
 3. **grill-with-docs** against the PRD + codebase: resolve cross-decision dependencies one at a
@@ -35,6 +36,7 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
    `do: decompose into atomic cards, write a red test per card`.
 
 ## Hard rules
+
 - HITL stage — ask the human on blocking ambiguity, wait. Don't invent domain terms; ground them.
 - Write architecture/ADRs only. No task cards, no code, no tests here.
 - Irreversible decisions (migrations, concurrency model, data shape) → an ADR, not a coder card.
