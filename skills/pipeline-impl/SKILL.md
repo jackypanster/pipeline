@@ -40,12 +40,18 @@ acceptance tests" is the cheap seam if needed).
    hand off to **pipeline-impl** for the next card (the same `feat/<feature>` branch/PR accumulates all
    cards). Only when NO `todo`/`in-progress` cards remain (every card is `status: review`) hand off to
    **pipeline-review** — review runs ONCE on the complete feature, never on a partial one.
-5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`; `attempts < 3` ⇒ back to `status: todo`
-   (re-queue); `attempts >= 3` ⇒ `status: blocked`. **Leave `current.json.stage` unchanged** (impl did
-   NOT complete — keep the last completed stage, `task`). Either way **append a `## Attempt N` note to the
-   card and your handoff to `journal.md`** (CONTRACT §Run journal — status `failed`/`blocked`, the dead-end
-   is part of the run history), **commit both to `main`**, then print the handoff to **pipeline-hunt** with
-   the reason (the next run reads only the card).
+5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`, then **decide the disposition by the retry
+   budget BEFORE committing** (CONTRACT state machine):
+   - **`attempts < 3`** ⇒ `status: todo` (re-queue), journal `status=failed`, next = **pipeline-impl** —
+     the `## Attempt N` note is the informed-retry context (NOT a blind retry; this is the intended retry
+     budget; hunt is for blocked cards only, so do NOT route here).
+   - **`attempts >= 3`** ⇒ `status: blocked`, journal `status=blocked`, next = **pipeline-hunt**
+     (root-cause before any re-queue — never blind retry).
+   **Leave `current.json.stage` unchanged** (impl did NOT complete — keep `task`). Append the
+   `## Attempt N` note + the selected handoff to `journal.md`, then **commit the card (`attempts` + the
+   decided `status` + note) + `journal.md` together to `main` in ONE commit** — so a cold node never
+   reads a half-updated state. Then print the handoff to the routed command (the next run reads only the
+   card).
 
 ## Hard rules
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
