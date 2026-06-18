@@ -22,7 +22,8 @@ especially "used to work / can't fix it after N tries").
 3. **hunt** to confirm the ROOT CAUSE (not symptoms). Classify it:
    - **Card too big / not atomic** ⇒ re-split: hand back to **pipeline-task** to break it down.
    - **Spec/red test wrong** ⇒ the test itself is the bug ⇒ hand back to **pipeline-task** to fix
-     the spec (architect owns tests; coder cannot).
+     the spec (architect owns tests; coder cannot) — **name the offending card/spec target in the
+     handoff** so task re-freezes only it and preserves sibling state (CONTRACT §Test ownership re-freeze).
    - **Environment / dependency** ⇒ name the fix for the operator; once fixed, reset the card to
      `status: todo`, `attempts: 0`.
    - **Genuinely hard but well-scoped** ⇒ append the root-cause findings to the card, reset to

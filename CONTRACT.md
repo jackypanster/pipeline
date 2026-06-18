@@ -128,19 +128,29 @@ per-stage rows above.
 ## Test ownership (anti-cheat) — the spec-rev double-commit protocol
 
 `pipeline-task` freezes the spec in **two ordered commits**:
-1. **Freeze commit** — write the failing red test, touching **only `spec-paths`**. Its hash = `spec-rev`.
-   The test must compile and FAIL here (a green "spec" is a no-op).
-2. **Record commit** — write `spec-rev`, `spec-paths`, `impl-paths` (all exact paths) into the card and
-   advance `current.json.stage`. This commit touches **metadata only (the card + `current.json`), never
-   `spec-paths`** — so the freeze stays intact (the load-bearing rule is "never `spec-paths`", not "card
-   alone"; `current.json` is metadata and is safe to ride along).
+1. **Freeze commit** — write **all of the feature's** failing red tests, touching **only `spec-paths`**,
+   in **ONE** commit. Its hash = the **feature's single `spec-rev`**, recorded by *every* card. The tests
+   must compile and FAIL here (a green "spec" is a no-op). **One commit for the whole feature, NOT
+   per-card:** if cards were frozen in sequence and two shared a test file, an earlier card's `spec-rev`
+   would predate a later sibling's append, and the freeze gate (which diffs `spec-rev..review-tip` over
+   `spec-paths`) would mis-flag that legitimate sibling test as an impl spec-edit and falsely reject.
+2. **Record commit** — write **each card's** frontmatter (`spec-paths`, `impl-paths`, and the **shared
+   `spec-rev` from step 1**, all exact) and advance `current.json.stage`. This commit touches **metadata
+   only (the cards + `current.json`), never `spec-paths`** — so the freeze stays intact (the load-bearing
+   rule is "never `spec-paths`", not "card alone"; `current.json` is metadata and is safe to ride along).
 
 Invariant: `spec-paths ∩ impl-paths = ∅` (task asserts, review re-checks). `pipeline-impl` makes the
 test green via `src` + `impl-paths` only, and must NOT create/modify/delete anything under `spec-paths`.
 `pipeline-review` runs the **two-commit** diff `git diff <spec-rev> <review-tip> -- <spec-paths>`
 (deterministic, not working-tree) FIRST; **non-empty ⇒ reject** (`attempts++`, route to impl, or hunt
 at ≥3). If the spec itself is wrong, that is NOT an impl fix — re-route to `pipeline-task` to re-freeze
-(new `spec-rev`); the coder never edits the frozen spec. Git-only, no CI.
+(the re-route handoff MUST **name the offending spec target** so task doesn't guess): re-freeze the
+**whole feature's** tests in a NEW single commit and update **every** card's `spec-rev` to the new sha (a
+partial re-freeze would reintroduce the shared-file mis-flag — keep the baseline shared). Re-freeze
+updates **only `spec-rev`** and **preserves each card's `status`/`attempts`/`verify`/`impl-paths`** (only
+the named re-spec'd card may change otherwise); it is NOT initial authoring, so it **never resets siblings
+to `todo`/`0`** — that would silently restart cards mid-impl or in review. The coder never edits the
+frozen spec. Git-only, no CI.
 
 ## Handoff block — a self-contained briefing for a COLD next node
 
