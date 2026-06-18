@@ -6,8 +6,11 @@ description: "Meta-command — turn a SKILL-PROPOSAL (a skill gap learned from a
 # pipeline-improve
 
 Meta-stage: improves the **pipeline repo's own** skills/CONTRACT, gated exactly like any code change.
-Operates on the pipeline repo (`github.com/jackypanster/pipeline`), NOT a target project. Follow the
-shim loop in CONTRACT.md (slot = `improve`), with these specifics.
+Operates on the pipeline repo (`github.com/jackypanster/pipeline`), NOT a target project — **so there is
+NO `.pipeline/` state here** (no `current.json`, no cards, no `spec-rev`). **This command does NOT run
+the feature shim loop** (whose step 3 would STOP on the missing `current.json`); its own steps are below,
+and its gate is `pipeline-review` in **meta-PR mode** (CONTRACT §Self-improvement), not the feature
+review steps.
 
 ## Steps
 1. `git pull --rebase` the pipeline repo; read `CONTRACT.md` (esp. §Self-improvement).
@@ -18,9 +21,11 @@ shim loop in CONTRACT.md (slot = `improve`), with these specifics.
    **minimal, additive, preserve every existing rule.** Agent-first (dense, no filler). One proposal =
    one focused change.
 4. Commit + push the branch. Open a PR to the pipeline repo's `main` via the forge adapter. **Do NOT merge.**
-5. Hand off to **pipeline-review** (per CONTRACT §handoff): semantic-review the skill diff — is it a
-   real improvement (not a weakening/破坏)? does it preserve all hard rules + frozen invariants? — then a
-   human confirms the merge to `main`. Improved skill propagates to runtimes on their next pull.
+5. Hand off to **pipeline-review in meta-PR mode** (CONTRACT §Self-improvement — NOT the feature review
+   steps: no cards, no `spec-rev`, no freeze gate, no full-suite gate on this repo): semantic-review the
+   skill diff — is it a real improvement (not a weakening/破坏)? does it preserve every hard rule + frozen
+   invariant? — then a human confirms the squash-merge to `main`. Improved skill propagates to runtimes
+   on their next pull.
 
 ## Hard rules
 - **NEVER edit a live/installed skill in place; NEVER merge your own proposal.**
