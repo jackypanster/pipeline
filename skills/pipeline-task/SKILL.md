@@ -28,12 +28,15 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    tests") — you record it in the card's `## Freeze coverage` section in step 6b.
 6. **Freeze the spec in TWO ordered commits to `main`** (CONTRACT §spec-rev double-commit protocol).
    NEVER mix the test and the card in one commit — that breaks the freeze the gate relies on:
-   a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s), commit. Its sha = `spec-rev`.
-   b. **Record commit** — now write `.pipeline/<feature>/tasks/NN.md` frontmatter
+   a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s) for **ALL the feature's cards**,
+      commit **once**. Its sha = the **feature's single `spec-rev`** that every card records — one commit
+      for the whole feature, NOT per-card (per-card freezes make a shared test file falsely trip an
+      earlier card's freeze gate; CONTRACT §Test ownership).
+   b. **Record commit** — now write **every card's** `.pipeline/<feature>/tasks/NN.md` frontmatter
       (`status: todo`, `attempts: 0`, `verify: [<build cmd>, <test cmd>]`, `spec-paths`, `impl-paths`
-      — disjoint from `spec-paths` — `spec-rev: <sha from 6a>`) + any `## Freeze coverage` note, set
-      `current.json.stage: task`, and **append your handoff to `journal.md`**. `git add` the card
-      **+ `current.json` + `journal.md`** (metadata only — **never the test / `spec-paths`**), commit.
+      — disjoint from `spec-paths` — `spec-rev: <the shared sha from 6a>`) + any `## Freeze coverage`
+      note, set `current.json.stage: task`, and **append your handoff to `journal.md`**. `git add` the
+      cards **+ `current.json` + `journal.md`** (metadata only — **never the test / `spec-paths`**), commit.
       **`<test cmd>` MUST be card-scoped** — run only THIS card's frozen test(s) (a test-name filter
       `cargo test smoke_login_help` / `pytest -k` / `go test -run`, or a dedicated test file), **never the
       whole suite** (CONTRACT §State authority): all cards are frozen RED up front, so a full-suite
