@@ -92,7 +92,7 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 ## Hard rules
 
 - The human's "go" is your authorization to merge — never merge without it.
-- Never force-push; deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
+- Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
 - **The verdict you post to chat must be plain text the human can copy** — short bullets, **NO markdown

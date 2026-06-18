@@ -19,9 +19,17 @@ acceptance tests" is the cheap seam if needed).
 1. `git pull --rebase`. Read `current.json`. Pick the **oldest** `status: todo` card (or the given
    card-id). Idempotency: if `feat/<feature>` already has an open PR and the card reads
    `status: review`, skip — already in flight.
-2. Resolve `impl` slot; verify installed (else STOP). Create/checkout the feature branch
-   **`feat/<feature>`** (per CONTRACT §State authority — one branch per feature, NOT per card). Flip the
-   card `status: in-progress` and commit it to **`main`** (card status is trunk-authoritative metadata —
+2. Resolve `impl` slot; verify installed (else STOP). **Create or reconcile the feature branch**
+   **`feat/<feature>`** (per CONTRACT §State authority — one branch per feature, NOT per card):
+   - **New branch:** cut it from trunk (`main`) — it inherits the current frozen specs.
+   - **Existing branch (feature in flight):** if trunk's spec advanced since it was cut (a re-freeze or
+     append-card landed a new `spec-rev` the branch lacks), **rebase it onto trunk and force-push**
+     (`git fetch origin && git rebase origin/main && git push --force-with-lease`) so it carries the
+     current frozen tests. Without this, review's freeze gate diffs the new `spec-rev` against the stale
+     branch and falsely rejects. This force-push is the **sanctioned exception** (your own in-flight
+     branch, never trunk — CONTRACT §State machine scope). Resolve any rebase conflict via the goal loop
+     (the spec changed; the code must adapt).
+   Then flip the card `status: in-progress` and commit it to **`main`** (card status is trunk-authoritative metadata —
    a cold node must read the live status from trunk; never leave a status flip on the branch). **Leave
    `current.json.stage` at `task`** — `stage` = most-recently-COMPLETED stage (CONTRACT); it advances to
    `impl` only when this card actually completes (step 4), not when work begins.
