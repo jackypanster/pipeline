@@ -45,6 +45,14 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
       (the UNFILTERED runner, e.g. `["cargo build", "cargo test"]`) once for the feature, so
       `pipeline-review` runs its integration gate from an exact recorded command, never a guess.
    Push to `main` (queue authoring, distinct from the only-reviewer-merges rule).
+
+   **Initial authoring vs re-freeze.** Steps 4–6 — and the `status: todo` / `attempts: 0` defaults in 6b
+   — are for **initial authoring** (creating the cards). If you were re-routed here to **re-freeze a
+   wrong spec** (review/hunt named the offending target), it is NOT initial authoring: make a NEW single
+   freeze commit for the corrected test(s) and update **only `spec-rev`** on every card to the new sha.
+   **Preserve each card's existing `status` / `attempts` / `verify` / `impl-paths` / `## Freeze coverage`** —
+   change other fields ONLY on the card(s) the handoff names as re-spec'd. **NEVER blanket-reset siblings
+   to `todo` / `0`** — that destroys in-flight state (a card mid-impl or in review would silently restart).
 7. **Print the handoff** to **pipeline-impl** per CONTRACT §handoff (already journaled in step 6b) —
    point at the card + arch.md + CONTEXT.md,
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put

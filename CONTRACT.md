@@ -143,10 +143,14 @@ Invariant: `spec-paths ∩ impl-paths = ∅` (task asserts, review re-checks). `
 test green via `src` + `impl-paths` only, and must NOT create/modify/delete anything under `spec-paths`.
 `pipeline-review` runs the **two-commit** diff `git diff <spec-rev> <review-tip> -- <spec-paths>`
 (deterministic, not working-tree) FIRST; **non-empty ⇒ reject** (`attempts++`, route to impl, or hunt
-at ≥3). If the spec itself is wrong, that is NOT an impl fix — re-route to `pipeline-task` to re-freeze:
-re-freeze the **whole feature's** tests in a NEW single commit and update **every** card's `spec-rev` to
-the new sha (a partial re-freeze would reintroduce the shared-file mis-flag — keep the baseline shared).
-The coder never edits the frozen spec. Git-only, no CI.
+at ≥3). If the spec itself is wrong, that is NOT an impl fix — re-route to `pipeline-task` to re-freeze
+(the re-route handoff MUST **name the offending spec target** so task doesn't guess): re-freeze the
+**whole feature's** tests in a NEW single commit and update **every** card's `spec-rev` to the new sha (a
+partial re-freeze would reintroduce the shared-file mis-flag — keep the baseline shared). Re-freeze
+updates **only `spec-rev`** and **preserves each card's `status`/`attempts`/`verify`/`impl-paths`** (only
+the named re-spec'd card may change otherwise); it is NOT initial authoring, so it **never resets siblings
+to `todo`/`0`** — that would silently restart cards mid-impl or in review. The coder never edits the
+frozen spec. Git-only, no CI.
 
 ## Handoff block — a self-contained briefing for a COLD next node
 
