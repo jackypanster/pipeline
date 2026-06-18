@@ -22,8 +22,9 @@ the freeze gate are YOUR I/O, not check's.
    **reject**: `attempts++`, append the reason to the card **+ a `journal.md` entry** (CONTRACT §Run
    journal — `status=failed`, the freeze-violation is run history), and **flip that card
    `status: todo`** (`attempts >= 3` ⇒ `blocked` instead) so `pipeline-impl` — which picks the oldest
-   `todo` — has an actionable retry target; **commit all**; route to pipeline-impl (or pipeline-hunt if
-   `blocked`). Do not proceed to review.
+   `todo` — has an actionable retry target, and **name that card in the handoff** so impl re-picks
+   exactly it; **commit all**; route to pipeline-impl (or pipeline-hunt if `blocked`). Do not proceed to
+   review.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings). Commit.
