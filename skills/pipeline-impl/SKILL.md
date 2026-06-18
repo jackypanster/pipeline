@@ -25,8 +25,10 @@ acceptance tests" is the cheap seam if needed).
    `current.json.stage` at `task`** — `stage` = most-recently-COMPLETED stage (CONTRACT); it advances to
    `impl` only when this card actually completes (step 4), not when work begins.
 3. **goal**: implement inside `impl-paths:` (+ `src/**`) on `feat/<feature>` until the card's `verify:`
-   commands all exit 0 (its red test goes green). Loop think→code→check within the turn budget. Only
-   code lives on the branch; never touch `spec-paths:`.
+   commands all exit 0 (its red test goes green). The card's `verify` is **card-scoped** (CONTRACT
+   §State authority) — it goes green on THIS card's frozen test alone, regardless of sibling cards still
+   red on trunk; do NOT run the full suite to judge this card (that is review's final gate). Loop
+   think→code→check within the turn budget. Only code lives on the branch; never touch `spec-paths:`.
 4. **Green** ⇒ push `feat/<feature>`, open/update a PR via the forge adapter, then on `main` flip the
    card `status: review`, advance `current.json.stage` to `impl`, and **append your handoff to
    `journal.md`** — these three metadata writes are **one commit on `main`** (this card completed —
