@@ -23,9 +23,10 @@ especially "used to work / can't fix it after N tries").
      `status: todo`, `attempts: 0`.
    - **Genuinely hard but well-scoped** ⇒ append the root-cause findings to the card, reset to
      `status: todo` so the next impl run starts informed (the card is the only memory).
-4. Write the root-cause findings into the card. Commit.
-5. Print the handoff to whichever command the classification chose (task / impl), with the cause +
-   the decision in the `do:` line.
+4. Write the root-cause findings into the card **and append your handoff to `journal.md`** (CONTRACT
+   §Run journal). Commit both **once**.
+5. **Print the handoff** to whichever command the classification chose (task / impl) (already journaled
+   in step 4), with the cause + the decision in the `do:` line.
 
 ## Hard rules
 - Confirm cause before proposing any fix. No speculative re-queue.

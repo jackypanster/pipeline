@@ -19,8 +19,9 @@ the freeze gate are YOUR I/O, not check's.
    `git diff <card.spec-rev> <review-tip> -- <card.spec-paths>`, where `<review-tip>` is the PR head
    (forge: `gh pr view --json headRefOid` / the `gitee-cli` equivalent; no forge: the `feat/<feature>`
    tip). Diff two commits, never the working tree. Non-empty ⇒ the coder edited the frozen spec ⇒
-   **reject**: `attempts++`, append the reason to the card, route to pipeline-impl (or pipeline-hunt if
-   `attempts >= 3`). Do not proceed to review.
+   **reject**: `attempts++`, append the reason to the card **+ a `journal.md` entry** (CONTRACT §Run
+   journal — `status=failed`, the freeze-violation is run history); **commit both**; route to
+   pipeline-impl (or pipeline-hunt if `attempts >= 3`). Do not proceed to review.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings). Commit.
@@ -30,7 +31,8 @@ the freeze gate are YOUR I/O, not check's.
    **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
    non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
-   to the card, handoff to **pipeline-impl** (or hunt at ≥3).
+   to the card **+ a `journal.md` entry** (CONTRACT §Run journal — `status=failed`, the rejection is
+   run history); **commit**; then hand off to **pipeline-impl** (or hunt at ≥3).
 
 ## Completion checklist (cold bots skip these — do ALL, in order)
 
@@ -41,6 +43,8 @@ Merge is NOT the end. After the human's go and the merge, you MUST, in order:
 - [ ] set `.pipeline/current.json` `stage: done` — **only when EVERY card in the feature is `done`**
       (multi-card guard, step 6); the top-level pointer = most-recently-completed stage per CONTRACT.
       Cold bots flip the cards but leave `stage` stale at an earlier value, misleading the next node
+- [ ] **appended the journal entry** to `.pipeline/<feature>/journal.md` (CONTRACT §Run journal —
+      `review→done`, the feature's final entry; it closes the auditable run)
 - [ ] committed + pushed the above to the trunk branch
 
 Observed: cold review bots have TWICE done only the merge and skipped `review-NN.md` + the card→done

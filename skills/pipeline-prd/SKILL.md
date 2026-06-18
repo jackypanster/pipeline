@@ -27,9 +27,10 @@ files; YOU write the PRD.
    decision-complete plan.
 4. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, the
    resolved decisions. Agent-first (dense, no filler). Set `current.json.stage: prd` (most-recently-
-   completed = prd). `git add` `PRD.md` **+ `current.json`** (this stage created/seeded it), commit, push.
-5. Print the handoff to **pipeline-arch** (per CONTRACT.md §handoff): repo, branch, artifact path,
-   `do: read PRD.md, grill the architecture against the codebase`.
+   completed = prd). **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` `PRD.md`
+   **+ `current.json` + `journal.md`** (this stage created/seeded them), commit **once**, push.
+5. **Print the handoff** to **pipeline-arch** (already journaled in step 4; per CONTRACT.md §handoff):
+   repo, branch, artifact path, `do: read PRD.md, grill the architecture against the codebase`.
 
 ## Hard rules
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
