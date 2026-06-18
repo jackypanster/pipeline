@@ -89,10 +89,13 @@ squash-merge. The whole-suite command is **not derived/guessed** — `pipeline-t
 review node runs an exact command, never "drop the filter" or read project docs. Red ⇒ the feature is
 not done ⇒ do not merge; flip a card back ONLY if the failing test(s)/diff attribute the break to a
 specific card (then `attempts++`, that card → `todo`/`blocked`, route impl/hunt) — a cross-card
-integration failure with no single owner ⇒ **create a synthetic incident card**
-(`tasks/<next-NN>-integration.md`, `status: blocked`, `attempts: 3`, body = the failing suite output)
-and route `pipeline-hunt` **to that card-id** — never blind-flip a real card, and never route hunt with
-no target (hunt's entrypoint reads a `blocked` card).
+integration failure with no single owner ⇒ `pipeline-review` writes a **feature-level integration
+incident report** `reviews/integration-NN.md` (its OWN write-set — evidence, **not** a `tasks/` card, so
+it never trips the "every card must be `review`" merge guard), appends a `journal.md` entry
+(`status=blocked`, transition `review→hunt`, output = the report path), commits, and routes
+`pipeline-hunt` to that report. Never blind-flip a real card; never route hunt with no target (hunt
+accepts a feature-level incident report, see its step 1). **No synthetic `tasks/` card** — a lingering
+`blocked` card would deadlock every future merge.
 
 **Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
 **most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
