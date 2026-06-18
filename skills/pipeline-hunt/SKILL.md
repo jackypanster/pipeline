@@ -22,7 +22,10 @@ especially "used to work / can't fix it after N tries").
    - **Environment / dependency** ⇒ name the fix for the operator; once fixed, reset the card to
      `status: todo`, `attempts: 0`.
    - **Genuinely hard but well-scoped** ⇒ append the root-cause findings to the card, reset to
-     `status: todo` so the next impl run starts informed (the card is the only memory).
+     `status: todo` **and `attempts: 0`** (same as the environment branch) so the next impl run starts
+     informed with a fresh budget — hunt is the deliberate human-relayed diagnosis, NOT a blind retry,
+     and the new findings make this a genuinely new attempt; without the reset a requeued card re-blocks
+     on its first fail (`attempts` was already at the `>= 3` threshold). The card is the only memory.
 4. Write the root-cause findings into the card **and append your handoff to `journal.md`** (CONTRACT
    §Run journal). Commit both **once**.
 5. **Print the handoff** to whichever command the classification chose (task / impl) (already journaled
