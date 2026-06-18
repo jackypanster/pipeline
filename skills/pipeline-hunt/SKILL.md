@@ -1,12 +1,13 @@
 ---
 name: pipeline-hunt
-description: "Pipeline escalation — root-cause a blocked card before re-queue. Wraps the hunt skill. Entry point for any card that hit attempts>=3 (blocked) or repeated review rejection. Use instead of blind retry. Args: repo, branch, card-id."
+description: "Pipeline escalation — root-cause a blocked target before re-queue. Wraps the hunt skill. Entry point for any card that hit attempts>=3 (blocked) / repeated review rejection, or a feature-level integration incident report. Use instead of blind retry. Args: repo, branch, target (a blocked card-id OR a reviews/integration-NN.md report path)."
 ---
 
 # pipeline-hunt
 
 Escalation stage (not on the happy path). Follow the **shim loop in CONTRACT.md** with slot = `hunt`.
-A `blocked` card routes here — **never blind-retry a blocked card**.
+A `blocked` **card** — OR a feature-level **integration incident report** (`reviews/integration-NN.md`)
+— routes here; **never blind-retry**. (Both are "targets"; see step 1.)
 
 **Skill:** `hunt` slot resolves to `hunt` — systematic root-cause (confirm cause before any fix,
 especially "used to work / can't fix it after N tries").
@@ -35,8 +36,10 @@ especially "used to work / can't fix it after N tries").
      re-freeze the implicated cards) — the integration gap needs a real spec, not a blind re-queue. The
      report is evidence under `reviews/`, **not** a `tasks/` card — nothing lingers to block the next
      merge guard; the new fix card(s) carry the work forward through the normal flow.
-4. Write the root-cause findings into the card **and append your handoff to `journal.md`** (CONTRACT
-   §Run journal). Commit both **once**.
+4. Write the root-cause findings into **your target** — if it is a blocked **card**, update/reset it per
+   the step-3 classification (e.g. `status: todo` + `attempts: 0`); if it is a **`reviews/integration-NN.md`
+   report**, append the findings there and **do NOT flip any card status** (there is no card). Either way
+   **append your handoff to `journal.md`** (CONTRACT §Run journal). Commit both **once**.
 5. **Print the handoff** to whichever command the classification chose (task / impl) (already journaled
    in step 4), with the cause + the decision in the `do:` line.
 
