@@ -13,7 +13,7 @@ of that is the **shim's** contract, never assumed of the skill. (Verified: `thin
 
 Each command body (~20 lines):
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
-write only your stage's declared write-set + commit → append handoff to journal.md → print handoff`.
+write your stage's write-set + append handoff to journal.md → commit (one) → print handoff`.
 
 ## Commands
 

@@ -17,11 +17,14 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
 5. **Invoke that skill** — it does the REASONING/interview. It does NOT write files.
 6. **Write only within your stage's declared write-set** (see *State authority & write-sets* below) —
-   the I/O is YOURS, not the skill's. `git add` only those paths, commit. Writing outside your
-   write-set is a contract violation, symmetric to the freeze gate.
-7. **Append your handoff as a journal entry** to `.pipeline/<feature>/journal.md` (append-only, in the
-   SAME trunk commit as your metadata), **then print** the block and stop. The human relays the printed
-   block to the next bot; the journal is what survives if the chat does not (see *Run journal* below).
+   the I/O is YOURS, not the skill's — **and append your composed handoff block as an entry to
+   `.pipeline/<feature>/journal.md`** (it is part of your metadata write-set — see *Run journal*).
+   `git add` those paths **+ `journal.md`**, commit **once** (the journal entry rides this same commit —
+   never a separate/orphan commit, never an amend). Writing outside your write-set is a contract
+   violation, symmetric to the freeze gate.
+7. **Print the handoff block** (already persisted to the journal in step 6) and stop. The human relays
+   the printed block to the next bot; the journal is what survives if the chat does not (see *Run
+   journal* below).
 
 ## State machine (frozen — do not change)
 
@@ -141,9 +144,11 @@ what let a different LLM on a different bot execute this stage correctly with no
 
 The handoff block above is the **most load-bearing artifact in the pipeline** (it carries all cross-stage
 context to a cold node) and was the **only one not on git** — it lived solely in chat. `journal.md` fixes
-that: at step 7, before printing, **append your handoff to `.pipeline/<feature>/journal.md`**. This makes
-the run **resumable** (chat dies ⇒ read the tail), **auditable** (the append sequence IS the run history),
-and **orchestratable by anyone** (a human or another LLM reads the tail to take over).
+that: **at step 6, append your handoff to `.pipeline/<feature>/journal.md` as part of your stage's
+metadata commit** (one atomic commit with the rest of your write-set — never a separate/orphan commit,
+never an amend); step 7 only prints what is already journaled. This makes the run **resumable** (chat
+dies ⇒ read the tail), **auditable** (the append sequence IS the run history), and **orchestratable by
+anyone** (a human or another LLM reads the tail to take over).
 
 One entry per completed stage, appended (never edited or deleted — the git history is the audit trail):
 
@@ -161,6 +166,8 @@ Rules:
 - **`seq`** — per-feature monotonic integer. Read the current tail, add 1 (first entry `seq=1`). It is
   the run ordinal: "we are at step N".
 - **Append-only.** Never rewrite or delete a prior entry. A correction is a NEW entry, not an edit.
+- **One commit.** The entry rides your stage's metadata commit (step 6) — `git add journal.md` alongside
+  your other write-set paths and commit once. Never a separate/orphan commit, never `git commit --amend`.
 - **Tail is authoritative.** The live position = the last entry's `to-stage` + its handoff `>>> NEXT`.
   `current.json.stage` is only a fast cache; on any disagreement the journal tail wins.
 - **Resume protocol (cold start, chat gone):** `git pull --rebase` → open `journal.md` → read the LAST
