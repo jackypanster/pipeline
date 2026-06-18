@@ -30,7 +30,12 @@ the freeze gate are YOUR I/O, not check's.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings). Commit.
 6. **Approved** ⇒ ask the operator to confirm. **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
-   do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). On confirm:
+   do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
+   gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
+   integration — run the WHOLE test suite once on the `feat/<feature>` branch HEAD (it carries all frozen
+   tests inherited from trunk + every card's code). **GREEN required**; red ⇒ cross-card integration broke
+   ⇒ do NOT merge, reject the offending card (`attempts++`, flip → `todo`/`blocked`, hand to impl/hunt).
+   On confirm (cards all `review` AND suite green):
    **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
    non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
@@ -44,6 +49,7 @@ the freeze gate are YOUR I/O, not check's.
 
 Merge is NOT the end. After the human's go and the merge, you MUST, in order:
 - [ ] freeze gate ran (the two-commit `git diff <spec-rev> <review-tip> -- <spec-paths>`, review-tip = PR head — empty before you proceeded)
+- [ ] **final full-suite gate ran GREEN** on the `feat/<feature>` branch HEAD before the merge (card `verify`s are card-scoped — this is the only cross-card integration check)
 - [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
 - [ ] every merged card's `status` → `done`
 - [ ] set `.pipeline/current.json` `stage: done` — **only when EVERY card in the feature is `done`**

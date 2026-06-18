@@ -31,9 +31,14 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s), commit. Its sha = `spec-rev`.
    b. **Record commit** — now write `.pipeline/<feature>/tasks/NN.md` frontmatter
       (`status: todo`, `attempts: 0`, `verify: [<build cmd>, <test cmd>]`, `spec-paths`, `impl-paths`
-      — disjoint from `spec-paths` — `spec-rev: <sha from 6a>`) + any `## Freeze coverage` note, and set
+      — disjoint from `spec-paths` — `spec-rev: <sha from 6a>`) + any `## Freeze coverage` note, set
       `current.json.stage: task`, and **append your handoff to `journal.md`**. `git add` the card
       **+ `current.json` + `journal.md`** (metadata only — **never the test / `spec-paths`**), commit.
+      **`<test cmd>` MUST be card-scoped** — run only THIS card's frozen test(s) (a test-name filter
+      `cargo test smoke_login_help` / `pytest -k` / `go test -run`, or a dedicated test file), **never the
+      whole suite** (CONTRACT §State authority): all cards are frozen RED up front, so a full-suite
+      `verify` can never go green while sibling cards are still red. The full suite is review's gate, not
+      the card's.
    Push to `main` (queue authoring, distinct from the only-reviewer-merges rule).
 7. **Print the handoff** to **pipeline-impl** per CONTRACT §handoff (already journaled in step 6b) —
    point at the card + arch.md + CONTEXT.md,

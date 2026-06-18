@@ -71,6 +71,17 @@ Accepted ONLY under two load-bearing assumptions — **no blocking CI gate on tr
 flight at a time**. If either stops holding (CI added, or parallel features), move the red test onto the
 feature branch and make `spec-rev` a branch commit instead.
 
+**Multi-card consequence — a card's `verify` MUST be card-scoped, never the full suite.** `pipeline-task`
+freezes ALL of a feature's cards up front, so trunk's suite is RED across *every* not-yet-done card. If
+card 1's `verify` ran the whole suite it could never pass while cards 2..N are still red — the loop
+deadlocks. So a card's `verify` test command runs **only that card's own frozen test(s)**. The mechanism
+is the task author's choice — a **test-name filter** (`cargo test smoke_login_help`, `pytest -k`,
+`go test -run`; preferred, works even when several cards share one test file) or a **dedicated test
+file** — the invariant is *card-scoped, not full-suite*. The cross-card integration check is a separate
+**final full-suite gate**: `pipeline-review` runs the WHOLE suite once on the `feat/<feature>` branch HEAD
+(which carries all frozen tests inherited from trunk + all cards' code) and must see it GREEN before the
+squash-merge. Red ⇒ the feature is not done ⇒ reject (impl/hunt), do not merge.
+
 **Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
 **most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
 merged) — a cold node reads it to see where the pipeline last left off; the *next* node to run is named
