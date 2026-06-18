@@ -218,6 +218,13 @@ gated path: **`pipeline-improve` opens a PR against the pipeline repo → `pipel
 skill diff (real improvement, not a weakening? every existing hard rule preserved?) → a human confirms
 the merge.** No auto-merge; the agent never merges its own proposal.
 
+This review runs in **meta-PR mode**: the pipeline repo has **no `.pipeline/` state** (no `current.json`,
+cards, `spec-rev`), so `pipeline-improve` does NOT run the feature shim loop, and `pipeline-review` skips
+its feature steps (cards / freeze gate / full-suite gate) and does **semantic review only** — real
+improvement + every hard rule and frozen invariant preserved — then human-confirm + squash-merge. The
+feature freeze-gate machinery does not apply to a skill diff; only-reviewer-merges and human-confirm
+still do.
+
 The **frozen invariants** (state machine · only-reviewer-merges · the freeze gate · never-force-push)
 are **not auto-improvable** — a proposal touching them is STOPPED for explicit human decision. Skills are
 markdown + git: a bad edit only mis-guides the next run (caught by review), and is one `git revert` away.

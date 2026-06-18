@@ -11,6 +11,17 @@ that merges, and only after an explicit human confirm.**
 **Skill:** `review` slot resolves to `check` — semantic review of the diff. The forge adapter and
 the freeze gate are YOUR I/O, not check's.
 
+## Meta-PR mode (pipeline self-improvement) — decide this BEFORE step 1
+
+If the PR is a **`pipeline-improve` proposal** — a diff to *this pipeline repo's* own `skills/*` /
+`CONTRACT.md`, with **no `.pipeline/` feature state** (no `current.json`, cards, or `spec-rev`) — you are
+in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final full-suite gate** (none of
+that exists here). Do ONLY: (a) `check` the skill diff — is it a **real improvement, not a weakening**?
+does it **preserve every existing hard rule + the frozen invariants**? (b) write the verdict as a PR
+comment; (c) on the human's explicit confirm, **squash-merge**. Everything else still holds:
+only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
+**target-repo feature PR**; do not run them against a skill PR.
+
 ## Steps
 1. `git pull --rebase`. Read `current.json` + **all of the feature's cards** (this stage runs on a
    COMPLETE feature — expect every card `status: review`; see the pre-merge guard in step 6).
