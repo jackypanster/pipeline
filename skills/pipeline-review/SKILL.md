@@ -52,8 +52,11 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    branch HEAD (it carries all frozen tests inherited from trunk + every card's code). **GREEN required**;
    red ⇒ cross-card integration broke ⇒ do NOT merge. Flip a card back **only if** the failing test(s)/diff
    attribute the break to a specific card (then `attempts++`, that card → `todo`/`blocked`, name it in the
-   handoff, route impl/hunt); if no single card owns the failure, **STOP and route `pipeline-hunt`** — never
-   blind-flip a card. On confirm (cards all `review` AND suite green):
+   handoff, route impl/hunt). If no single card owns the failure, **create a synthetic incident card**
+   `.pipeline/<feature>/tasks/<next-NN>-integration.md` (`status: blocked`, `attempts: 3`, body = the
+   failing `full-verify` output + which tests broke + "cross-card integration, no single owner"), commit
+   it, and route **pipeline-hunt with that card-id** — never route hunt with no target (its entrypoint
+   reads a `blocked` card), never blind-flip a real card. On confirm (cards all `review` AND suite green):
    **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
    non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes

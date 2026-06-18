@@ -13,7 +13,10 @@ especially "used to work / can't fix it after N tries").
 
 ## Steps
 1. `git pull --rebase`. Read `current.json` + the `blocked` card, including every `## Attempt N`
-   note and the latest `verify:` failure / review rejection.
+   note and the latest `verify:` failure / review rejection. The card may be a **synthetic
+   `*-integration` incident card** that `pipeline-review` created for a cross-card full-suite failure
+   with no single owner — it has no frozen test/`spec-rev`, just the failing-suite evidence; treat it as
+   a valid `blocked` target (see the integration branch in step 3).
 2. Resolve `hunt` slot; verify installed (else STOP).
 3. **hunt** to confirm the ROOT CAUSE (not symptoms). Classify it:
    - **Card too big / not atomic** ⇒ re-split: hand back to **pipeline-task** to break it down.
@@ -26,6 +29,11 @@ especially "used to work / can't fix it after N tries").
      informed with a fresh budget — hunt is the deliberate human-relayed diagnosis, NOT a blind retry,
      and the new findings make this a genuinely new attempt; without the reset a requeued card re-blocks
      on its first fail (`attempts` was already at the `>= 3` threshold). The card is the only memory.
+   - **Cross-card integration failure** (a synthetic `*-integration` incident card) ⇒ the cards each pass
+     alone but break together. Diagnose the interaction, write findings into the incident card, and hand
+     back to **pipeline-task** to author a proper fix (a new card with its own frozen test, or re-freeze
+     the implicated cards) — the integration gap needs a real spec, not a blind re-queue. The incident
+     card is a diagnostic handle, not an impl card; it stays `blocked` once superseded by the fix card(s).
 4. Write the root-cause findings into the card **and append your handoff to `journal.md`** (CONTRACT
    §Run journal). Commit both **once**.
 5. **Print the handoff** to whichever command the classification chose (task / impl) (already journaled
