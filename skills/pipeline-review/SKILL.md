@@ -86,3 +86,8 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 - Never force-push; deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
+- **The verdict you post to chat must be plain text the human can copy** — short bullets, **NO markdown
+  tables, NO ATX headings (`#`)**. Some chat bridges render tables/rich markdown as an *image*, which the
+  human cannot select, copy, or relay to the next node (only screenshot — lossy). Lead with the verdict
+  (approve / changes-requested) + each finding as `file:line — one line`; put any detailed table only in
+  `review-NN.md` / the forge PR comment (git is the durable record), never in the chat verdict.
