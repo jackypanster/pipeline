@@ -38,7 +38,10 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    review.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see.
-5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings). Commit.
+5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings) **and append a `journal.md`
+   entry** (CONTRACT §Run journal — `status=review`, the verdict + "awaiting human confirm"). **Commit
+   both together** — so this durable commit is explained by the journal, never orphaned (the merge→done
+   or reject disposition appends its own later entry).
 6. **Approved** ⇒ ask the operator to confirm. **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite

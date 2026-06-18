@@ -6,10 +6,13 @@ swappable skill. Forge-agnostic, machine-agnostic, human-relayed, no scheduler.
 
 ## Core principle: skills reason, the shim does I/O
 
-The aggregated skills are **reasoning/interview engines** — they do not write the artifacts. Writing
-`PRD.md` / the red test / the review report, running the freeze gate, opening a PR, committing — all
-of that is the **shim's** contract, never assumed of the skill. (Verified: `think` is explicitly
-"No code"; `grill-me` only interviews.)
+The aggregated skills are **reasoning/interview engines** — as a rule they do not write the artifacts.
+Writing `PRD.md` / the red test / the review report, running the freeze gate, opening a PR, committing —
+all of that is the **shim's** contract, never assumed of the skill. (Verified: `think` is explicitly
+"No code"; `grill-me` only interviews.) The one **exception** is `grill-with-docs` (arch), which lands
+`CONTEXT.md`/ADRs inline by design — even then commit/journal/write-set enforcement stays the shim's;
+only those files' authorship is the skill's. So the precise invariant is **the shim owns commit +
+journal + handoff + write-set enforcement**, not "no skill ever writes a file".
 
 Each command body (~20 lines):
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →

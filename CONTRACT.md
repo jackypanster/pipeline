@@ -15,7 +15,11 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    `pipeline-prd` ⇒ create it. Missing + any other command ⇒ STOP, ask the operator.
 4. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot. Verify the named skill is
    installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
-5. **Invoke that skill** — it does the REASONING/interview. It does NOT write files.
+5. **Invoke that skill** — it does the REASONING/interview; as a rule it does NOT write files (the shim
+   owns I/O). **Sanctioned exception:** `grill-with-docs` (arch) lands `CONTEXT.md`/ADRs **inline** by
+   design — even then the shim owns staging/commit/journal/write-set enforcement; only those files'
+   authorship is the skill's. The precise invariant is "**the shim owns commit + journal + handoff +
+   write-set enforcement**", not "no skill ever writes a file".
 6. **Write only within your stage's declared write-set** (see *State authority & write-sets* below) —
    the I/O is YOURS, not the skill's — **and append your composed handoff block as an entry to
    `.pipeline/<feature>/journal.md`** (it is part of your metadata write-set — see *Run journal*).
