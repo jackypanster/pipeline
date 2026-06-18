@@ -31,6 +31,11 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
 `status: todo → in-progress → review → done`; `blocked` = terminal.
 `attempts` starts at 0; on any failure or review rejection `attempts++`; `attempts >= 3 ⇒ blocked`,
 and a `blocked` card routes to `pipeline-hunt`, never blind retry.
+**A review rejection (freeze-gate or semantic) sends the offending card `review → todo`** — the retry
+edge, so `pipeline-impl` (which picks the oldest `todo`) has an actionable target — or `→ blocked` at
+`attempts >= 3`. Without this flip a rejected feature leaves every card at `review` and impl has nothing
+to pick. (This completes the already-implied "reject routes to impl" semantics; the `>= 3 ⇒ blocked`
+circuit-breaker is unchanged.)
 **Only `pipeline-review` merges**, and only after an explicit human confirm.
 **Never force-push; never delete anything beyond a task's own branch; never touch another card.**
 
