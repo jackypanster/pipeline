@@ -13,7 +13,7 @@ of that is the **shim's** contract, never assumed of the skill. (Verified: `thin
 
 Each command body (~20 lines):
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
-write only your stage's declared write-set + commit → print handoff`.
+write only your stage's declared write-set + commit → append handoff to journal.md → print handoff`.
 
 ## Commands
 
@@ -43,8 +43,9 @@ command verifies every slot resolves to an installed skill (hard gate — no sil
 
 ```
 .pipeline/
-  current.json              {repo, branch, pr?, feature, stage}   # single pointer
+  current.json              {repo, branch, pr?, feature, stage}   # fast cache (journal tail is authoritative)
   <feature>/
+    journal.md              append-only run log — one entry per completed stage
     PRD.md  arch.md  CONTEXT.md  docs/adr/*.md
     tasks/NN.md             frontmatter: status / attempts / verify / spec-paths / impl-paths / spec-rev
     reviews/review-NN.md
@@ -54,6 +55,16 @@ Status machine: `todo → in-progress → review → done`; `blocked` terminal; 
 `>=3 ⇒ blocked ⇒ pipeline-hunt`. A context-less bot rebuilds full state from `git pull` +
 `current.json` + a card scan. One feature in flight at a time (the human serializes; `current.json`
 is a single pointer by design).
+
+**Why a journal (append-only).** The handoff string below is the only artifact that was never on git —
+it lived in chat, so a dead chat lost the one thing a cold node most needs (next command + gotchas +
+steps). `journal.md` persists every stage's handoff as an append-only entry. The pattern is the
+convergent one across durable-execution systems (Temporal event history, LangGraph checkpoints,
+12-factor-agents' event log): **the append-only log is the source of truth; the live position is a fold
+over its tail, never a separately stored "current stage".** We take the minimal subset — persist the
+handoff we already produce, derive position from the tail — and skip replay/determinism (an LLM cannot
+replay deterministically) and any scheduler (still human-relayed). `current.json.stage` stays only as a
+fast bootstrap cache; on disagreement the journal tail wins.
 
 ## Handoff string (human copies to the next bot)
 

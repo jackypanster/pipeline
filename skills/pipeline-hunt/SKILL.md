@@ -24,7 +24,8 @@ especially "used to work / can't fix it after N tries").
    - **Genuinely hard but well-scoped** ⇒ append the root-cause findings to the card, reset to
      `status: todo` so the next impl run starts informed (the card is the only memory).
 4. Write the root-cause findings into the card. Commit.
-5. Print the handoff to whichever command the classification chose (task / impl), with the cause +
+5. **Append the journal entry** (CONTRACT §Run journal — same commit as step 4), then **print the handoff**
+   to whichever command the classification chose (task / impl), with the cause +
    the decision in the `do:` line.
 
 ## Hard rules

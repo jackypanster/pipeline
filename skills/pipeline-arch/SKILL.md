@@ -30,7 +30,8 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
    grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Set `current.json.stage: arch` (most-recently-
    completed = arch). `git add` those artifacts **+ `current.json`**, commit, push.
-5. Print the handoff to **pipeline-task**: `do: decompose into atomic cards, write a red test per card`.
+5. **Append the journal entry** (CONTRACT §Run journal — same commit as step 4), then **print the handoff**
+   to **pipeline-task**: `do: decompose into atomic cards, write a red test per card`.
 
 ## Hard rules
 - HITL stage — ask the human on blocking ambiguity, wait. Don't invent domain terms; ground them.

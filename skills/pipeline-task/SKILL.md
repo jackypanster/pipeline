@@ -35,7 +35,8 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
       `current.json.stage: task`. `git add` the card **+ `current.json`** (metadata only — **never the
       test / `spec-paths`**), commit.
    Push to `main` (queue authoring, distinct from the only-reviewer-merges rule).
-7. Print the handoff to **pipeline-impl** per CONTRACT §handoff — point at the card + arch.md + CONTEXT.md,
+7. **Append the journal entry** (CONTRACT §Run journal — rides the step-6b record commit), then **print the
+   handoff** to **pipeline-impl** per CONTRACT §handoff — point at the card + arch.md + CONTEXT.md,
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put
    the freeze-coverage note in **Feature gotchas** so review knows what to scrutinize.
 

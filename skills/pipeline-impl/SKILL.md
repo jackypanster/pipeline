@@ -32,15 +32,17 @@ acceptance tests" is the cheap seam if needed).
    completed — stage = most-recently-completed). Opening the PR needs the repo's forge token (loaded per
    CONTRACT step 2 from `.env` etc.). If the token is absent, **do NOT fail** — push the branch + set
    `status: review` (+ `stage: impl`) on `main` anyway, and say in the handoff that the PR must be opened
-   manually (branch + base named). **Next-card routing:** if the feature still has any `status: todo` card,
+   manually (branch + base named). **Append the journal entry on `main`** (CONTRACT §Run journal — same
+   commit as the status flip). **Next-card routing:** if the feature still has any `status: todo` card,
    hand off to **pipeline-impl** for the next card (the same `feat/<feature>` branch/PR accumulates all
    cards). Only when NO `todo`/`in-progress` cards remain (every card is `status: review`) hand off to
    **pipeline-review** — review runs ONCE on the complete feature, never on a partial one.
 5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`; `attempts < 3` ⇒ back to `status: todo`
    (re-queue); `attempts >= 3` ⇒ `status: blocked`. **Leave `current.json.stage` unchanged** (impl did
-   NOT complete — keep the last completed stage, `task`). Either way print the handoff to
-   **pipeline-hunt** with the reason, and append a `## Attempt N` note to the card (the next run reads
-   only the card).
+   NOT complete — keep the last completed stage, `task`). Either way **append the journal entry**
+   (CONTRACT §Run journal — status `failed`/`blocked`, the dead-end is part of the run history) and
+   print the handoff to **pipeline-hunt** with the reason, and append a `## Attempt N` note to the card
+   (the next run reads only the card).
 
 ## Hard rules
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.

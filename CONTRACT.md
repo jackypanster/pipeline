@@ -19,7 +19,9 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
 6. **Write only within your stage's declared write-set** (see *State authority & write-sets* below) —
    the I/O is YOURS, not the skill's. `git add` only those paths, commit. Writing outside your
    write-set is a contract violation, symmetric to the freeze gate.
-7. **Print the handoff block** (below) and stop. The human relays it to the next bot.
+7. **Append your handoff as a journal entry** to `.pipeline/<feature>/journal.md` (append-only, in the
+   SAME trunk commit as your metadata), **then print** the block and stop. The human relays the printed
+   block to the next bot; the journal is what survives if the chat does not (see *Run journal* below).
 
 ## State machine (frozen — do not change)
 
@@ -33,8 +35,9 @@ and a `blocked` card routes to `pipeline-hunt`, never blind retry.
 
 ```
 .pipeline/
-  current.json            {repo, branch, pr?, feature, stage}   # single global pointer
+  current.json            {repo, branch, pr?, feature, stage}   # fast pointer (cache — journal tail is authoritative)
   <feature>/
+    journal.md            append-only run log — one entry per completed stage (see Run journal)
     PRD.md  arch.md  CONTEXT.md  docs/adr/*.md
     tasks/NN.md           frontmatter: status / attempts / verify / spec-paths / impl-paths / spec-rev
     reviews/review-NN.md
@@ -63,7 +66,10 @@ feature branch and make `spec-rev` a branch commit instead.
 **Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
 **most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
 merged) — a cold node reads it to see where the pipeline last left off; the *next* node to run is named
-in the handoff, not inferred from `stage`. Beyond `stage`, the artifact write-sets are:
+in the handoff, not inferred from `stage`. `current.json.stage` is a denormalized **cache** for fast
+bootstrap; the authoritative run position is the **tail entry of `journal.md`** — derive the live state
+from the tail, never trust a stored `stage` that disagrees with it. Beyond `stage`, the artifact
+write-sets are:
 
 | stage | write-set (may create/modify) | must NOT touch |
 |---|---|---|
@@ -75,6 +81,10 @@ in the handoff, not inferred from `stage`. Beyond `stage`, the artifact write-se
 
 The freeze gate is just the impl row enforced. Enforcement is a documented invariant + one
 `git diff --name-only` eyeball at review — NOT a hook, CI, or script.
+
+Every stage additionally **appends one entry to `journal.md`** (append-only metadata, same class as
+`current.json` — not gated, rides the metadata commit). This is universal, so it is omitted from the
+per-stage rows above.
 
 ## Test ownership (anti-cheat) — the spec-rev double-commit protocol
 
@@ -126,6 +136,37 @@ On failure: attempts++; >=3 ⇒ blocked ⇒ run pipeline-hunt.
 
 Carry artifact PATHS, never bodies — git is the bus. The "Your task" + "Feature gotchas" sections are
 what let a different LLM on a different bot execute this stage correctly with no shared memory.
+
+## Run journal — the handoff, persisted (append-only)
+
+The handoff block above is the **most load-bearing artifact in the pipeline** (it carries all cross-stage
+context to a cold node) and was the **only one not on git** — it lived solely in chat. `journal.md` fixes
+that: at step 7, before printing, **append your handoff to `.pipeline/<feature>/journal.md`**. This makes
+the run **resumable** (chat dies ⇒ read the tail), **auditable** (the append sequence IS the run history),
+and **orchestratable by anyone** (a human or another LLM reads the tail to take over).
+
+One entry per completed stage, appended (never edited or deleted — the git history is the audit trail):
+
+```
+## seq=N · <ISO8601 UTC> · <from-stage>→<to-stage> · <completed|failed|blocked> · by=<bot/LLM tag|?>
+done:   <1–3 lines: what this stage actually produced>
+output: <artifact path(s)>        # paths, never bodies — git is the bus
+--- handoff ---
+>>> NEXT
+…(the exact handoff block you print, verbatim)…
+<<< END
+```
+
+Rules:
+- **`seq`** — per-feature monotonic integer. Read the current tail, add 1 (first entry `seq=1`). It is
+  the run ordinal: "we are at step N".
+- **Append-only.** Never rewrite or delete a prior entry. A correction is a NEW entry, not an edit.
+- **Tail is authoritative.** The live position = the last entry's `to-stage` + its handoff `>>> NEXT`.
+  `current.json.stage` is only a fast cache; on any disagreement the journal tail wins.
+- **Resume protocol (cold start, chat gone):** `git pull --rebase` → open `journal.md` → read the LAST
+  entry → its handoff IS your briefing. `current.json` is a hint, the journal is the source.
+- A `failed`/`blocked` stage still appends an entry (status + the failure handoff to hunt) — the dead end
+  is part of the auditable history, not silently dropped.
 
 ## Forge adapter (review/merge only)
 
