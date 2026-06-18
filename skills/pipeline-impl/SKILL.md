@@ -40,12 +40,16 @@ acceptance tests" is the cheap seam if needed).
    hand off to **pipeline-impl** for the next card (the same `feat/<feature>` branch/PR accumulates all
    cards). Only when NO `todo`/`in-progress` cards remain (every card is `status: review`) hand off to
    **pipeline-review** — review runs ONCE on the complete feature, never on a partial one.
-5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`; `attempts < 3` ⇒ back to `status: todo`
-   (re-queue); `attempts >= 3` ⇒ `status: blocked`. **Leave `current.json.stage` unchanged** (impl did
-   NOT complete — keep the last completed stage, `task`). Either way **append a `## Attempt N` note to the
-   card and your handoff to `journal.md`** (CONTRACT §Run journal — status `failed`/`blocked`, the dead-end
-   is part of the run history), **commit both to `main`**, then print the handoff to **pipeline-hunt** with
-   the reason (the next run reads only the card).
+5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`. **Leave `current.json.stage` unchanged** (impl
+   did NOT complete — keep the last completed stage, `task`). Append a `## Attempt N` note to the card
+   **and your handoff to `journal.md`** (CONTRACT §Run journal), **commit both to `main`**. Then route by
+   the retry budget (CONTRACT state machine):
+   - **`attempts < 3`** ⇒ `status: todo` (re-queue), journal `status=failed`; print the handoff to
+     **pipeline-impl** to retry — the `## Attempt N` note is the informed-retry context (NOT a blind
+     retry; this is the intended retry budget). Hunt is for blocked cards only, so do NOT route here.
+   - **`attempts >= 3`** ⇒ `status: blocked`, journal `status=blocked`; print the handoff to
+     **pipeline-hunt** (root-cause before any re-queue — never blind retry).
+   (Either way the next run reads only the card.)
 
 ## Hard rules
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
