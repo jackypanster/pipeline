@@ -133,3 +133,18 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
    does not first establish the tree's shape — an open methodology gap, deferred.
 2. **`pipeline-learn`** (a research stage before arch for unfamiliar external dependencies) — add when
    a domain-unfamiliar requirement actually appears, not before.
+
+## Rejected
+
+- **A front-of-pipeline "research/discovery" node** (clarify-questions + OSS prior-art/build-vs-buy +
+  feasibility challenge + deploy-env survey). Evaluated and rejected. The clarify-questions half is
+  already `pipeline-prd` (`grill-me → think`, which also surveys the codebase first); the
+  feasibility-challenge half is already latent in `think`'s evaluation mode. The only genuinely-absent
+  piece, **OSS prior-art / build-vs-buy search, is rejected outright**: it requires live internet +
+  GitHub reachability and online quality-vetting of returned repos — a hard network dependency that
+  contradicts this pipeline's machine-agnostic, offline-self-contained, zero-external-service premise
+  (fails in air-gapped/intranet/non-IT-user contexts), and pushes a heavy quality-judgment burden onto
+  the earliest stage. Deployment-environment discovery for non-IT users is out of scope (this pipeline
+  ends at review→merge and owns no `deploy` stage); if it ever matters it belongs in a separate
+  `pipeline-deploy`/onboarding tool driven by a real deployment, not the front node. Net: no new stage,
+  no prd change.
