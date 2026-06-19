@@ -133,3 +133,21 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
    does not first establish the tree's shape — an open methodology gap, deferred.
 2. **`pipeline-learn`** (a research stage before arch for unfamiliar external dependencies) — add when
    a domain-unfamiliar requirement actually appears, not before.
+
+## Rejected
+
+- **A default, mandatory, front-of-pipeline "research/discovery" stage** (clarify-questions + OSS
+  prior-art/build-vs-buy + feasibility challenge + deploy-env survey). Rejected as a *required stage* —
+  not the underlying lookups. Clarify-questions is already `pipeline-prd` (`grill-me → think`, which
+  surveys the codebase first); feasibility-challenge and official-solution/OSS lookup are already latent
+  in `think` (its "check for official solutions first" + evaluation modes) and would also fit a future
+  `pipeline-learn` — they should fire **only when a specific requirement warrants it, never as a hard
+  pipeline dependency**. A mandatory online OSS-search gate fails *closed* in air-gapped/intranet/non-IT
+  contexts; the forge adapter is different — it uses `gh`/`gitee-cli` only when a forge exists and
+  otherwise degrades *open* to a plain `git diff`, so optional fail-open network is in-contract while a
+  mandatory fail-closed network stage is not. It also loads heavy OSS quality-vetting onto the earliest
+  stage and adds a position to the otherwise-frozen state machine for a one-feature pipeline.
+  Deployment-environment discovery for non-IT users is out of scope (this pipeline ends at review→merge
+  and owns no `deploy` stage); if it ever matters it belongs in a separate `pipeline-deploy`/onboarding
+  tool driven by a real deployment. Net: no new stage, no prd change; OSS/build-vs-buy stays an
+  opportunistic `think`/`pipeline-learn` capability, not a gate.
