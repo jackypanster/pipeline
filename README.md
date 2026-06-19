@@ -2,7 +2,7 @@
 
 Agent-facing skill collection. Consumers are LLM/agents, not humans — read [CONTRACT.md](CONTRACT.md).
 
-**What:** a forge-agnostic, machine-agnostic dev pipeline as 6 thin command-skills over a git+md
+**What:** a forge-agnostic, machine-agnostic dev pipeline as 7 thin command-skills over a git+md
 state bus. Human-relayed (no scheduler); each command prints a handoff the operator copies to the
 next bot. The only durable asset is the orchestration contract; the skill behind each command is a
 swappable `roles.yaml` slot.
@@ -11,7 +11,7 @@ swappable `roles.yaml` slot.
 
 - `CONTRACT.md` — frozen protocol every command follows: shim loop · state machine · anti-cheat · handoff · forge adapter.
 - `roles.yaml` — per-target-repo slot→skill bindings (copy into the target repo's `.pipeline/`).
-- `skills/pipeline-*/SKILL.md` — the 6 command shims.
+- `skills/pipeline-*/SKILL.md` — the 7 command shims.
 
 | command | slot → skill | in → out |
 |---|---|---|

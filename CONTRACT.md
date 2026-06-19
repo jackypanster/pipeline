@@ -114,8 +114,8 @@ write-sets are:
 | review | `reviews/*`, card `status`→done | any product code (it merges, never authors) |
 | hunt | the routed **target** only — the blocked card (its body / `status` / `attempts`) OR the `reviews/integration-NN.md` report (append findings) | product code, unrelated cards, unrelated reviews |
 
-The freeze gate is just the impl row enforced. Enforcement is a documented invariant + one
-`git diff --name-only` eyeball at review — NOT a hook, CI, or script.
+The freeze gate is just the impl row enforced. Enforcement is a documented invariant + the
+deterministic two-commit diff `pipeline-review` runs (see §Test ownership) — NOT a hook, CI, or script.
 
 `hunt` on a **report target** appends findings to `reviews/integration-NN.md` but must **NOT flip any card
 status** (there is no card on that path) — `pipeline-task` authors the real fix card/spec afterward. On a

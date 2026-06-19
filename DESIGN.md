@@ -133,4 +133,3 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
    does not first establish the tree's shape — an open methodology gap, deferred.
 2. **`pipeline-learn`** (a research stage before arch for unfamiliar external dependencies) — add when
    a domain-unfamiliar requirement actually appears, not before.
-3. Skills are not yet scaffolded; this repo currently holds the contract only.
