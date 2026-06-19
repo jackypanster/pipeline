@@ -33,8 +33,9 @@ repo references are intentional so it works from any project):
 > machine-agnostic, LLM-agnostic agent dev pipeline whose only durable asset is a git+markdown state
 > bus under `.pipeline/`.**
 >
-> **How it works.** All work flows through staged commands `pipeline-prd → arch → task → impl →
-> review`, plus `pipeline-hunt` for blocked cards. Each command is a ~20-line shim that does the same
+> **How it works.** All work flows through staged commands `pipeline-prd → pipeline-arch →
+> pipeline-task → pipeline-impl → pipeline-review`, plus `pipeline-hunt` for blocked cards. Each
+> command is a ~20-line shim that does the same
 > loop: `git pull --rebase` → read `.pipeline/current.json` + the feature's `journal.md` → resolve the
 > stage's skill via `.pipeline/roles.yaml` → invoke that skill (it *reasons*; the shim owns all I/O) →
 > write only its stage's write-set → append one entry to `.pipeline/<feature>/journal.md` → commit once
