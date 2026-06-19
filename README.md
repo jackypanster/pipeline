@@ -18,7 +18,7 @@ swappable `roles.yaml` slot.
 | pipeline-prd | grill-me → think | rough idea → `PRD.md` |
 | pipeline-arch | grill-with-docs | PRD → `arch.md` + `CONTEXT.md` + ADRs |
 | pipeline-task | think | arch → atomic cards + frozen red test |
-| pipeline-impl | goal | card → green + PR (zero spec tests) |
+| pipeline-impl | goal-driven-implementation | card → green + PR (zero spec tests) |
 | pipeline-review | check | diff/PR → review + merge (only stage that merges) |
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
