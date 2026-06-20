@@ -186,6 +186,7 @@ Run pipeline-<next> on a FRESH session (assume you know nothing — rebuild from
 repo=<url> branch=<branch> pr=<url|none>
 First: git pull --rebase; load repo config (.env if present, per CONTRACT step 2).
 Read for context (before acting):
+  - <repo>/AGENTS.md|CLAUDE.md (if present) — repo-wide project conventions (read FIRST; some runtimes don't auto-read it, so the handoff makes injection explicit + portable)
   - <path/PRD.md>      — what
   - <path/arch.md>     — how / component boundaries / data flow
   - <path/CONTEXT.md>  — domain glossary + conventions
