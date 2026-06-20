@@ -120,6 +120,17 @@ this file; commands carry no logic of their own.
 split (OpenSpec). **Rejected:** spec-kit's `specify` CLI / templates / constitution machinery;
 heavy multi-subagent runtimes. We ship N markdown skill files — no CLI, no DB, no scheduler.
 
+**Borrowed (Trellis):** spec auto-injection, reduced to pipeline's idiom — the handoff's "Read for
+context" cites the target repo's existing agent-doc (`AGENTS.md`/`CLAUDE.md`), reusing pipeline's own
+injection channel; no new `.trellis/spec` tree, no new stage, no new file. **Rejected (Trellis):** the
+`trellis init` multi-platform CLI (same `no-CLI` rule as spec-kit's `specify`; install is already
+`cp` + one Hermes line); the `.trellis/spec/` multi-file convention tree (a second convention source
+that drifts from the agent-doc — revisit only when the agent-doc can't hold it); per-developer
+`workspace/` parallel journals (violates one-feature-in-flight); `update-spec` auto-promotion
+(deferred — payoff needs many features re-hitting the same convention; until a real signal, a learning
+goes via an opportunistic `SKILL-PROPOSAL` + human-applied edit, the existing §Self-improvement path,
+not a built-in mechanism).
+
 ## Constraints
 
 No cron (human relays) · not coupled to any machine · LLM-agnostic (reasoning commands want a
