@@ -20,48 +20,27 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
 4. For each card, **write the failing red test** into `spec-paths:` (happy path + key errors/boundaries,
    ~3–5 assertions — appropriate, not 100% coverage). The test must compile and **FAIL** now (a green
    "spec" is a no-op). Do NOT write the card yet — the card is a separate commit (step 6b).
-5. **Freeze-coverage check.** Can the *meaningful* correctness test live in `spec-paths:`? Some test
-   architectures can't freeze it — e.g. a **pure binary crate** (no `lib.rs`): `tests/` can only
-   black-box-invoke the binary, so unit/formatter correctness lives **inline in `src/`** (= `impl-paths`,
-   coder-owned, not frozen). When that happens the freeze gate only protects the **CLI/black-box
-   contract**, not the core logic. Note what the frozen test covers vs **what pipeline-review must verify
-   by reading** (e.g. "frozen: `--help`/CLI contract; review must read: formatter output logic + inline
-   tests") — you record it in the card's `## Freeze coverage` section in step 6b.
+5. **Freeze-coverage check** (CONTRACT §Freeze coverage): can the meaningful correctness test live in
+   `spec-paths:`? If not (e.g. binary-only crate), record what IS frozen vs what review must verify by
+   reading, in the card's `## Freeze coverage` section (step 6b).
 6. **Freeze the spec in TWO ordered commits to `main`** (CONTRACT §spec-rev double-commit protocol).
    NEVER mix the test and the card in one commit — that breaks the freeze the gate relies on:
    a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s) for **ALL the feature's cards**,
-      commit **once**. Its sha = the **feature's single `spec-rev`** that every card records — one commit
-      for the whole feature, NOT per-card (per-card freezes make a shared test file falsely trip an
-      earlier card's freeze gate; CONTRACT §Test ownership).
+      commit **once**. Its sha = the **feature's single `spec-rev`** recorded by every card. One commit
+      for the whole feature, NOT per-card — see CONTRACT §Test ownership for the shared-file mis-flag.
    b. **Record commit** — now write **every card's** `.pipeline/<feature>/tasks/NN.md` frontmatter
       (`status: todo`, `attempts: 0`, `verify: [<build cmd>, <test cmd>]`, `spec-paths`, `impl-paths`
       — disjoint from `spec-paths` — `spec-rev: <the shared sha from 6a>`) + any `## Freeze coverage`
       note, set `current.json.stage: task`, and **append your handoff to `journal.md`**. `git add` the
       cards **+ `current.json` + `journal.md`** (metadata only — **never the test / `spec-paths`**), commit.
-      **`<test cmd>` MUST be card-scoped** — run only THIS card's frozen test(s) (a test-name filter
-      `cargo test smoke_login_help` / `pytest -k` / `go test -run`, or a dedicated test file), **never the
-      whole suite** (CONTRACT §State authority): all cards are frozen RED up front, so a full-suite
-      `verify` can never go green while sibling cards are still red. The full suite is review's gate, not
-      the card's — so **also set `current.json.full-verify`** = `[<build cmd>, <whole-suite test cmd>]`
-      (the UNFILTERED runner, e.g. `["cargo build", "cargo test"]`) once for the feature, so
-      `pipeline-review` runs its integration gate from an exact recorded command, never a guess.
-   Push to `main` (queue authoring, distinct from the only-reviewer-merges rule).
+      `verify` MUST be card-scoped (test-name filter or dedicated file) and you MUST also set
+      `current.json.full-verify` (the unfiltered whole-suite runner) — both defined in CONTRACT
+      §State authority (card-scoped verify + full-verify).
 
-   **Initial authoring vs re-freeze.** Steps 4–6 — and the `status: todo` / `attempts: 0` defaults in 6b
-   — are for **initial authoring** (creating the cards). If you were re-routed here to **re-freeze a
-   wrong spec** (review/hunt named the offending target), it is NOT initial authoring: make a NEW single
-   freeze commit for the corrected test(s) and update **only `spec-rev`** on every card to the new sha.
-   **Preserve each card's existing `status` / `attempts` / `verify` / `impl-paths` / `## Freeze coverage`** —
-   change other fields ONLY on the card(s) the handoff names as re-spec'd. **NEVER blanket-reset siblings
-   to `todo` / `0`** — that destroys in-flight state (a card mid-impl or in review would silently restart).
-
-   **Append-card (third mode).** If re-routed here to **add a card to an in-flight feature** (hunt routes
-   an integration fix, or a new sub-task surfaced), it is a **re-freeze variant**: write the new card's
-   red test, make a NEW single freeze commit covering the **whole feature** (new shared `spec-rev`),
-   **create ONLY the new card** (`status: todo`, `attempts: 0`), and **preserve every existing card's
-   `status` / `attempts` / `verify` / `impl-paths`** (their `spec-rev` updates to the new sha; nothing
-   else). Both this and re-freeze advance trunk's spec under the in-flight branch, so the impl handoff
-   MUST say **rebase `feat/<feature>` onto trunk + force-push** first (CONTRACT §State authority).
+   **Re-freeze / append-card** (re-routed by review/hunt): NOT initial authoring. Which fields to
+   preserve on siblings, when to reset vs keep, and the trunk-rebase handoff — all defined in CONTRACT
+   §Test ownership (re-freeze + append-card variant). Task action: make a NEW freeze commit (whole
+   feature), update `spec-rev` on every card, create ONLY the new/changed card per the handoff.
 7. **Print the handoff** to **pipeline-impl** per CONTRACT §handoff (already journaled in step 6b) —
    point at the card + arch.md + CONTEXT.md,
    give concrete steps (pick card, branch, make verify green, don't touch spec-paths, open PR), and put

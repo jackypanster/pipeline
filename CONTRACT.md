@@ -171,6 +171,18 @@ card's red test (new shared `spec-rev` on every card), **create ONLY the new car
 re-freeze and append-card advance trunk's spec under any in-flight branch, so the handoff to impl must
 say **rebase `feat/<feature>` onto trunk + force-push** before continuing (see *State authority*).
 
+## Freeze coverage (recorded on the card, read by review)
+
+`spec-paths` can only freeze a testable surface. Some architectures cannot freeze the meaningful
+correctness test — e.g. a **pure binary crate** (no `lib.rs`): `tests/` can only black-box-invoke the
+binary, so formatter/utility logic lives inline in `src/` (= `impl-paths`, coder-owned, NOT frozen).
+In that case the freeze gate protects only the **CLI/black-box contract**, not the core logic.
+
+`pipeline-task` records what IS frozen vs what `pipeline-review` must verify **by reading**, in the
+card's `## Freeze coverage` section (e.g. "frozen: `--help`/CLI contract; review must read: formatter
+output logic + inline tests"). `pipeline-review` reads it to decide what to scrutinize beyond the
+deterministic gate.
+
 ## Handoff block — a self-contained briefing for a COLD next node
 
 **The next node is a FRESH session — possibly a different TG bot / different frontier LLM — with ZERO
