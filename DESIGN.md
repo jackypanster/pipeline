@@ -16,7 +16,7 @@ journal + handoff + write-set enforcement**, not "no skill ever writes a file".
 
 Each command body (~20 lines):
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
-write your stage's write-set + append handoff to journal.md → commit (one) → print handoff`.
+write your stage's write-set + append handoff to journal.md → commit (one) → push → print handoff`.
 
 ## Commands
 

@@ -39,7 +39,7 @@ repo references are intentional so it works from any project):
 > loop: `git pull --rebase` → read `.pipeline/current.json` + the feature's `journal.md` → resolve the
 > stage's skill via `.pipeline/roles.yaml` → invoke that skill (it *reasons*; the shim owns all I/O) →
 > write only its stage's write-set → append one entry to `.pipeline/<feature>/journal.md` → commit once
-> → print a self-contained handoff for the next (cold, possibly different-LLM) node. There is **no
+> → git push → print a self-contained handoff for the next (cold, possibly different-LLM) node. There is **no
 > shared memory, no scheduler, no DB**: a human relays the printed handoff between bots, and any agent
 > rebuilds full state from `git pull` alone.
 >
