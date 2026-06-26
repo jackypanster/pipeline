@@ -43,7 +43,7 @@ especially "used to work / can't fix it after N tries").
 4. Write the root-cause findings into **your target** — if it is a blocked **card**, update/reset it per
    the step-3 classification (e.g. `status: todo` + `attempts: 0`); if it is a **`reviews/integration-NN.md`
    report**, append the findings there and **do NOT flip any card status** (there is no card). Either way
-   **append your handoff to `journal.md`** (CONTRACT §Run journal). Commit both **once**.
+   **append your handoff to `journal.md`** (CONTRACT §Run journal). Commit both **once** (the shim loop pushes).
 5. **Print the handoff** to whichever command the classification chose (task / impl) (already journaled
    in step 4), with the cause + the decision in the `do:` line.
 

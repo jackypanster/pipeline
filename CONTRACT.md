@@ -24,8 +24,12 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    the I/O is YOURS, not the skill's — **and append your composed handoff block as an entry to
    `.pipeline/<feature>/journal.md`** (it is part of your metadata write-set — see *Run journal*).
    `git add` those paths **+ `journal.md`**, commit **once** (the journal entry rides this same commit —
-   never a separate/orphan commit, never an amend). Writing outside your write-set is a contract
-   violation, symmetric to the freeze gate.
+   never a separate/orphan commit, never an amend), **then `git push` your commit(s) to the remote.**
+   The push is load-bearing, not optional — it is the other half of step 1's `git pull`: the next node is
+   a COLD session that rebuilds all state from `git pull` and shares no memory with you, so an un-pushed
+   local commit is invisible and the next command sees no card / a stale spec. (Metadata commits straight
+   to trunk as a fast-forward append; never force-push trunk — see *State machine*.) Writing outside your
+   write-set is a contract violation, symmetric to the freeze gate.
 7. **Print the handoff block** (already persisted to the journal in step 6) and stop. The human relays
    the printed block to the next bot; the journal is what survives if the chat does not (see *Run
    journal* below).
