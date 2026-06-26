@@ -29,7 +29,7 @@ files; YOU write the PRD.
 4. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, the
    resolved decisions. Agent-first (dense, no filler). Set `current.json.stage: prd` (most-recently-
    completed = prd). **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` `PRD.md`
-   **+ `current.json` + `journal.md`** (this stage created/seeded them), commit **once**, push.
+   **+ `current.json` + `journal.md`** (this stage created/seeded them), commit **once** (the shim loop pushes).
 5. **Print the handoff** to **pipeline-arch** (already journaled in step 4; per CONTRACT.md §handoff):
    repo, branch, artifact path, `do: read PRD.md, grill the architecture against the codebase`.
 

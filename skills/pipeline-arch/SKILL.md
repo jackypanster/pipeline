@@ -31,7 +31,7 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
    grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Set `current.json.stage: arch` (most-recently-
    completed = arch). **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` those
-   artifacts **+ `current.json` + `journal.md`**, commit **once**, push.
+   artifacts **+ `current.json` + `journal.md`**, commit **once** (the shim loop pushes).
 5. **Print the handoff** to **pipeline-task** (already journaled in step 4):
    `do: decompose into atomic cards, write a red test per card`.
 
