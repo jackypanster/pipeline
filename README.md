@@ -60,6 +60,15 @@ repo references are intentional so it works from any project):
 > any `.pipeline/`-bearing checkout as a single `board.html` — feature stage flow, card lanes, and the
 > run-journal timeline (who ran each stage, what transitioned, what failed, what's next), with a
 > feature-level blocked banner. It never writes to the observed repo.
+>
+> **To auto-advance the `impl` loop (optional):** instead of hand-relaying each `impl` card, the
+> repetitive `impl` multi-card loop can be run by
+> [`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver) — a deterministic,
+> **human-operated** loop (**an agent cannot run it unattended**: its GATE 1 blocks on a human reading the
+> frozen red test and echoing its `spec-rev`) that runs `pipeline-impl` on a cheap model and **HALTS at
+> every gate** (it never merges; the human runs `pipeline-review`). It is the human-operated write-side
+> twin of the dashboard, scoped to `impl` ONLY. Every other stage stays human-relayed — **do not build any
+> other scheduler**; the pipeline deliberately has none (see `DESIGN.md`).
 
 ## Install (agent: execute this; it is written for you, not a human)
 
