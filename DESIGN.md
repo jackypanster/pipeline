@@ -133,7 +133,12 @@ not a built-in mechanism).
 
 ## Constraints
 
-No cron (human relays) · not coupled to any machine · LLM-agnostic (reasoning commands want a
+No cron, no scheduler in the contract (human relays) — an OPTIONAL external driver (`pipeline-driver`,
+the write-side twin of the read-only `pipeline-dashboard`) MAY auto-advance only the `impl` multi-card
+loop on a cheap model and STOPS before the review/merge gate, which stays human-run (the merge itself is
+a human step; trunk may additionally be protected against force-push/deletion server-side where the plan
+allows); the contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
+any machine · LLM-agnostic (reasoning commands want a
 frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new
 ~20-line shim + one `roles.yaml` line + the prior command's handoff naming it (e.g. `deploy`, `test`,
 `learn` for unfamiliar-domain research).
