@@ -149,6 +149,18 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
    does not first establish the tree's shape — an open methodology gap, deferred.
 2. **`pipeline-learn`** (a research stage before arch for unfamiliar external dependencies) — add when
    a domain-unfamiliar requirement actually appears, not before.
+3. **Feature-level impl-loop budget ceiling** — the loop-engineering canon (`WHEN TO STOP` is a
+   mandatory loop-charter field; every loop needs a budget ceiling) wants a stop condition above the
+   per-card `attempts >= 3` breaker: impl's next-card routing auto-advances `card→card` with no
+   feature-level bound on cumulative attempts/cost. **Not added:** under the default human-relay mode the
+   operator IS the per-card ceiling; the only unbounded path is the **optional, not-yet-used
+   `pipeline-driver`** unattended loop — no real runaway signal exists, so adding a mechanism now would
+   violate the ratchet ("every line traces to a specific failure"). **Add when** the driver is first run
+   unattended across ≥N cards past a single freeze gate (no per-card human checkpoint), OR a real
+   cost-overrun is recorded in a `journal.md` entry — then specify it as a driver-honored clause in
+   §Constraints: halt-and-report-to-human (route=human, NOT hunt — no single owner) when the feature's
+   cumulative impl `attempts` (computed from the journal — evidence, not estimate) crosses
+   `current.json.impl-budget`. Not before.
 
 ## Rejected
 
