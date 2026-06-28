@@ -7,8 +7,10 @@ description: "Pipeline stage 4 — implement one task card: make its frozen red 
 
 Stage 4. Follow the **shim loop in CONTRACT.md** with slot = `impl`.
 
-**Skill:** `impl` slot resolves to **`goal-driven-implementation`** (the Hermes skill that drives the
-`/goal` autonomous loop) — think→design-tests→code→check. Note the slot value in `roles.yaml` is the
+**Skill:** `impl` slot resolves to **`goal-driven-implementation`** — an autonomous
+think→design-tests→code→check loop. The pipeline is runtime-agnostic: bind whichever implementation
+your agent provides in `roles.yaml` — Hermes's `goal-driven-implementation` (drives its `/goal` loop),
+Claude's `goal-driven-impl-claude` twin, or any equivalent. Note the slot value in `roles.yaml` is the
 real skill name `goal-driven-implementation`, not the bare word "goal". It writes
 **white-box tests in `impl-paths:` (allowed)**; it must NOT create or edit anything under
 `spec-paths:`. Constrain it accordingly (a `/subgoal` "do not touch spec-paths; do not author

@@ -34,7 +34,7 @@ write your stage's write-set + append handoff to journal.md → commit (one) →
 prd:    [grill-me, think]
 arch:   grill-with-docs
 task:   think
-impl:   goal-driven-implementation   # drives the Hermes /goal loop
+impl:   goal-driven-implementation   # autonomous think→code→check loop (e.g. Hermes /goal, or Claude's goal-driven-impl-claude twin)
 review: check
 hunt:   hunt
 ```
@@ -124,7 +124,7 @@ heavy multi-subagent runtimes. We ship N markdown skill files — no CLI, no DB,
 context" cites the target repo's existing agent-doc (`AGENTS.md`/`CLAUDE.md`), reusing pipeline's own
 injection channel; no new `.trellis/spec` tree, no new stage, no new file. **Rejected (Trellis):** the
 `trellis init` multi-platform CLI (same `no-CLI` rule as spec-kit's `specify`; install is already
-`cp` + one Hermes line); the `.trellis/spec/` multi-file convention tree (a second convention source
+`cp` + one runtime-registration line); the `.trellis/spec/` multi-file convention tree (a second convention source
 that drifts from the agent-doc — revisit only when the agent-doc can't hold it); per-developer
 `workspace/` parallel journals (violates one-feature-in-flight); `update-spec` auto-promotion
 (deferred — payoff needs many features re-hitting the same convention; until a real signal, a learning
