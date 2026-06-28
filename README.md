@@ -78,7 +78,8 @@ You are an agent installing this collection on your runtime. Do it once, then ve
 # 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
 git clone https://github.com/jackypanster/pipeline.git ~/workspace/pipeline   # or: git -C ~/workspace/pipeline fetch && git reset --hard origin/main
 
-# 2. Install the command shims into the runtime that will RUN them:
+# 2. Install the command shims into the runtime that will RUN them (any capable agent — Claude,
+#    Hermes, pi, codex, openclaw, …; two examples below):
 #    Claude Code:
 cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 #    Hermes: add "~/workspace/pipeline/skills" to skills.external_dirs (a YAML LIST item — NOT a
@@ -100,7 +101,7 @@ its command. **Check every one; install any that is missing from its source:**
 | `hunt` | hunt | Waza (`skills/hunt`) |
 | `grill-me` | prd | `github.com/mattpocock/skills` (`skills/productivity/grill-me`) |
 | `grill-with-docs` | arch | `github.com/mattpocock/skills` (`skills/engineering/grill-with-docs`) |
-| `goal-driven-implementation` | impl | your Hermes runtime's `hermes-skills` (`devops/goal-driven-implementation`) |
+| `goal-driven-implementation` / `goal-driven-impl-claude` | impl | your runtime's autonomous-coding loop — Hermes `hermes-skills` (`devops/goal-driven-implementation`) **or** Claude's `goal-driven-impl-claude` twin (bind the one your runtime has) |
 
 **Check procedure:** for each skill, confirm it loads on the runtime (list installed skills, or try to
 `skill_view` it). Missing ⇒ install from its source into that runtime's skill dir ⇒ re-check.
