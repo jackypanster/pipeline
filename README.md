@@ -31,7 +31,9 @@ repo references are intentional so it works from any project):
 
 > **This project is developed via the `pipeline` + `pipeline-dashboard` toolchain — a forge-agnostic,
 > machine-agnostic, LLM-agnostic agent dev pipeline whose only durable asset is a git+markdown state
-> bus under `.pipeline/`.**
+> bus under `.pipeline/`. Any capable agent runs its commands — Hermes, Claude, pi, codex, openclaw, … —
+> and a different agent/LLM may run each stage (reasoning stages want a frontier model; `impl` tolerates
+> a capable local LLM).**
 >
 > **How it works.** All work flows through staged commands `pipeline-prd → pipeline-arch →
 > pipeline-task → pipeline-impl → pipeline-review`, plus `pipeline-hunt` for blocked cards. Each
