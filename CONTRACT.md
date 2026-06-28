@@ -266,6 +266,14 @@ Keyed on `git config --get remote.origin.url`:
 - **gitee** → `gitee-cli` against the instance's PR API
 - **anything else / no forge** → `git fetch && git diff base..branch`
 
+The PR is the **preferred** review surface (auditable thread + clean merge gate); where no forge
+exists, the `git diff base..branch` review is its **sanctioned equivalent** — the same gate still holds
+(semantic review + freeze gate + full-suite green + human-confirmed, only-`pipeline-review`-merges).
+This fail-open degrade is deliberate: a *mandatory* PR would fail closed in air-gapped/intranet/non-forge
+contexts (see DESIGN.md §Rejected). The no-forge path loses only the forge's PR thread, never the review
+gate — reviewable code still never reaches trunk except through a `feat/<feature>` branch that this gate
+has passed.
+
 Merge is always human-confirmed. The pipeline performs no destructive forge operations.
 
 ## Self-improvement — skills propose, review gates (never self-edit)
