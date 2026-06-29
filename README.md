@@ -18,7 +18,7 @@ swappable `roles.yaml` slot.
 | pipeline-prd | grill-me → think | rough idea → `PRD.md` |
 | pipeline-arch | grill-with-docs | PRD → `arch.md` + `CONTEXT.md` + ADRs |
 | pipeline-task | think | arch → atomic cards + frozen red test |
-| pipeline-impl | goal-driven-implementation | card → green + PR (zero spec tests) |
+| pipeline-impl | `<autonomous-coding-skill>` | card → green + PR (zero spec tests) |
 | pipeline-review | check | diff/PR → review + merge (only stage that merges) |
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
@@ -31,9 +31,9 @@ repo references are intentional so it works from any project):
 
 > **This project is developed via the `pipeline` + `pipeline-dashboard` toolchain — a forge-agnostic,
 > machine-agnostic, LLM-agnostic agent dev pipeline whose only durable asset is a git+markdown state
-> bus under `.pipeline/`. Any capable agent runs its commands — Hermes, Claude, pi, codex, openclaw, … —
-> and a different agent/LLM may run each stage (reasoning stages want a frontier model; `impl` tolerates
-> a capable local LLM).**
+> bus under `.pipeline/`. Any capable agent runs its commands — the pipeline is not bound to any tool,
+> framework, agent or LLM — and a different agent/LLM may run each stage (reasoning stages want a
+> frontier SOTA model; `impl` tolerates a capable local model).**
 >
 > **How it works.** All work flows through staged commands `pipeline-prd → pipeline-arch →
 > pipeline-task → pipeline-impl → pipeline-review`, plus `pipeline-hunt` for blocked cards. Each
@@ -80,12 +80,13 @@ You are an agent installing this collection on your runtime. Do it once, then ve
 # 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
 git clone https://github.com/jackypanster/pipeline.git ~/workspace/pipeline   # or: git -C ~/workspace/pipeline fetch && git reset --hard origin/main
 
-# 2. Install the command shims into the runtime that will RUN them (any capable agent — Claude,
-#    Hermes, pi, codex, openclaw, …; two examples below):
-#    Claude Code:
+# 2. Install the command shims into the runtime that will RUN them (any capable agent — the pipeline
+#    is framework-agnostic). Install where THAT runtime loads skills; two concrete examples follow —
+#    substitute your own runtime:
+#    - a runtime that loads skills from a directory (e.g. ~/.claude/skills):
 cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
-#    Hermes: add "~/workspace/pipeline/skills" to skills.external_dirs (a YAML LIST item — NOT a
-#    JSON-encoded string, which fails silently), then reload the gateway.
+#    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
+#      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
 
 # 3. Per target project, point the slots at your chosen skills:
 mkdir -p <target-repo>/.pipeline && cp ~/workspace/pipeline/roles.yaml <target-repo>/.pipeline/roles.yaml
@@ -103,14 +104,21 @@ its command. **Check every one; install any that is missing from its source:**
 | `hunt` | hunt | Waza (`skills/hunt`) |
 | `grill-me` | prd | `github.com/mattpocock/skills` (`skills/productivity/grill-me`) |
 | `grill-with-docs` | arch | `github.com/mattpocock/skills` (`skills/engineering/grill-with-docs`) |
-| `goal-driven-implementation` / `goal-driven-impl-claude` | impl | your runtime's autonomous-coding loop — Hermes `hermes-skills` (`devops/goal-driven-implementation`) **or** Claude's `goal-driven-impl-claude` twin (bind the one your runtime has) |
+| `<autonomous-coding-skill>` (impl slot) | impl | your runtime's autonomous think→code→check skill — examples to bind the one your runtime ships: a `goal-driven-implementation` (`devops/goal-driven-implementation` in a `hermes-skills`-style set) **or** a `goal-driven-impl-claude` twin |
 
 **Check procedure:** for each skill, confirm it loads on the runtime (list installed skills, or try to
 `skill_view` it). Missing ⇒ install from its source into that runtime's skill dir ⇒ re-check.
-**Cross-runtime trap:** a skill in `~/.hermes/skills` is NOT resolvable from Claude Code's
-`~/.claude/skills` (and vice versa) — install it where the command actually runs. `pipeline-prd`
-re-verifies every slot resolves on init and STOPs if one is missing — but verify up front to avoid a
-mid-run stop. Names matter: `roles.yaml` says `goal-driven-implementation`, not bare `goal`.
+**Cross-runtime trap:** a skill installed for one runtime is NOT resolvable from another (e.g. a skill
+under one runtime's skill dir is invisible to a runtime that loads from a different dir, and vice versa) —
+install it where the command actually runs. Each command verifies its OWN slot on init and STOPs if that
+slot is missing — so verify all slots up front to avoid a mid-run stop. Names matter: set each slot to the
+skill's real installed name on your runtime (for `impl`, the full `goal-driven-*` name your runtime
+ships), never a bare/abstract token like `goal` or the `<autonomous-coding-skill>` placeholder.
+
+**Brand names are install examples only.** The concrete agent/runtime/skill names in this Install
+section (skill dirs, `goal-driven-*`) illustrate how to set up YOUR runtime — they are not part of the
+contract. Never copy a specific tool/framework/agent/LLM name into the onboarding snippet or
+`roles.yaml`: both reach target projects and must stay tool-agnostic.
 
 ## State
 

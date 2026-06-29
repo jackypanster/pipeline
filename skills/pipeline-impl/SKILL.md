@@ -1,6 +1,6 @@
 ---
 name: pipeline-impl
-description: "Pipeline stage 4 — implement one task card: make its frozen red test green, open a PR. Wraps the goal skill (think→code→check loop). Writes ZERO spec tests. Use after pipeline-task. Args: repo, branch, optional card-id."
+description: "Pipeline stage 4 — implement one task card: make its frozen red test green, open a PR. Wraps the bound autonomous-coding skill (think→code→check loop). Writes ZERO spec tests. Use after pipeline-task. Args: repo, branch, optional card-id."
 ---
 
 # pipeline-impl
@@ -8,13 +8,12 @@ description: "Pipeline stage 4 — implement one task card: make its frozen red 
 Stage 4. Follow the **shim loop in CONTRACT.md** with slot = `impl`.
 
 **Skill:** the `impl` slot runs an autonomous think→design-tests→code→check loop. The pipeline is
-runtime-agnostic: bind whichever implementation your agent provides in `roles.yaml` — Hermes's
-`goal-driven-implementation` (drives its `/goal` loop), Claude's `goal-driven-impl-claude` twin, or any
-equivalent. Whatever you bind, the slot value must be that skill's **real, full name** (e.g.
-`goal-driven-implementation` or `goal-driven-impl-claude`), never the bare word "goal". It writes
+runtime-agnostic: bind whichever autonomous-coding skill your runtime provides in `roles.yaml`. Whatever
+you bind, the slot value must be that skill's **real, full installed name** on your runtime, never a
+bare/abstract token (e.g. the bare word `goal` or the `<autonomous-coding-skill>` placeholder). It writes
 **white-box tests in `impl-paths:` (allowed)**; it must NOT create or edit anything under
-`spec-paths:`. Constrain it accordingly (a `/subgoal` "do not touch spec-paths; do not author
-acceptance tests" is the cheap seam if needed).
+`spec-paths:`. Constrain it accordingly (a "do not touch spec-paths; do not author acceptance tests"
+sub-instruction is the cheap seam if your skill supports one).
 
 ## Steps
 
@@ -29,13 +28,13 @@ acceptance tests" is the cheap seam if needed).
      (`git fetch origin && git rebase origin/main && git push --force-with-lease`) so it carries the
      current frozen tests. Without this, review's freeze gate diffs the new `spec-rev` against the stale
      branch and falsely rejects. This force-push is the **sanctioned exception** (your own in-flight
-     branch, never trunk — CONTRACT §State machine scope). Resolve any rebase conflict via the goal loop
+     branch, never trunk — CONTRACT §State machine scope). Resolve any rebase conflict via the impl loop
      (the spec changed; the code must adapt).
    Then flip the card `status: in-progress` and commit it to **`main`** (card status is trunk-authoritative metadata —
    a cold node must read the live status from trunk; never leave a status flip on the branch). **Leave
    `current.json.stage` at `task`** — `stage` = most-recently-COMPLETED stage (CONTRACT); it advances to
    `impl` only when this card actually completes (step 4), not when work begins.
-3. **goal**: implement inside `impl-paths:` (+ `src/**`) on `feat/<feature>` until the card's `verify:`
+3. **implement**: code inside `impl-paths:` (+ `src/**`) on `feat/<feature>` until the card's `verify:`
    commands all exit 0 (its red test goes green). The card's `verify` is **card-scoped** (CONTRACT
    §State authority) — it goes green on THIS card's frozen test alone, regardless of sibling cards still
    red on trunk; do NOT run the full suite to judge this card (that is review's final gate). Loop
