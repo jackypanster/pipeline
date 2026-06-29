@@ -189,17 +189,23 @@ deterministic gate.
 
 ## Handoff block — a self-contained briefing for a COLD next node
 
-**The next node is a FRESH session — possibly a different TG bot / different frontier LLM — with ZERO
+**The next node is a FRESH session — possibly a different agent on a different frontier LLM — with ZERO
 prior context.** It has only: this repo (via `git pull`), `CONTRACT.md`, and your handoff. So the
 handoff must carry everything it needs to ACT, not a one-liner. Point at artifacts (git is the bus —
 never paste bodies), give **concrete numbered steps**, and name **feature-specific gotchas**. A cold
 frontier bot with a thin handoff guesses wrong — err toward MORE next-step detail, not less.
-TG-friendly: plain text, short lines, no tables.
+Chat-friendly: plain text, short lines, no tables.
+
+Carry one **`Model:`** line naming THIS next stage's model requirement — reasoning stages
+(prd/arch/task/review/hunt) want a **frontier SOTA model**; `impl` tolerates a **capable local model**.
+It is operator guidance for which bot to assign (the pipeline cannot verify the running model), not a
+self-check.
 
 ```text
 >>> NEXT
 Run pipeline-<next> on a FRESH session (assume you know nothing — rebuild from the repo + CONTRACT.md).
 repo=<url> branch=<branch> pr=<url|none>
+Model: <frontier SOTA required | capable-local OK (impl only)> — operator assigns the bot; the pipeline can't verify the model.
 First: git pull --rebase; load repo config (.env if present, per CONTRACT step 2).
 Read for context (before acting):
   - <repo>/AGENTS.md|CLAUDE.md (if present) — repo-wide project conventions (read FIRST; some runtimes don't auto-read it, so the handoff makes injection explicit + portable)

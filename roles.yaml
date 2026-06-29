@@ -1,13 +1,14 @@
 # roles.yaml — per-target-repo skill bindings (copy this into the target repo's .pipeline/)
 # Each command resolves its slot to a skill NAME here. Point a slot at a better skill any time —
-# the contract is unchanged. The runtime is ANY capable agent you paste the command into —
-# Hermes, Claude, pi, codex, openclaw, … (pipeline is machine-/LLM-agnostic). Reasoning slots
-# want a frontier model; impl tolerates a capable local LLM.
+# the contract is unchanged. The runtime is ANY capable agent you paste the command into; the
+# pipeline is framework-, machine- and LLM-agnostic — not bound to any tool, framework, agent or LLM.
+# Per-stage model requirement (the one guarantee that matters): reasoning slots (prd/arch/task/review/
+# hunt) want a frontier SOTA model; impl tolerates a capable local model.
 
 prd:    [grill-me, think]   # grill-me clarifies the rough idea, then think produces the plan
 arch:   grill-with-docs     # walks the design tree against the codebase; emits CONTEXT.md + ADRs
 task:   think               # decomposes into atomic cards (the agent writes the red tests)
-impl:   goal-driven-implementation   # autonomous think→design-tests→code→check loop; bind your runtime's twin (Hermes goal-driven-implementation, or Claude's goal-driven-impl-claude)
+impl:   <autonomous-coding-skill>   # REQUIRED: set to the real installed name of your runtime's autonomous think→design-tests→code→check skill
 review: check               # semantic review of the diff/PR
 hunt:   hunt                # root-cause a blocked card before re-queue
 improve: think              # meta: draft a reviewed skill-improvement PR against the pipeline repo (never self-edit, never auto-merge)

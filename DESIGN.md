@@ -25,7 +25,7 @@ write your stage's write-set + append handoff to journal.md → commit (one) →
 | pipeline-prd | `grill-me` (clarify) → `think` (plan) | agent writes `PRD.md` + commit |
 | pipeline-arch | `grill-with-docs` (walks the design tree; emits CONTEXT.md + ADRs) | land `arch.md` / `CONTEXT.md` / ADRs |
 | pipeline-task | `think` (decompose into atomic cards) | **agent writes the red-test code** (think won't) + card frontmatter; freeze into `spec-paths:`; push |
-| pipeline-impl | `goal` (think → design tests → code → check loop; white-box tests in `impl-paths:`) | shim freezes `spec-paths:`; opens PR/branch; status → review |
+| pipeline-impl | the bound `<autonomous-coding-skill>` (think → design tests → code → check loop; white-box tests in `impl-paths:`) | shim freezes `spec-paths:`; opens PR/branch; status → review |
 | pipeline-review | `check` (semantic review of the diff/PR) | shim adds the `spec-paths` freeze gate + drives merge after human confirm |
 | pipeline-hunt | `hunt` (root-cause) | **entry for `blocked` cards** — root-cause before re-queue, never blind retry |
 
@@ -34,13 +34,13 @@ write your stage's write-set + append handoff to journal.md → commit (one) →
 prd:    [grill-me, think]
 arch:   grill-with-docs
 task:   think
-impl:   goal-driven-implementation   # autonomous think→code→check loop (e.g. Hermes /goal, or Claude's goal-driven-impl-claude twin)
+impl:   <autonomous-coding-skill>   # autonomous think→design-tests→code→check loop; set to your runtime's real installed skill name
 review: check
 hunt:   hunt
 ```
 
-`roles.yaml` names the skill only; which agent/bot you paste into selects the runtime. On init, a
-command verifies every slot resolves to an installed skill (hard gate — no silent mid-run failure).
+`roles.yaml` names the skill only; which agent/bot you paste into selects the runtime. On init, each
+command verifies its OWN slot resolves to an installed skill (hard gate — no silent mid-run failure).
 
 ## State convention (git + md, zero forge dependency)
 
@@ -75,6 +75,7 @@ fast bootstrap cache; on disagreement the journal tail wins.
 >>> NEXT
 Run pipeline-impl.
 repo=<git-remote-url> branch=feat/login pr=none
+- model: capable-local OK here (impl); reasoning stages want a frontier SOTA model — operator assigns the bot
 - artifact: .pipeline/login/tasks/03.md (pushed)
 - do: git pull --rebase, pick oldest todo card, make its red test green
 - DO NOT touch spec-paths; white-box tests in impl-paths OK
@@ -92,7 +93,7 @@ attempts/blocked path, the first action (`git pull`). Self-contained: the next b
 `pipeline-impl` only makes it green and may add white-box tests in `impl-paths:` — it must not touch
 `spec-paths:`. `pipeline-review` enforces this with the two-commit `git diff <spec-rev> <review-tip> --
 <spec-paths>` (review-tip = PR head) and **fails if the frozen spec changed**. Deterministic, git-only,
-no CI required. The coder tool (`goal`) writes
+no CI required. The autonomous coder skill writes
 its own tests by default — we don't fight it; the diff gate is what guarantees the exam wasn't edited.
 
 ## Forge / review surface
