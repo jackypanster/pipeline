@@ -3,7 +3,7 @@
 # the contract is unchanged. The runtime is ANY capable agent you paste the command into; the
 # pipeline is framework-, machine- and LLM-agnostic — not bound to any tool, framework, agent or LLM.
 # Per-stage model requirement (the one guarantee that matters): reasoning slots (prd/arch/task/review/
-# hunt) want a frontier SOTA model; impl tolerates a capable local model.
+# hunt/improve) want a frontier SOTA model; impl tolerates a capable local model.
 
 prd:    [grill-me, think]   # grill-me clarifies the rough idea, then think produces the plan
 arch:   grill-with-docs     # walks the design tree against the codebase; emits CONTEXT.md + ADRs

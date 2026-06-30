@@ -18,11 +18,16 @@ review steps.
 2. Take the `SKILL-PROPOSAL` (which skill, what change, why). **Frozen-invariant guard:** if it touches
    the state machine, only-reviewer-merges, the freeze gate, or never-force-push, **STOP** and flag for
    explicit human decision — these are not routinely improvable.
-3. Create branch `improve/<slug>`. Apply the edit to the relevant `skills/*/SKILL.md` or `CONTRACT.md`:
-   **minimal, additive, preserve every existing rule.** Agent-first (dense, no filler). One proposal =
-   one focused change.
-4. Commit + push the branch. Open a PR to the pipeline repo's `main` via the forge adapter. **Do NOT merge.**
-5. Hand off to **pipeline-review in meta-PR mode** (CONTRACT §Self-improvement — NOT the feature review
+3. **Resolve `improve` slot from `roles.yaml`; verify installed (else STOP).** Invoke **`think`** — it
+   validates the proposal is a real improvement (not a weakening) and produces the minimal, additive
+   change that preserves every hard rule. `think` reasons and writes NO files; YOU apply the edit (the
+   shim owns I/O — same skill delegation as every other stage; improve skips only the feature-state loop
+   steps, not the resolve-and-invoke).
+4. Create branch `improve/<slug>`. Apply the edit `think` specified to the relevant `skills/*/SKILL.md`
+   or `CONTRACT.md`: **minimal, additive, preserve every existing rule.** Agent-first (dense, no filler).
+   One proposal = one focused change.
+5. Commit + push the branch. Open a PR to the pipeline repo's `main` via the forge adapter. **Do NOT merge.**
+6. Hand off to **pipeline-review in meta-PR mode** (CONTRACT §Self-improvement — NOT the feature review
    steps: no cards, no `spec-rev`, no freeze gate, no full-suite gate on this repo): semantic-review the
    skill diff — is it a real improvement (not a weakening/破坏)? does it preserve every hard rule + frozen
    invariant? — then a human confirms the squash-merge to `main`. Improved skill propagates to runtimes

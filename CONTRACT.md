@@ -197,7 +197,7 @@ frontier bot with a thin handoff guesses wrong — err toward MORE next-step det
 Chat-friendly: plain text, short lines, no tables.
 
 Carry one **`Model:`** line naming THIS next stage's model requirement — reasoning stages
-(prd/arch/task/review/hunt) want a **frontier SOTA model**; `impl` tolerates a **capable local model**.
+(prd/arch/task/review/hunt/improve) want a **frontier SOTA model**; `impl` tolerates a **capable local model**.
 It is operator guidance for which bot to assign (the pipeline cannot verify the running model), not a
 self-check.
 
