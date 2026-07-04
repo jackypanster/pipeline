@@ -20,6 +20,18 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
 4. For each card, **write the failing red test** into `spec-paths:` (happy path + key errors/boundaries,
    ~3–5 assertions — appropriate, not 100% coverage). The test must compile and **FAIL** now (a green
    "spec" is a no-op). Do NOT write the card yet — the card is a separate commit (step 6b).
+
+   **Verbatim-compile pre-check (MANDATORY when the red IS a compile-fail):** when the spec imports
+   not-yet-existing target symbols (the unresolved-import red), the compiler STOPS at resolution — type
+   errors in the test BODY are masked and surface only after impl lands, when the coder is forbidden to
+   touch the spec (freeze gate) and the only exit is a whole-feature re-freeze (new `spec-rev`, every
+   card updated). Before the freeze commit (6a): copy the spec file **VERBATIM** into a temporary
+   scratch test target, replace ONLY the not-yet-existing imports with local stubs matching the frozen
+   signatures, actually compile it (e.g. `cargo test --test <scratch> --no-run`), then DELETE the
+   scratch — it never enters the freeze commit. Re-typing or reconstructing fixture fragments is NOT
+   this check: it misses body-level patterns (observed: a `{value:?}` format capture AFTER the value
+   moved — E0382 only reachable past name resolution — cost one full re-freeze cycle; the verbatim
+   stub-compile then ran clean for two consecutive features).
 5. **Freeze-coverage check** (CONTRACT §Freeze coverage): can the meaningful correctness test live in
    `spec-paths:`? If not (e.g. binary-only crate), record what IS frozen vs what review must verify by
    reading, in the card's `## Freeze coverage` section (step 6b).
