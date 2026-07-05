@@ -27,11 +27,19 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    touch the spec (freeze gate) and the only exit is a whole-feature re-freeze (new `spec-rev`, every
    card updated). Before the freeze commit (6a): copy the spec file **VERBATIM** into a temporary
    scratch test target, replace ONLY the not-yet-existing imports with local stubs matching the frozen
-   signatures, actually compile it (e.g. `cargo test --test <scratch> --no-run`), then DELETE the
+   signatures, then run — on that scratch — **every gate the card's `verify` (and the review full-verify)
+   will later demand over `spec-paths`: the compile AND the lint gate** (e.g. `cargo test --test
+   <scratch> --no-run` AND `cargo clippy --all-targets -- -D warnings`); all must pass. Then DELETE the
    scratch — it never enters the freeze commit. Re-typing or reconstructing fixture fragments is NOT
    this check: it misses body-level patterns (observed: a `{value:?}` format capture AFTER the value
    moved — E0382 only reachable past name resolution — cost one full re-freeze cycle; the verbatim
-   stub-compile then ran clean for two consecutive features).
+   stub-compile then ran clean for two consecutive features). **The lint gate is the same failure class
+   and equally load-bearing:** a spec that trips a lint fatal under the card's `-D warnings` verify
+   (observed: `clippy::doc_lazy_continuation` on a frozen test whose module-doc put a markdown bullet
+   list immediately before prose) is INVISIBLE while the file is compile-RED — the compiler stops at
+   name resolution before the linter runs — and surfaces only after impl makes the file compile,
+   cornering the coder into an impossible bind (pass `-D warnings` OR leave the frozen spec untouched)
+   whose only exit is a task re-freeze. Linting the stub catches it pre-freeze at ~zero extra cost.
 5. **Freeze-coverage check** (CONTRACT §Freeze coverage): can the meaningful correctness test live in
    `spec-paths:`? If not (e.g. binary-only crate), record what IS frozen vs what review must verify by
    reading, in the card's `## Freeze coverage` section (step 6b).
