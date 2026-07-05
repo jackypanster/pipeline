@@ -41,6 +41,12 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
    deliverable (`impl-paths`, frozen by `pipeline-task`) rather than writing it. Name it in the handoff so
    `pipeline-task` does not freeze that feature's red test until it exists.
 
+   **PRD provenance tags route the challenge** (prd tags every resolved decision `✅ human-confirmed` /
+   `📖 code-verified` / `⚠️ assumed`): each `⚠️ assumed` row is a MANDATORY challenge target — settle it
+   by code-verification or by grilling the human, and record the resolution in arch's OWN write-set
+   (arch.md / an ADR), never by editing PRD.md. Without the tag a confidently-worded assumption does not
+   read as ambiguous, skips the grill, and gets frozen into the red test. `✅` rows are settled — do not
+   re-litigate them. A PRD without tags (pre-dates this rule) ⇒ treat every non-code-cited decision as `⚠️`.
    Only ask the human on genuine ambiguity that code cannot resolve.
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
    grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Set `current.json.stage: arch` (most-recently-

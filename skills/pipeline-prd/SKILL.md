@@ -27,7 +27,13 @@ files; YOU write the PRD.
    Then **grill-me** — one question at a time, recommend answers — and **think** to harden it into a
    decision-complete plan.
 4. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, the
-   resolved decisions. Agent-first (dense, no filler). Set `current.json.stage: prd` (most-recently-
+   resolved decisions — **each decision tagged with its provenance**: `✅ human-confirmed` (the human
+   answered or approved it) / `📖 code-verified` (settled by reading the repo — name the file) /
+   `⚠️ assumed` (neither — an unconfirmed default you chose). The tag is what lets the COLD arch node
+   (different LLM, zero shared memory) tell settled from challengeable — untagged, a confident
+   `⚠️` assumption reads as fact, and once `pipeline-task` freezes it the gate locks the error in
+   instead of catching it (same bug class as arch's reference-behavior tiers, one boundary earlier).
+   Agent-first (dense, no filler). Set `current.json.stage: prd` (most-recently-
    completed = prd). **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` `PRD.md`
    **+ `current.json` + `journal.md`** (this stage created/seeded them), commit **once** (the shim loop pushes).
 5. **Print the handoff** to **pipeline-arch** (already journaled in step 4; per CONTRACT.md §handoff):
@@ -36,4 +42,5 @@ files; YOU write the PRD.
 ## Hard rules
 
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
+- Tag every resolved decision with its provenance (step 4); never present an `⚠️ assumed` default as settled.
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata). No code, no architecture yet.
