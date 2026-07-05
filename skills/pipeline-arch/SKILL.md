@@ -27,6 +27,20 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
    | CLI flag conventions | existing structs may use `short = 'v'`, specific defaults, `conflicts_with` — PRD must match |
    | Error-handling claims | verify the quirk exists in `error.rs`/`client.rs` (e.g. "500 not 404" → check `friendly_error(500)`) |
 
+   **External-reference behavior — when local code can't settle a claim, TABLE it, don't guess.** Some
+   PRD claims are about an EXTERNAL reference the frozen tests can never exercise (a third-party API, a
+   dependency's field/method semantics, a wire protocol, another service — no live dependency in the
+   test env). Code-first grep cannot verify these. For them, emit a **reference-behavior artifact**: a
+   reviewable table mapping each external-contract element the code relies on → the reference's
+   documented/observed semantics → our value / deliberate divergence → a **verification tier**
+   (`✅ probed` / `📖 doc-cited` / `⚠️ unverified`), shipping the `⚠️` rows as a risk register. This is
+   the ONLY thing that guards the bug class a frozen test cannot: the test freezes the team's
+   *understanding* of the reference, so a wrong understanding is locked in, not caught. Land it **inside
+   arch's write-set** — `CONTEXT.md` or an ADR under `.pipeline/<feature>/`; arch NEVER writes a
+   target-repo product doc, so if the table should ALSO be a durable repo doc, arch SPECS that as an impl
+   deliverable (`impl-paths`, frozen by `pipeline-task`) rather than writing it. Name it in the handoff so
+   `pipeline-task` does not freeze that feature's red test until it exists.
+
    Only ask the human on genuine ambiguity that code cannot resolve.
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
    grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Set `current.json.stage: arch` (most-recently-
@@ -40,3 +54,8 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 - HITL stage — ask the human on blocking ambiguity, wait. Don't invent domain terms; ground them.
 - Write architecture/ADRs only. No task cards, no code, no tests here.
 - Irreversible decisions (migrations, concurrency model, data shape) → an ADR, not a coder card.
+- **External-reference features gate on a reference-behavior artifact** (step 3): when correctness
+  depends on behavior the frozen tests can't exercise, arch produces the tier-marked table and hands
+  `pipeline-task` the gate — no red test for that behavior is frozen until the reference is tabled.
+  Purely additive to the freeze gate; it changes nothing in the spec-rev protocol, state machine, merge,
+  or force-push rules.
