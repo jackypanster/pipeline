@@ -35,9 +35,11 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
    documented/observed semantics → our value / deliberate divergence → a **verification tier**
    (`✅ probed` / `📖 doc-cited` / `⚠️ unverified`), shipping the `⚠️` rows as a risk register. This is
    the ONLY thing that guards the bug class a frozen test cannot: the test freezes the team's
-   *understanding* of the reference, so a wrong understanding is locked in, not caught. Land it in
-   `CONTEXT.md` / an ADR / a durable repo doc, and name it in the handoff so `pipeline-task` does not
-   freeze that feature's red test until it exists.
+   *understanding* of the reference, so a wrong understanding is locked in, not caught. Land it **inside
+   arch's write-set** — `CONTEXT.md` or an ADR under `.pipeline/<feature>/`; arch NEVER writes a
+   target-repo product doc, so if the table should ALSO be a durable repo doc, arch SPECS that as an impl
+   deliverable (`impl-paths`, frozen by `pipeline-task`) rather than writing it. Name it in the handoff so
+   `pipeline-task` does not freeze that feature's red test until it exists.
 
    Only ask the human on genuine ambiguity that code cannot resolve.
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
