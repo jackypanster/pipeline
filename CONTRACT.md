@@ -287,7 +287,9 @@ Merge is always human-confirmed. The pipeline performs no destructive forge oper
 A running bot must **NEVER edit a live/installed skill in place** — that mutates the contract
 mid-flight, untracked and ungated, and can silently break every future run. A bot's pipeline clone is
 a **read-only consumer**: `git fetch && git reset --hard origin/main` each run; it does not carry local
-skill edits.
+skill edits. When shims are installed as **copies** rather than loaded from the clone, the maintenance
+command `pipeline-update` re-applies this same refresh to those copies (pull-only — it opens no PR and
+merges nothing; the write direction stays the gated `pipeline-improve` path below).
 
 When a run reveals a skill gap, **emit a proposal — do not apply it**: add a line to your report/handoff
 `SKILL-PROPOSAL: <skill> — <what to change + why, one line>`. A proposal reaches `main` ONLY through the
