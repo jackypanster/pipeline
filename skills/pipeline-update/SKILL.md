@@ -55,8 +55,9 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
 3. **Update to origin/main.**
    - **Mode 2:** `OLD="$(git -C "$TOP" rev-parse HEAD)"`;
-     `git -C "$TOP" fetch origin main && git -C "$TOP" reset --hard origin/main`
-     (the sanctioned read-only-consumer refresh, CONTRACT §Self-improvement);
+     `git -C "$TOP" fetch origin && git -C "$TOP" reset --hard origin/main`
+     (the sanctioned read-only-consumer refresh, CONTRACT §Self-improvement — bare `fetch origin`, not
+     `fetch origin main`, so the `origin/main` tracking ref is reliably updated before the reset);
      `NEW="$(git -C "$TOP" rev-parse HEAD)"`.
    - **Mode 1 (atomic — never corrupt the live install on a network failure):** shallow-clone to a temp
      dir FIRST, copy only on success:
@@ -88,7 +89,9 @@ table, from `roles.yaml`, and from the onboarding snippet.
   target repo's `.pipeline/`. Skills-only.
 - **Pull, never push.** No PR, no merge, no proposal — that direction is `pipeline-improve`'s alone.
 - **Atomic on failure.** Mode 1 clones to a temp dir and copies only after a successful clone; a network
-  failure leaves the existing install intact. Bad version landed ⇒ re-run after the upstream fix, or
-  `git reset --hard <prev-sha>` (skills are markdown + git, fully revertible).
+  failure leaves the existing install intact. Bad version landed ⇒ re-run after the upstream fix. Rollback
+  differs by mode: **Mode 2** is a git checkout, so `git reset --hard <prev-sha>` reverts it; **Mode 1**
+  copies are *not* a git checkout, so roll back by re-copying from a clone checked out at the prev-sha (or
+  just re-run update once upstream is fixed).
 - **Never clobber a project's bindings.** `roles.yaml` and `.pipeline/` state are the user's; report a
   schema change, do not apply it.
