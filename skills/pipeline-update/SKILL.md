@@ -32,7 +32,7 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
    ```bash
    TOP="$(git -C "$PROBE" rev-parse --show-toplevel 2>/dev/null || true)"
-   if [ -n "$TOP" ] && git -C "$TOP" remote get-url origin 2>/dev/null | grep -q 'jackypanster/pipeline'; then
+   if [ -n "$TOP" ] && git -C "$TOP" remote get-url origin 2>/dev/null | grep -qE '[/:]jackypanster/pipeline(\.git)?/?$'; then
      MODE=2   # external_dirs: the runtime loads skills straight from the clone
    else
      MODE=1   # skills were cp'd as copies — PROBE is not inside the pipeline clone
@@ -43,6 +43,12 @@ table, from `roles.yaml`, and from the onboarding snippet.
    run `git -C "$TOP" …` with `$TOP` unset/empty — `git -C ""` silently runs in the *current directory*
    (often a target project or the clone itself) and would falsely report the pipeline remote ⇒ misdetect
    Mode 1 as Mode 2 and skip the re-copy.
+
+   **Critical — the remote match must be exact, not a substring:** anchor it (`[/:]jackypanster/pipeline(\.git)?/?$`),
+   never a bare `grep 'jackypanster/pipeline'`. A substring also matches sibling repos
+   (`jackypanster/pipeline-dashboard`, `pipeline-driver`), so if `PROBE` lands inside one of those the
+   detection would misfire into Mode 2 and step 3's `reset --hard origin/main` would blow away that
+   unrelated repo. The next operation is destructive — do not loosen this pattern.
 
 3. **Update to origin/main.**
    - **Mode 2:** `OLD="$(git -C "$TOP" rev-parse HEAD)"`;
