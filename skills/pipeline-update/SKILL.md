@@ -32,7 +32,7 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
    ```bash
    TOP="$(git -C "$PROBE" rev-parse --show-toplevel 2>/dev/null || true)"
-   if [ -n "$TOP" ] && git -C "$TOP" remote get-url origin 2>/dev/null | grep -qE '[/:]jackypanster/pipeline(\.git)?/?$'; then
+   if [ -n "$TOP" ] && git -C "$TOP" remote get-url origin 2>/dev/null | grep -qE '(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'; then
      MODE=2   # external_dirs: the runtime loads skills straight from the clone
    else
      MODE=1   # skills were cp'd as copies — PROBE is not inside the pipeline clone
@@ -44,10 +44,13 @@ table, from `roles.yaml`, and from the onboarding snippet.
    (often a target project or the clone itself) and would falsely report the pipeline remote ⇒ misdetect
    Mode 1 as Mode 2 and skip the re-copy.
 
-   **Critical — the remote match must be exact, not a substring:** anchor it (`[/:]jackypanster/pipeline(\.git)?/?$`),
-   never a bare `grep 'jackypanster/pipeline'`. A substring also matches sibling repos
-   (`jackypanster/pipeline-dashboard`, `pipeline-driver`), so if `PROBE` lands inside one of those the
-   detection would misfire into Mode 2 and step 3's `reset --hard origin/main` would blow away that
+   **Critical — the remote match must pin the full GitHub repo identity, not just a path suffix:** anchor
+   host *and* owner/repo (`(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$`), never a bare
+   `grep 'jackypanster/pipeline'` nor a suffix-only `[/:]jackypanster/pipeline…$`. A looser pattern also
+   matches sibling repos (`jackypanster/pipeline-dashboard`, `pipeline-driver`), any host whose nested
+   path merely ends in `/jackypanster/pipeline` (e.g. `git.example.com/foo/jackypanster/pipeline.git`),
+   and spoofed hosts (`evilgithub.com`, `github.com.evil.com`). If `PROBE` lands inside any such
+   checkout, detection misfires into Mode 2 and step 3's `reset --hard origin/main` blows away that
    unrelated repo. The next operation is destructive — do not loosen this pattern.
 
 3. **Update to origin/main.**
