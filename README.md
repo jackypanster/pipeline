@@ -12,6 +12,7 @@ swappable `roles.yaml` slot.
 - `CONTRACT.md` — frozen protocol every command follows: shim loop · state machine · anti-cheat · handoff · forge adapter.
 - `roles.yaml` — per-target-repo slot→skill bindings (copy into the target repo's `.pipeline/`).
 - `skills/pipeline-*/SKILL.md` — the 7 command shims.
+- `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update).
 
 | command | slot → skill | in → out |
 |---|---|---|
@@ -119,6 +120,25 @@ ships), never a bare/abstract token like `goal` or the `<autonomous-coding-skill
 section (skill dirs, `goal-driven-*`) illustrate how to set up YOUR runtime — they are not part of the
 contract. Never copy a specific tool/framework/agent/LLM name into the onboarding snippet or
 `roles.yaml`: both reach target projects and must stay tool-agnostic.
+
+## Update
+
+Refresh the installed shims to the latest `main` **without re-reading the Install steps**: run the
+`pipeline-update` command on the runtime that runs them. It is a **maintenance command, NOT one of the
+stages** — it runs no shim loop and touches no project `.pipeline/` state. It self-locates the install,
+pulls `github.com/jackypanster/pipeline` main, re-applies the `pipeline-*` shims, re-verifies the
+delegated deps below, and reports what moved. The equivalent by hand (what the command wraps):
+
+```bash
+# Mode A — skills were cp'd as copies (most runtimes): re-copy from a freshly reset clone.
+git -C ~/workspace/pipeline fetch && git -C ~/workspace/pipeline reset --hard origin/main
+cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
+# Mode B — runtime loads skills straight from the clone (external_dirs): the reset alone suffices.
+```
+
+Runtime-shared skills only. A project's `.pipeline/roles.yaml` (your slot bindings) is never touched —
+if a new version adds a slot, reconcile it by hand. Sibling repos (`pipeline-dashboard`,
+`pipeline-driver`) update themselves.
 
 ## State
 
