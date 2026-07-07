@@ -18,18 +18,24 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
 ## Steps
 
-1. **Locate the install.** Let `SELF_DIR` = this skill's own base directory (the runtime provides it; if
-   it does not, take a skills-dir from the arg, else STOP and ask the operator for the runtime skill dir —
-   never guess). `SKILLS_DIR="$(dirname "$SELF_DIR")"` is where every `pipeline-*` shim lives.
+1. **Locate the install.** Resolve `SKILLS_DIR` — the directory that holds every `pipeline-*` shim:
+   - If the runtime exposes this skill's own base dir, set `SELF_DIR` to it (e.g.
+     `…/skills/pipeline-update`) and derive `SKILLS_DIR="$(dirname "$SELF_DIR")"` (its parent).
+   - Else if the operator passed a skills-dir override arg, use it **verbatim** as the skills dir:
+     `SKILLS_DIR="$arg"` — the arg already points at the shim directory, so do **NOT** `dirname` it.
+   - Else STOP and ask the operator for the runtime skill dir — never guess.
+
+   Then set `PROBE="${SELF_DIR:-$SKILLS_DIR}"` — a path inside the pipeline clone iff this is a Mode 2
+   install — for the mode detection in step 2.
 
 2. **Detect the install mode** (README §Install ships two) — guard the empty case or you misdetect:
 
    ```bash
-   TOP="$(git -C "$SELF_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+   TOP="$(git -C "$PROBE" rev-parse --show-toplevel 2>/dev/null || true)"
    if [ -n "$TOP" ] && git -C "$TOP" remote get-url origin 2>/dev/null | grep -q 'jackypanster/pipeline'; then
      MODE=2   # external_dirs: the runtime loads skills straight from the clone
    else
-     MODE=1   # skills were cp'd as copies — SELF_DIR is not inside the pipeline clone
+     MODE=1   # skills were cp'd as copies — PROBE is not inside the pipeline clone
    fi
    ```
 
@@ -46,12 +52,14 @@ table, from `roles.yaml`, and from the onboarding snippet.
    - **Mode 1 (atomic — never corrupt the live install on a network failure):** shallow-clone to a temp
      dir FIRST, copy only on success:
      `TMP="$(mktemp -d)"; git clone --depth 1 https://github.com/jackypanster/pipeline.git "$TMP"` →
-     on success `cp -r "$TMP"/skills/pipeline-* "$SKILLS_DIR"/` → `NEW="$(git -C "$TMP" rev-parse HEAD)"`
-     → `rm -rf "$TMP"`. A failed clone leaves the installed shims untouched ⇒ report the error and STOP.
+     on success `cp -r "$TMP"/skills/pipeline-* "$SKILLS_DIR"/` → `NEW="$(git -C "$TMP" rev-parse HEAD)"`.
+     **Keep `$TMP` until step 4 has read its log; cleanup happens there.** A failed clone leaves the
+     installed shims untouched ⇒ report the error and STOP.
 
 4. **Report what changed.** Mode 2: `git -C "$TOP" log --oneline "$OLD".."$NEW"`. Mode 1: print `NEW` +
-   `git -C "$TMP" log --oneline -10` before cleanup. Either way list which `pipeline-*/SKILL.md`
-   (and `CONTRACT.md` / `README.md`) the update moved. Nothing moved ⇒ say "already latest (`$NEW`)".
+   `git -C "$TMP" log --oneline -10`, **then** `rm -rf "$TMP"` (Mode 1 only — this is the deferred
+   cleanup from step 3). Either way list which `pipeline-*/SKILL.md` (and `CONTRACT.md` / `README.md`)
+   the update moved. Nothing moved ⇒ say "already latest (`$NEW`)".
 
 5. **Re-verify delegated deps.** Re-run README §"Verify + supplement dependencies": for each `roles.yaml`
    slot skill (`think`, `check`, `hunt`, `grill-me`, `grill-with-docs`, the `goal-driven-*` impl slot),
