@@ -24,6 +24,30 @@ swappable `roles.yaml` slot.
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
 
+## Operating modes — the two-track SOP (operator decision, 2026-07-08)
+
+**Default = the normal human-relayed mode** for every feature: the human reads each handoff
+and relays each stage; use it for anything important or write-path (e.g. trading behavior).
+**The drive mode must be EXPLICITLY requested by the operator** ("用 drive 范式") and is
+reserved for read-only / low-risk / ergonomics features. Risk-tiering happens when the mode
+is chosen — picking drive IS the ex-ante trust grant, so the driving agent may type the
+GATE 1 spec-rev itself after reading the spec it froze.
+
+Drive mode runs end-to-end with exactly ONE human touchpoint:
+
+```text
+[auto]  cc: prd → arch → task → freeze → GATE 1 (types spec-rev) → starts pipeline-driver
+[auto]  driver: card 01 → card 02 → … → HALT at review        (stop-points.md enumerates every halt)
+[auto]  cc: dispatches the review bot → freeze gate + full-verify + semantic review → verdict
+──────────────────────────────────────────────────────────────
+[HUMAN] merge confirm after ACCEPT — never delegated (CONTRACT frozen invariant)
+[auto]  review bot: squash-merge → delete feat branch → journal wrap-up → done
+```
+
+A review REJECTION is a "problem found" → stop and show the human the verdict; never
+silently restart the loop. Model split (both modes): frontier for prd/arch/task + review;
+a capable cheap model for impl (per-stage requirement in `roles.yaml`).
+
 ## Onboard a target project (paste into its `AGENTS.md` / `CLAUDE.md`)
 
 So any agent touching a project knows it is pipeline-driven, paste this block verbatim into the
