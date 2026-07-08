@@ -117,6 +117,35 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 mkdir -p <target-repo>/.pipeline && cp ~/workspace/pipeline/roles.yaml <target-repo>/.pipeline/roles.yaml
 ```
 
+### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)
+
+When several agent runtimes share one machine, install every skill into **one shared
+physical directory** and attach each runtime to it — never maintain per-runtime copies.
+(Field lesson: scattered copies meant the impl runtime had neither its shim nor its
+slot skill; the run survived only on the journal/handoff fallback. A skill is just a
+directory — `<name>/SKILL.md` + optional `references/` — so one copy serves everyone.)
+
+```text
+~/.agents/skills/                ← THE single physical install dir; all sources land here
+  pipeline-*/                    ← step 2 above targets THIS dir
+  think/ check/ hunt/ grill-*/   ← delegated skills from their source repos
+  goal-driven-implementation/    ← the impl-slot skill
+```
+
+Attach each runtime to that one copy:
+
+| runtime style | attachment |
+|---|---|
+| reads `~/.agents/skills` directly (codex-style) | nothing to do |
+| per-skill symlink dir (pi-style `~/.pi/agent/skills`) | `ln -s ../../../.agents/skills/<name>` per skill |
+| own skills dir (claude-style `~/.claude/skills`) | symlink entries in (or copy — then keep it fresh via `pipeline-update`) |
+| slash-command prompts (`~/.codex/prompts`) | thin wrapper `.md` pointing at the installed shim |
+
+**Existing installs keep working — do not force-migrate.** Use this layout for every NEW
+install and whenever attaching a new runtime; `pipeline-update` refreshes whatever
+copies exist. Source repos (this repo, your skill collections) are the update origin,
+never a load path.
+
 ### Verify + supplement dependencies (do this BEFORE running any command)
 
 The commands delegate to the skills named in `roles.yaml`. Each must RESOLVE on the runtime that runs
