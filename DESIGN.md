@@ -162,6 +162,9 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
    §Constraints: halt-and-report-to-human (route=human, NOT hunt — no single owner) when the feature's
    cumulative impl `attempts` (computed from the journal — evidence, not estimate) crosses
    `current.json.impl-budget`. Not before.
+   *(Data point 2026-07-08: the driver's first real run crossed 2 cards past one freeze gate with
+   no per-card checkpoint — bounded fine by `CARD_TIMEOUT` + the consecutive-failure breaker + the
+   impl model's own quota ceiling; no overrun, so still deferred pending a real cost signal.)*
 
 ## Rejected
 

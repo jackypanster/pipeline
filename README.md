@@ -90,12 +90,14 @@ repo references are intentional so it works from any project):
 >
 > **To auto-advance the `impl` loop (optional):** instead of hand-relaying each `impl` card, the
 > repetitive `impl` multi-card loop can be run by
-> [`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver) — a deterministic,
-> **human-operated** loop (**an agent cannot run it unattended**: its GATE 1 blocks on a human reading the
-> frozen red test and echoing its `spec-rev`) that runs `pipeline-impl` on a cheap model and **HALTS at
-> every gate** (it never merges; the human runs `pipeline-review`). It is the human-operated write-side
-> twin of the dashboard, scoped to `impl` ONLY. Every other stage stays human-relayed — **do not build any
-> other scheduler**; the pipeline deliberately has none (see `DESIGN.md`).
+> [`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver) — a deterministic
+> loop that runs `pipeline-impl` on a cheap model and **HALTS at every gate** (it never merges; review
+> + the merge confirm stay gated). Its GATE 1 binds the run to a read of the frozen red test (echoing
+> its `spec-rev`); **who performs that read is the operator's risk-tier call** — default a human,
+> delegable to the coordinating agent only when the operator explicitly chose the drive mode for a
+> low-risk feature (see §Operating modes above). It is the write-side twin of the dashboard, scoped to
+> `impl` ONLY. Every other stage stays human-relayed — **do not build any other scheduler**; the
+> pipeline deliberately has none (see `DESIGN.md`).
 
 ## Install (agent: execute this; it is written for you, not a human)
 
@@ -158,7 +160,7 @@ its command. **Check every one; install any that is missing from its source:**
 | `hunt` | hunt | Waza (`skills/hunt`) |
 | `grill-me` | prd | `github.com/mattpocock/skills` (`skills/productivity/grill-me`) |
 | `grill-with-docs` | arch | `github.com/mattpocock/skills` (`skills/engineering/grill-with-docs`) |
-| `<autonomous-coding-skill>` (impl slot) | impl | your runtime's autonomous think→code→check skill — examples to bind the one your runtime ships: a `goal-driven-implementation` (`devops/goal-driven-implementation` in a `hermes-skills`-style set) **or** a `goal-driven-impl-claude` twin |
+| `<autonomous-coding-skill>` (impl slot) | impl | your runtime's autonomous think→design-tests→code→check skill — e.g. `goal-driven-implementation` (`devops/` in a `hermes-skills`-style set). ONE physical install under the canonical layout serves every runtime (see above); bind the skill's real installed name — do NOT invent per-runtime twin names (a phantom twin name in roles.yaml cost a real trial run) |
 
 **Check procedure:** for each skill, confirm it loads on the runtime (list installed skills, or try to
 `skill_view` it). Missing ⇒ install from its source into that runtime's skill dir ⇒ re-check.
@@ -183,9 +185,13 @@ pulls `github.com/jackypanster/pipeline` main, re-applies the `pipeline-*` shims
 delegated deps below, and reports what moved. The equivalent by hand (what the command wraps):
 
 ```bash
-# Mode A — skills were cp'd as copies (most runtimes): re-copy from a freshly reset clone.
+# Mode A — skills were cp'd as copies: re-copy from a freshly reset clone into EACH physical
+# install — ONE run per PHYSICAL copy. Canonical layout = the single shared dir (runtimes
+# attached by symlink/direct-read pick the refresh up for free); any legacy standalone copy
+# (e.g. a claude-style own dir) needs its own re-copy.
 git -C ~/workspace/pipeline fetch && git -C ~/workspace/pipeline reset --hard origin/main
-cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
+cp -r ~/workspace/pipeline/skills/pipeline-* ~/.agents/skills/    # canonical shared copy
+cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/    # legacy standalone copy, if kept
 # Mode B — runtime loads skills straight from the clone (external_dirs): the reset alone suffices.
 ```
 
