@@ -117,7 +117,15 @@ accepts a feature-level incident report, see its step 1). **No synthetic `tasks/
 merged) — a cold node reads it to see where the pipeline last left off; the *next* node to run is named
 in the handoff, not inferred from `stage`. `current.json.stage` is a denormalized **cache** for fast
 bootstrap; the authoritative run position is the **tail entry of `journal.md`** — derive the live state
-from the tail, never trust a stored `stage` that disagrees with it. Beyond `stage`, the artifact
+from the tail, never trust a stored `stage` that disagrees with it. **"Disagrees" means the cache
+matches NEITHER valid-stage end of the tail's transition** (`stage ∉ {tail.from, tail.to}`): a
+compliant cache may read as the tail's *from* (the completing stage just wrote it) OR its *to* — the
+sanctioned to-end cases being `done` on the terminal `review→done` commit and a failed/re-routing
+review (e.g. `review→impl · failed`) that leaves `stage` at the routed-to stage rather than
+re-asserting `review`. Consumers (dashboard, driver, any observer) must treat only the neither-end
+case as stale — a literal cache==most-recently-completed reading false-flags every compliant
+mid-flight state (field lesson: `jackypanster/pipeline-dashboard` ADR 0008, 2026-07-11, where that
+misreading cost a full bug-fix feature). Beyond `stage`, the artifact
 write-sets are:
 
 | stage | write-set (may create/modify) | must NOT touch |
