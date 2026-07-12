@@ -28,6 +28,33 @@ table, from `roles.yaml`, and from the onboarding snippet.
                                                              # (arg used verbatim as the shim dir)
    ```
 
+   Mode 2 additionally sweeps the canonical multi-runtime dir (`~/.agents/skills`, override with
+   `PIPELINE_CANON_SKILLS`): stale COPIES there are refreshed from the just-updated clone; a symlink
+   counts as fresh only when it resolves to the SAME skill's source dir (dangling or misbound links
+   are surfaced, never blessed) — so a clone-side run can no longer report "already latest" while a
+   runtime attachment still serves an old or wrong shim.
+
+   The sweep is **run-atomic, restart-safe and single-flight**: it fires for ANY installed
+   canonical `pipeline-*` entry (a partial install without `pipeline-update` is still swept); the
+   whole transaction runs under interprocess locks taken in fixed order before any mutation — a
+   per-clone lock guarding every Mode-2 fetch/reset, then the canonical lock (distinct clones can
+   target the same canon). A concurrent run aborts with rc 1 having changed nothing; a dead
+   holder's lock is reclaimed automatically (takeover is serialized by its own atomic reclaim
+   mutex that re-checks the holder; liveness compares pid AND process start time rendered under a
+   pinned TZ/locale, failing CLOSED — an unobservable start time counts as alive, only a proven
+   different one as dead — so neither a reused pid nor a divergent environment can fake a verdict;
+   and both deletion and release verify a unique per-run ownership token, so no process can ever
+   remove a lock that changed hands). It
+   detects first with zero mutation; stages every refresh before touching anything live; on ANY
+   failure rolls back every completed swap AND the clone HEAD, with every rollback step guarded and
+   verified. Exit contract: `0` = the install is correct (a failed backup cleanup only warns — the
+   janitor retries next run); `1` = not updated — fully rolled back, or the output names exactly
+   what a failed recovery step left behind for the janitor to finish on the next run. A startup
+   janitor recovers interrupted runs (restores a live copy left missing between swap steps —
+   including when the interrupted entry is `pipeline-update` itself — and drops leftover
+   backups/staging); it is scoped strictly to the `.pipeline-*.update-*` artifact namespace, never
+   touching other names, and any recovery failure aborts the run before mutation.
+
    If the runtime does not expose this skill's base dir, locate the installed `pipeline-update/`
    directory (it contains this file) and run the script from there; cannot locate it ⇒ STOP and ask
    the operator for the runtime skill dir — never guess. **Relay the script's output verbatim** (mode,
