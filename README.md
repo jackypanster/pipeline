@@ -138,10 +138,16 @@ Attach each runtime to that one copy:
 
 | runtime style | attachment |
 |---|---|
-| reads `~/.agents/skills` directly (codex-style) | nothing to do |
+| reads `~/.agents/skills` directly | nothing to do |
 | per-skill symlink dir (pi-style `~/.pi/agent/skills`) | `ln -s ../../../.agents/skills/<name>` per skill |
 | own skills dir (claude-style `~/.claude/skills`) | symlink entries in (or copy — then keep it fresh via `pipeline-update`) |
-| slash-command prompts (`~/.codex/prompts`) | thin wrapper `.md` pointing at the installed shim |
+| own skills dir, `$`-invoked (codex ≥0.144 `~/.codex/skills`) | symlink entries in (field-verified 2026-07-12); invoke as `$<skill-name>`, NOT `/<name>` — quote `$` in shell configs. The old `~/.codex/prompts` thin-wrapper row is obsolete |
+
+**Names resolve by frontmatter `name:`, not directory name** (field-verified on Claude Code
+2026-07-12: a symlinked directory under a different name does NOT register). When a runtime needs
+the canonical slot name to resolve to a runtime-local twin, attach a 10-line name-shim wrapper
+skill (frontmatter `name:` = the canonical name; body = "invoke the twin skill with all arguments") — same
+pattern for every runtime whose skill registry is frontmatter-keyed.
 
 **Existing installs keep working — do not force-migrate.** Use this layout for every NEW
 install and whenever attaching a new runtime; `pipeline-update` refreshes whatever
