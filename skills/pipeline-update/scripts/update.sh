@@ -15,7 +15,7 @@ REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
 
 main() {
-  local self_dir skills_dir probe top mode old new changed name src
+  local self_dir skills_dir probe top mode old new changed name src canon tgt
   self_dir="$(cd "$(dirname "$0")/.." && pwd)"   # …/skills/pipeline-update
   if [ $# -ge 1 ]; then
     skills_dir="$1"
@@ -49,6 +49,29 @@ main() {
       echo "updated $old -> $new; commits + files moved:"
       git -C "$top" log --oneline "$old..$new"
       git -C "$top" diff --name-only "$old" "$new" -- skills CONTRACT.md README.md
+    fi
+    # Canonical-layout sweep (README §Canonical multi-runtime layout): runtimes commonly
+    # attach by SYMLINKING into ONE shared physical dir of COPIES (~/.agents/skills).
+    # Running this script from the clone self-detects mode=2 and refreshes only the
+    # clone — field-failed 2026-07-12: "already latest" while every runtime attachment
+    # still served the old shim. So after a mode-2 refresh, also refresh any stale
+    # canonical COPIES (a symlink resolving INTO the clone is already fresh; rm+cp so
+    # deletions propagate). Override the location with PIPELINE_CANON_SKILLS.
+    canon="${PIPELINE_CANON_SKILLS:-$HOME/.agents/skills}"
+    if [ -d "$canon/pipeline-update" ] \
+       && [ "$(cd "$canon" && pwd -P)" != "$(cd "$top/skills" && pwd -P)" ]; then
+      changed=0
+      for src in "$top"/skills/pipeline-*/; do
+        name="$(basename "$src")"
+        [ -e "$canon/$name" ] || continue                       # sweep only what is installed
+        tgt="$(cd "$canon/$name" 2>/dev/null && pwd -P || true)"
+        case "$tgt" in "$top"/*) continue ;; esac               # symlink into the clone = fresh
+        diff -rq "$src" "$canon/$name" >/dev/null 2>&1 && continue
+        rm -rf "$canon/$name" && cp -r "$src" "$canon/$name"
+        changed=1
+        echo "refreshed canonical copy: $canon/$name"
+      done
+      [ "$changed" = 0 ] && echo "canonical copies in $canon already latest"
     fi
   else
     # Mode 1 (cp'd copies) — atomic: clone to a temp dir FIRST, copy only on success.
