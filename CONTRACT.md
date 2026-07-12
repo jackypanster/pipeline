@@ -312,6 +312,14 @@ improvement + every hard rule and frozen invariant preserved — then human-conf
 feature freeze-gate machinery does not apply to a skill diff; only-reviewer-merges and human-confirm
 still do.
 
+The same meta-PR gate covers, **additively**: proposals to **any other file of this repo** (a
+`DESIGN.md`/`README` diff is reviewed exactly like a skill diff), and PRs against the **sibling
+toolchain repos** (`pipeline-driver`, `pipeline-dashboard`, `pipeline-dispatch`) — they also carry no
+`.pipeline/` state, and whether the PR was opened by `pipeline-improve` (pipeline-repo proposals) or
+directly by the operator's session (sibling/doc proposals), it gets the same semantic-only review,
+human-confirm, and reviewer-only squash-merge; the proposer never merges. For a sibling repo the
+preservation check reads against that repo's own documented hard rules and guarantees.
+
 The **frozen invariants** (state machine · only-reviewer-merges · the freeze gate · never-force-push)
 are **not auto-improvable** — a proposal touching them is STOPPED for explicit human decision. Skills are
 markdown + git: a bad edit only mis-guides the next run (caught by review), and is one `git revert` away.

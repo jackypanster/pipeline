@@ -13,14 +13,17 @@ the freeze gate are YOUR I/O, not check's.
 
 ## Meta-PR mode (pipeline self-improvement) — decide this BEFORE step 1
 
-If the PR is a **`pipeline-improve` proposal** — a diff to *this pipeline repo's* own `skills/*` /
-`CONTRACT.md`, with **no `.pipeline/` feature state** (no `current.json`, cards, or `spec-rev`) — you are
+If the PR is a **toolchain meta-PR** — a diff to *this pipeline repo's* **own files** (`skills/*`,
+`CONTRACT.md`, and equally `DESIGN.md` / `README.md` / any other file of this repo), **or to a sibling
+toolchain repo** (`pipeline-driver` / `pipeline-dashboard` / `pipeline-dispatch`), in each case with
+**no `.pipeline/` feature state** (no `current.json`, cards, or `spec-rev`) — you are
 in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final full-suite gate** (none of
-that exists here). Do ONLY: (a) `check` the skill diff — is it a **real improvement, not a weakening**?
-does it **preserve every existing hard rule + the frozen invariants**? (b) write the verdict as a PR
+that exists here). Do ONLY: (a) `check` the diff — is it a **real improvement, not a weakening**?
+does it **preserve every existing hard rule + the frozen invariants** (for a sibling repo: its own
+documented hard rules and guarantees)? (b) write the verdict as a PR
 comment; (c) on the human's explicit confirm, **squash-merge**. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
-**target-repo feature PR**; do not run them against a skill PR.
+**target-repo feature PR**; do not run them against a toolchain meta-PR.
 
 ## Steps
 
