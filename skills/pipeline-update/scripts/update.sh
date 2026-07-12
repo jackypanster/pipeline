@@ -30,13 +30,26 @@ drop_lock_dir() {  # remove a lock/reap dir this process created and VERIFY it i
   rm -rf "$1" 2>/dev/null || true
   ! { [ -e "$1" ] || [ -L "$1" ]; }
 }
+proc_gen() {   # a process's start time under a PINNED rendering environment.
+               # ps lstart is TZ/locale-dependent prose: the same live process
+               # renders differently under UTC vs Asia/Hong_Kong, so two observers
+               # comparing raw renderings can "prove" a false generation mismatch
+               # (reproduced) — pin LC_ALL/TZ so every observer produces the same
+               # string. Empty output = "could not observe", NEVER "dead".
+  LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null || true
+}
 try_lock() {   # atomically claim $1, stamp ownership, and VERIFY the stamp landed
-  local path="$1"
+  local path="$1" mygen
+  mygen="$(proc_gen "$$")"
   mkdir "$path" 2>/dev/null || return 1
   { echo "$$" > "$path/pid" && echo "$LOCK_TOKEN" > "$path/token" \
-      && ps -o lstart= -p "$$" > "$path/gen"; } 2>/dev/null || true
-  if [ "$(cat "$path/pid" 2>/dev/null)" != "$$" ] \
-     || [ "$(cat "$path/token" 2>/dev/null)" != "$LOCK_TOKEN" ]; then
+      && printf '%s\n' "$mygen" > "$path/gen2"; } 2>/dev/null || true
+  # gen2 (pinned rendering), not r7's gen (observer-local rendering): old-format
+  # locks fall back to pid-only liveness instead of cross-version false mismatches.
+  if [ -z "$mygen" ] \
+     || [ "$(cat "$path/pid" 2>/dev/null)" != "$$" ] \
+     || [ "$(cat "$path/token" 2>/dev/null)" != "$LOCK_TOKEN" ] \
+     || [ "$(cat "$path/gen2" 2>/dev/null)" != "$mygen" ]; then
     # An UNSTAMPED lock could never be auto-reclaimed (an empty pid reads as live);
     # drop the fresh dir instead — provably ours: we just created it, nobody else
     # can have claimed it. If even that fails, say so: it needs a manual rm.
@@ -50,16 +63,21 @@ try_lock() {   # atomically claim $1, stamp ownership, and VERIFY the stamp land
   HELD_LOCKS+=("$path")
   return 0
 }
-holder_alive() {   # $1 = lock dir. Alive unless PROVEN dead: an empty/mid-stamp pid
-                   # stays live (fail-safe); a recorded generation unmasks pid reuse
-                   # (same pid, different start time => the real holder is gone).
+holder_alive() {   # $1 = lock dir. Alive unless PROVEN dead — every unprovable
+                   # state fails CLOSED (busy), because "dead" authorizes deletion:
+                   # empty/mid-stamp pid => alive; kill -0 failure => dead (positive
+                   # proof); no recorded generation => alive (pid-only); ps failing
+                   # or returning nothing NOW => alive (cannot observe != gone);
+                   # only a real, pinned-rendering start time that DIFFERS proves
+                   # pid reuse => dead.
   local pid gen now
   pid="$(cat "$1/pid" 2>/dev/null || true)"
   [ -n "$pid" ] || return 0
   kill -0 "$pid" 2>/dev/null || return 1
-  gen="$(cat "$1/gen" 2>/dev/null || true)"
+  gen="$(cat "$1/gen2" 2>/dev/null || true)"
   [ -n "$gen" ] || return 0
-  now="$(ps -o lstart= -p "$pid" 2>/dev/null || true)"
+  now="$(proc_gen "$pid")"
+  [ -n "$now" ] || return 0
   [ "$now" = "$gen" ]
 }
 acquire_lock() {
@@ -76,17 +94,23 @@ acquire_lock() {
   echo "$$" > "$reap/pid" 2>/dev/null || true
   if [ -e "$path" ] || [ -L "$path" ]; then
     if holder_alive "$path"; then
-      drop_lock_dir "$reap" || true        # someone re-acquired it alive meanwhile
+      drop_reap "$reap" "$path"            # someone re-acquired it alive meanwhile
       return 1
     fi
     rm -rf "$path" 2>/dev/null || true     # verified dead UNDER the reclaim mutex
   fi
   if try_lock "$path"; then
-    drop_lock_dir "$reap" || true
+    drop_reap "$reap" "$path"
     return 0
   fi
-  drop_lock_dir "$reap" || true            # a normal acquirer won the mkdir race
+  drop_reap "$reap" "$path"                # a normal acquirer won the mkdir race
   return 1
+}
+drop_reap() {  # $1 = reap dir, $2 = its lock. A reap residue silently BLOCKS all
+               # future automatic stale-lock recovery for that lock — never swallow
+               # the failure: name the residue and the consequence.
+  drop_lock_dir "$1" \
+    || echo "WARNING: could not remove reclaim mutex $1 — automatic stale-lock recovery for $2 is blocked until it is removed by hand" >&2
 }
 release_locks() {
   local l
