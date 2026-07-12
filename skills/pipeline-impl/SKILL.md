@@ -41,7 +41,8 @@ sub-instruction is the cheap seam if your skill supports one).
    think→code→check within the turn budget. Only code lives on the branch; never touch `spec-paths:`.
 4. **Green** ⇒ push `feat/<feature>`, open/update a PR via the forge adapter, then on `main` flip the
    card `status: review`, advance `current.json.stage` to `impl`, and **append your handoff to
-   `journal.md`** — these three metadata writes are **one commit on `main`** (this card completed —
+   `journal.md`** (per §Journal discipline below — file END, exact header, self-verified) — these
+   three metadata writes are **one commit on `main`** (this card completed —
    stage = most-recently-completed). Opening the PR needs the repo's forge token (loaded per CONTRACT
    step 2 from `.env` etc.). If the token is absent, **do NOT fail** — push the branch + make that same
    `main` commit (`status: review` + `stage: impl` + journal entry) anyway, and say in the handoff that
@@ -58,14 +59,35 @@ sub-instruction is the cheap seam if your skill supports one).
    - **`attempts >= 3`** ⇒ `status: blocked`, journal `status=blocked`, next = **pipeline-hunt**
      (root-cause before any re-queue — never blind retry).
    **Leave `current.json.stage` unchanged** (impl did NOT complete — keep `task`). Append the
-   `## Attempt N` note + the selected handoff to `journal.md`, then **commit the card (`attempts` + the
+   `## Attempt N` note + the selected handoff to `journal.md` (§Journal discipline), then **commit the card (`attempts` + the
    decided `status` + note) + `journal.md` together to `main` in ONE commit** — so a cold node never
    reads a half-updated state. Then print the handoff to the routed command (the next run reads only the
    card).
 
+## Journal discipline (mechanical, self-verified)
+
+"Append" means the **physical END of the file**: `>>` in a shell
+(`cat >> .pipeline/<feature>/journal.md`), never an editor insert, never the file head, never
+between entries. The physically-LAST entry is the run authority (CONTRACT §Run journal), so a
+misplaced entry makes your run invisible: drivers/dashboards keep reading the old tail and a driven
+run halts on "no progress" (field-failed twice on 2026-07-11 — a driven impl node PREPENDED its
+entries, once with fabricated copies of earlier entries, and both runs read as never-completed).
+
+The header must match the CONTRACT template EXACTLY:
+`## seq=N · <ISO-8601 UTC> · impl→review · completed · by=<tag>` — seq = current tail's seq + 1;
+REAL clock time from `date -u +%Y-%m-%dT%H:%M:%SZ` (never a placeholder like `00:00:00Z`, never
+local time wearing a `Z`); the arrow is `→` with NO spaces around it.
+
+**Self-verify BEFORE printing the handoff (blocking):** after your metadata commit, re-read the
+tail (`tail -40 .pipeline/<feature>/journal.md`) and confirm the physically-last `## seq=` header
+is YOURS — your seq, your `by=` tag. If it is not, the run is INCOMPLETE: repair with a NEW
+correctly-appended entry (never rewrite or amend — CONTRACT append-only), then re-verify.
+
 ## Hard rules
 
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
+- Journal entries go at the file END and are self-verified as the new tail (§Journal discipline) —
+  a misplaced or malformed entry means the run does not count as completed.
 - Code (`impl-paths`/`src`) lives on `feat/<feature>`; card `status` flips commit to `main` (trunk
   authority — never leave card state stranded on the branch). White-box tests in `impl-paths:` are fine;
   the acceptance test stays frozen.
