@@ -29,9 +29,17 @@ table, from `roles.yaml`, and from the onboarding snippet.
    ```
 
    Mode 2 additionally sweeps the canonical multi-runtime dir (`~/.agents/skills`, override with
-   `PIPELINE_CANON_SKILLS`): stale COPIES there are refreshed from the just-updated clone, symlinks
-   resolving into the clone are skipped as already fresh — so a clone-side run can no longer report
-   "already latest" while every runtime attachment still serves an old shim.
+   `PIPELINE_CANON_SKILLS`): stale COPIES there are refreshed from the just-updated clone; a symlink
+   counts as fresh only when it resolves to the SAME skill's source dir (dangling or misbound links
+   are surfaced, never blessed) — so a clone-side run can no longer report "already latest" while a
+   runtime attachment still serves an old or wrong shim.
+
+   The sweep is **run-atomic and restart-safe**: detect first with zero mutation; stage every
+   refresh before touching anything live; on ANY failure roll back every completed swap AND the
+   clone HEAD. Exit contract: `0` = the install is correct (a failed backup cleanup only warns —
+   the janitor retries next run); `1` = nothing changed / everything was rolled back. A startup
+   janitor recovers interrupted runs (restores a live copy left missing between swap steps, drops
+   leftover backups/staging).
 
    If the runtime does not expose this skill's base dir, locate the installed `pipeline-update/`
    directory (it contains this file) and run the script from there; cannot locate it ⇒ STOP and ask

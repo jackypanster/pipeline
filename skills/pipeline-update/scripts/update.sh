@@ -16,7 +16,7 @@ TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a
 
 main() {
   local self_dir skills_dir probe top mode old new changed name src canon tgt
-  local src_phys staging backup problems sweep_problems=0
+  local src_phys staging backup problems refresh_list done_list diff_err diff_rc n2
   self_dir="$(cd "$(dirname "$0")/.." && pwd)"   # …/skills/pipeline-update
   if [ $# -ge 1 ]; then
     skills_dir="$1"
@@ -51,68 +51,101 @@ main() {
       git -C "$top" log --oneline "$old..$new"
       git -C "$top" diff --name-only "$old" "$new" -- skills CONTRACT.md README.md
     fi
-    # Canonical-layout sweep (README §Canonical multi-runtime layout): runtimes commonly
-    # attach by SYMLINKING into ONE shared physical dir of COPIES (~/.agents/skills).
-    # Running this script from the clone self-detects mode=2 and refreshes only the
-    # clone — field-failed 2026-07-12: "already latest" while every runtime attachment
-    # still served the old shim. So after a mode-2 refresh, also refresh stale canonical
-    # COPIES. Override the location with PIPELINE_CANON_SKILLS.
+    # Canonical-layout sweep (README §Canonical multi-runtime layout): runtimes attach
+    # by SYMLINKING into ONE shared dir of COPIES (~/.agents/skills); a clone-side run
+    # must refresh those copies too (field-failed 2026-07-12: "already latest" while
+    # every runtime served the old shim). Override location: PIPELINE_CANON_SKILLS.
+    # RUN-ATOMIC: detect (zero mutation) -> stage ALL -> swap ALL (full rollback on any
+    # failure, INCLUDING the clone HEAD) -> drop backups (cleanup failure = warn only).
+    # Exit contract: rc=0 => install correct; rc=1 => nothing changed / fully rolled back.
     canon="${PIPELINE_CANON_SKILLS:-$HOME/.agents/skills}"
-    if [ -d "$canon/pipeline-update" ] \
-       && [ "$(cd "$canon" && pwd -P)" != "$(cd "$top/skills" && pwd -P)" ]; then
-      changed=0; problems=0
+    if { [ -d "$canon/pipeline-update" ] || [ -L "$canon/pipeline-update" ]; } \
+       && [ "$(cd "$canon" 2>/dev/null && pwd -P || echo __NO__)" != "$(cd "$top/skills" && pwd -P)" ]; then
+
+      # Janitor: durable recovery from an interrupted previous sweep (crash between
+      # old->backup and staging->live leaves the live path missing: restore it).
+      for backup in "$canon"/.*.update-backup; do
+        [ -e "$backup" ] || continue
+        name="$(basename "$backup")"; name="${name#.}"; name="${name%.update-backup}"
+        if [ -e "$canon/$name" ] || [ -L "$canon/$name" ]; then
+          rm -rf "$backup" && echo "janitor: dropped leftover backup for $name" \
+            || echo "WARNING: janitor could not drop leftover backup $backup" >&2
+        else
+          mv "$backup" "$canon/$name" \
+            && echo "janitor: restored $name from an interrupted run" \
+            || echo "ERROR: janitor could not restore $name from $backup" >&2
+        fi
+      done
+      rm -rf "$canon"/.*.update-staging 2>/dev/null || true
+
+      # Detect (NO mutation): classify every installed entry.
+      refresh_list=""; problems=0
       for src in "$top"/skills/pipeline-*/; do
         name="$(basename "$src")"
-        [ -e "$canon/$name" ] || continue                     # sweep only what is installed
+        # -L counts as installed: a DANGLING symlink must reach the diagnostic below,
+        # never be silently skipped as absent.
+        [ -e "$canon/$name" ] || [ -L "$canon/$name" ] || continue
         src_phys="$(cd "$src" && pwd -P)"
-        tgt="$(cd "$canon/$name" 2>/dev/null && pwd -P || true)"
         if [ -L "$canon/$name" ]; then
-          # A symlink is fresh ONLY when it resolves to THIS skill's source dir —
-          # membership anywhere under the clone is not enough (a link misbound to a
-          # sibling skill must be surfaced, never blessed as latest).
+          tgt="$(cd "$canon/$name" 2>/dev/null && pwd -P || true)"
           [ "$tgt" = "$src_phys" ] && continue
-          echo "WARNING: $canon/$name is a symlink bound to '${tgt:-<broken>}', not this skill — left untouched; fix the attachment" >&2
+          echo "WARNING: $canon/$name is a symlink bound to '${tgt:-<dangling>}', not this skill — fix the attachment" >&2
           problems=1; continue
         fi
-        # diff semantics: 0 = identical (skip), 1 = genuinely differs (refresh),
-        # >=2 = comparison ERROR — never destroy on a comparison we could not trust.
-        if diff -rq "$src" "$canon/$name" >/dev/null 2>&1; then
-          continue
-        elif [ $? -ne 1 ]; then
-          echo "WARNING: cannot compare $canon/$name (diff error) — left untouched" >&2
+        # Comparison trust: ANY stderr diagnostic voids the comparison — BSD diff can
+        # print "Permission denied" yet still exit 0 (reproduced), so rc alone lies.
+        diff_err="$(diff -rq "$src" "$canon/$name" 2>&1 >/dev/null)" && diff_rc=0 || diff_rc=$?
+        if [ -n "$diff_err" ] || [ "$diff_rc" -ge 2 ]; then
+          echo "WARNING: cannot trust the comparison for $canon/$name (rc=$diff_rc${diff_err:+, diagnostics on stderr}) — fix, then re-run" >&2
           problems=1; continue
         fi
-        # Transactional replace: stage a sibling copy, move the old aside, swap in,
-        # then drop the backup. Any failure leaves the installed skill in place (or
-        # rolls it back) and exits non-zero — "non-zero exit => install untouched".
-        staging="$canon/.$name.update-staging"; backup="$canon/.$name.update-backup"
-        rm -rf "$staging" "$backup"
-        if ! cp -r "$src" "$staging"; then
-          rm -rf "$staging"
-          echo "ERROR: staging copy failed for $name — canonical copy untouched" >&2
-          exit 1
-        fi
-        if ! mv "$canon/$name" "$backup"; then
-          rm -rf "$staging"
-          echo "ERROR: cannot move aside $canon/$name — canonical copy untouched" >&2
-          exit 1
-        fi
-        if ! mv "$staging" "$canon/$name"; then
-          mv "$backup" "$canon/$name" || echo "ERROR: rollback ALSO failed — old copy preserved at $backup" >&2
-          rm -rf "$staging"
-          echo "ERROR: swap failed for $name — canonical copy restored" >&2
-          exit 1
-        fi
-        rm -rf "$backup"
-        changed=1
-        echo "refreshed canonical copy: $canon/$name"
+        [ "$diff_rc" = 1 ] && refresh_list="$refresh_list $name"
       done
-      if [ "$changed" = 0 ] && [ "$problems" = 0 ]; then
-        echo "canonical copies in $canon already latest"
-      fi
+
       if [ "$problems" != 0 ]; then
-        echo "WARNING: canonical sweep found problems (see above) — fix the attachment(s), re-run to verify" >&2
-        sweep_problems=1
+        [ "$old" != "$new" ] && git -C "$top" reset --hard "$old" >/dev/null
+        echo "ERROR: attachment problems above — NOTHING changed this run (clone rolled back to $old). Fix, then re-run." >&2
+        exit 1
+      fi
+
+      if [ -z "$refresh_list" ]; then
+        echo "canonical copies in $canon already latest"
+      else
+        # Phase A: stage EVERYTHING before touching anything live.
+        for name in $refresh_list; do
+          if ! cp -r "$top/skills/$name" "$canon/.$name.update-staging"; then
+            for n2 in $refresh_list; do rm -rf "$canon/.$n2.update-staging"; done
+            [ "$old" != "$new" ] && git -C "$top" reset --hard "$old" >/dev/null
+            echo "ERROR: staging failed for $name — canonical copies untouched; clone rolled back to $old." >&2
+            exit 1
+          fi
+        done
+        # Phase B: swap all; ANY failure restores every completed swap + the clone.
+        done_list=""
+        for name in $refresh_list; do
+          staging="$canon/.$name.update-staging"; backup="$canon/.$name.update-backup"
+          if mv "$canon/$name" "$backup" && mv "$staging" "$canon/$name"; then
+            done_list="$done_list $name"
+          else
+            { [ -e "$canon/$name" ] || [ -L "$canon/$name" ]; } || { [ -e "$backup" ] && mv "$backup" "$canon/$name"; }
+            for n2 in $done_list; do
+              rm -rf "$canon/$n2"
+              mv "$canon/.$n2.update-backup" "$canon/$n2" \
+                || echo "ERROR: rollback failed for $n2 — previous copy preserved at $canon/.$n2.update-backup (janitor restores it next run)" >&2
+            done
+            for n2 in $refresh_list; do rm -rf "$canon/.$n2.update-staging"; done
+            [ "$old" != "$new" ] && git -C "$top" reset --hard "$old" >/dev/null
+            echo "ERROR: swap failed at $name — all canonical copies rolled back; clone rolled back to $old." >&2
+            exit 1
+          fi
+        done
+        # Phase C: drop backups. The install is already correct — a cleanup failure
+        # only warns (truthfully) and the janitor retries next run; rc stays 0.
+        for name in $done_list; do
+          rm -rf "$canon/.$name.update-backup" \
+            || echo "WARNING: could not drop the backup for $name — install itself is correct; janitor retries next run" >&2
+          echo "refreshed canonical copy: $canon/$name"
+        done
       fi
     fi
   else
@@ -140,7 +173,6 @@ main() {
   fi
 
   echo "scope: refreshed runtime-shared pipeline-* shims only; no target repo .pipeline/ state touched."
-  [ "$sweep_problems" = 0 ] || exit 1
 }
 
 # Wrapper so bash parses the whole file before executing: Mode 1's cp may overwrite this
