@@ -41,7 +41,8 @@ sub-instruction is the cheap seam if your skill supports one).
    think→code→check within the turn budget. Only code lives on the branch; never touch `spec-paths:`.
 4. **Green** ⇒ push `feat/<feature>`, open/update a PR via the forge adapter, then on `main` flip the
    card `status: review`, advance `current.json.stage` to `impl`, and **append your handoff to
-   `journal.md`** — these three metadata writes are **one commit on `main`** (this card completed —
+   `journal.md`** (per §Journal discipline below — file END, exact header, self-verified) — these
+   three metadata writes are **one commit on `main`** (this card completed —
    stage = most-recently-completed). Opening the PR needs the repo's forge token (loaded per CONTRACT
    step 2 from `.env` etc.). If the token is absent, **do NOT fail** — push the branch + make that same
    `main` commit (`status: review` + `stage: impl` + journal entry) anyway, and say in the handoff that
@@ -58,14 +59,56 @@ sub-instruction is the cheap seam if your skill supports one).
    - **`attempts >= 3`** ⇒ `status: blocked`, journal `status=blocked`, next = **pipeline-hunt**
      (root-cause before any re-queue — never blind retry).
    **Leave `current.json.stage` unchanged** (impl did NOT complete — keep `task`). Append the
-   `## Attempt N` note + the selected handoff to `journal.md`, then **commit the card (`attempts` + the
+   `## Attempt N` note + the selected handoff to `journal.md` (§Journal discipline), then **commit the card (`attempts` + the
    decided `status` + note) + `journal.md` together to `main` in ONE commit** — so a cold node never
    reads a half-updated state. Then print the handoff to the routed command (the next run reads only the
    card).
 
+## Journal discipline (mechanical, self-verified)
+
+"Append" means the **physical END of the file**: `>>` in a shell
+(`cat >> .pipeline/<feature>/journal.md`), never an editor insert, never the file head, never
+between entries. The physically-LAST entry is the run authority (CONTRACT §Run journal), so a
+misplaced entry makes your run invisible: drivers/dashboards keep reading the old tail and a driven
+run halts on "no progress" (field-failed twice on 2026-07-11 — a driven impl node PREPENDED its
+entries, once with fabricated copies of earlier entries, and both runs read as never-completed).
+
+The header must match the CONTRACT template EXACTLY:
+`## seq=N · <ISO-8601 UTC> · impl→<to> · <status> · by=<tag>` — seq = current tail's seq + 1;
+`<to> · <status>` is whichever disposition steps 4/5 selected: `review · completed` (green),
+`impl · failed` (informed retry, attempts < 3), `hunt · blocked` (attempts >= 3); REAL clock time:
+capture `WRITE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)` immediately before composing the entry and put
+that exact string in the header (never a placeholder like `00:00:00Z`, never local time wearing a
+`Z`); the arrow is `→` with NO spaces around it.
+
+**Self-verify BEFORE printing the handoff (blocking) — run BOTH checks on the committed file:**
+
+1. The physically-last header PARSES against the full template, bound to EXACTLY the three legal
+   dispositions, with a non-empty tag and an end anchor:
+
+   ```bash
+   tail -40 .pipeline/<feature>/journal.md | grep -E \
+     '^## seq=[0-9]+ · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z · impl→(review · completed|impl · failed|hunt · blocked) · by=.+$' \
+     | tail -1
+   ```
+
+   Illegal transition/status combinations (`impl→review · failed`, `task→done · completed`), a
+   spaced arrow, a malformed timestamp shape, and an empty `by=` all miss this match — then the
+   header is malformed, full stop.
+2. It is YOURS, byte-for-byte: capture `WRITE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)` immediately
+   before composing the entry and reuse that EXACT string as the header timestamp; the matched
+   line must carry your seq, your non-empty `by=` tag, and exactly `$WRITE_TS`. String equality
+   with your own just-captured clock leaves no room for placeholder or same-day fabricated
+   times — no date math, no tolerance window, portable everywhere.
+
+Fail either check ⇒ the run is INCOMPLETE: repair with a NEW correctly-appended entry (never
+rewrite or amend — CONTRACT append-only), then re-verify.
+
 ## Hard rules
 
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
+- Journal entries go at the file END and are self-verified as the new tail (§Journal discipline) —
+  a misplaced or malformed entry means the run does not count as completed.
 - Code (`impl-paths`/`src`) lives on `feat/<feature>`; card `status` flips commit to `main` (trunk
   authority — never leave card state stranded on the branch). White-box tests in `impl-paths:` are fine;
   the acceptance test stays frozen.
