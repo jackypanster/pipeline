@@ -146,7 +146,7 @@ Attach each runtime to that one copy:
 **Names resolve by frontmatter `name:`, not directory name** (field-verified on Claude Code
 2026-07-12: a symlinked directory under a different name does NOT register). When a runtime needs
 the canonical slot name to resolve to a runtime-local twin, attach a 10-line name-shim wrapper
-skill (frontmatter `name:` = the canonical name; body = "invoke <twin> with all arguments") — same
+skill (frontmatter `name:` = the canonical name; body = "invoke the twin skill with all arguments") — same
 pattern for every runtime whose skill registry is frontmatter-keyed.
 
 **Existing installs keep working — do not force-migrate.** Use this layout for every NEW
