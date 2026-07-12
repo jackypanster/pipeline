@@ -36,8 +36,12 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
    The sweep is **run-atomic, restart-safe and single-flight**: it fires for ANY installed
    canonical `pipeline-*` entry (a partial install without `pipeline-update` is still swept); the
-   whole clone+canon transaction takes an interprocess lock before any mutation — a concurrent run
-   aborts with rc 1 having changed nothing, and a dead holder's lock is reclaimed automatically. It
+   whole transaction runs under interprocess locks taken in fixed order before any mutation — a
+   per-clone lock guarding every Mode-2 fetch/reset, then the canonical lock (distinct clones can
+   target the same canon). A concurrent run aborts with rc 1 having changed nothing; a dead
+   holder's lock is reclaimed automatically (takeover is serialized by its own atomic reclaim
+   mutex that re-checks the holder, and both deletion and release verify a unique per-run
+   ownership token, so no process can ever remove a lock that changed hands). It
    detects first with zero mutation; stages every refresh before touching anything live; on ANY
    failure rolls back every completed swap AND the clone HEAD, with every rollback step guarded and
    verified. Exit contract: `0` = the install is correct (a failed backup cleanup only warns — the

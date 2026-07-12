@@ -13,28 +13,60 @@ REPO_URL="https://github.com/jackypanster/pipeline.git"
 REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
-LOCK="" # global: path of the HELD transaction lock ("" = not held) — EXIT-trap released
+HELD_LOCKS=""                                # lock dirs THIS process acquired (EXIT-released)
+LOCK_TOKEN="$$.$(date +%s).$RANDOM$RANDOM"   # unique ownership token: pid alone is reusable
 
-# Interprocess mutex for the Mode-2 clone+canon transaction. mkdir is the atomic
-# arbiter; the holder's pid is recorded so a DEAD holder's lock is reclaimed (one
-# reclaim attempt, mkdir re-arbitrates the takeover race) while a live — or
-# undeterminable — holder keeps it. Sets LOCK only on success, so release_lock can
-# never remove a lock this process does not own.
+# Interprocess mutexes for the Mode-2 transaction (per-clone lock + canonical lock).
+# mkdir is the atomic arbiter. Each lock records the holder's pid (liveness probe)
+# and this run's unique token (ownership proof): deletion and release are only ever
+# performed against VERIFIED state, never against a bare path — a path-only rm can
+# destroy a lock that changed hands between probe and removal (TOCTOU).
+try_lock() {   # atomically claim $1 and stamp ownership; records it for release
+  local path="$1"
+  mkdir "$path" 2>/dev/null || return 1
+  echo "$$" > "$path/pid"
+  echo "$LOCK_TOKEN" > "$path/token"
+  HELD_LOCKS="$HELD_LOCKS $path"
+  return 0
+}
 acquire_lock() {
-  local path="$1" holder
-  if mkdir "$path" 2>/dev/null; then echo "$$" > "$path/pid"; LOCK="$path"; return 0; fi
+  local path="$1" holder reap
+  if try_lock "$path"; then return 0; fi
   holder="$(cat "$path/pid" 2>/dev/null || true)"
+  # An empty/unreadable pid is a lock mid-stamp (or corrupt): treat as LIVE — fail safe.
   if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
-  rm -rf "$path" 2>/dev/null || true
-  if mkdir "$path" 2>/dev/null; then echo "$$" > "$path/pid"; LOCK="$path"; return 0; fi
+  # Dead holder: reclaim is serialized by its own atomic mutex, and the holder is
+  # RE-probed inside it — two contenders may both see the same dead pid, but only
+  # the reaper may delete, so the loser can never rm the winner's fresh lock. A
+  # busy (or crashed) reaper fails this run safely; a crashed reaper's .reap dir
+  # (dead pid inside) is the one artifact an operator removes by hand.
+  reap="$path.reap"
+  mkdir "$reap" 2>/dev/null || return 1
+  echo "$$" > "$reap/pid"
+  holder="$(cat "$path/pid" 2>/dev/null || true)"
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then
+      rm -rf "$reap" 2>/dev/null || true   # someone re-acquired it alive meanwhile
+      return 1
+    fi
+    rm -rf "$path" 2>/dev/null || true     # verified dead UNDER the reclaim mutex
+  fi
+  if try_lock "$path"; then
+    rm -rf "$reap" 2>/dev/null || true
+    return 0
+  fi
+  rm -rf "$reap" 2>/dev/null || true       # a normal acquirer won the mkdir race
   return 1
 }
-release_lock() {
-  if [ -n "$LOCK" ]; then
-    rm -rf "$LOCK" \
-      || echo "WARNING: could not release lock $LOCK — the next run reclaims it (holder pid is dead)" >&2
-    LOCK=""
-  fi
+release_locks() {
+  local l
+  for l in $HELD_LOCKS; do
+    if [ "$(cat "$l/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then
+      rm -rf "$l" \
+        || echo "WARNING: could not release lock $l — a dead holder's lock is reclaimed next run" >&2
+    fi   # token mismatch: the lock changed hands (we were presumed dead) — NOT ours to remove
+  done
+  HELD_LOCKS=""
 }
 
 # Drop every staging artifact of the current refresh_list and NAME each one that
@@ -69,7 +101,7 @@ rollback_clone() {
 main() {
   local self_dir skills_dir probe top mode old new changed name src canon tgt
   local src_phys staging backup problems refresh_list done_list diff_err diff_rc n2
-  local sweep rolled leftover lock_path
+  local sweep rolled leftover lock_path clone_lock
   self_dir="$(cd "$(dirname "$0")/.." && pwd)"   # …/skills/pipeline-update
   if [ $# -ge 1 ]; then
     skills_dir="$1"
@@ -114,15 +146,24 @@ main() {
     fi
     # Single-flight: the janitor cannot tell a RUNNING updater's in-flight backup/
     # staging from an interrupted run's leftovers — existence checks alone are TOCTOU
-    # — so the whole clone+canon transaction takes an interprocess lock BEFORE any
-    # mutation, INCLUDING the fetch/reset: a lock-busy run must also leave the clone
-    # alone while the holder stages from it. A live holder aborts this run with
-    # nothing changed; a dead holder's lock is reclaimed (see acquire_lock).
+    # — so every mutation runs under interprocess locks taken BEFORE it, in a FIXED
+    # order: (1) the per-clone lock — fetch/reset ALWAYS mutate the shared clone,
+    # even with an empty canon, canon==clone/skills, or per-run PIPELINE_CANON_SKILLS
+    # values, so it guards every Mode-2 run; (2) the canonical lock — distinct clones
+    # can target the same canon. A live holder aborts this run with nothing changed;
+    # a dead holder's lock is reclaimed (see acquire_lock).
+    trap release_locks EXIT
+    clone_lock="$(git -C "$top" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    [ -n "$clone_lock" ] || clone_lock="$top/.git"
+    clone_lock="$clone_lock/pipeline-update.lock"
+    if ! acquire_lock "$clone_lock"; then
+      echo "ERROR: another pipeline-update run is active on this clone (lock: $clone_lock, holder pid: $(cat "$clone_lock/pid" 2>/dev/null || echo unknown)) — nothing changed this run; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $clone_lock.reap with a dead pid needs removing by hand." >&2
+      exit 1
+    fi
     if [ "$sweep" = 1 ]; then
       lock_path="$canon/.pipeline-update.lock"
-      trap release_lock EXIT
       if ! acquire_lock "$lock_path"; then
-        echo "ERROR: another pipeline-update run is active (lock: $lock_path, holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)) — nothing changed this run; re-run after it finishes." >&2
+        echo "ERROR: another pipeline-update run is active on $canon (lock: $lock_path, holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)) — nothing changed this run; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $lock_path.reap with a dead pid needs removing by hand." >&2
         exit 1
       fi
     fi
