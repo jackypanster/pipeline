@@ -36,10 +36,14 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
    The sweep is **run-atomic and restart-safe**: detect first with zero mutation; stage every
    refresh before touching anything live; on ANY failure roll back every completed swap AND the
-   clone HEAD. Exit contract: `0` = the install is correct (a failed backup cleanup only warns —
-   the janitor retries next run); `1` = nothing changed / everything was rolled back. A startup
-   janitor recovers interrupted runs (restores a live copy left missing between swap steps, drops
-   leftover backups/staging).
+   clone HEAD, with every rollback step guarded and verified. Exit contract: `0` = the install is
+   correct (a failed backup cleanup only warns — the janitor retries next run); `1` = not updated —
+   fully rolled back, or the output names exactly what a failed recovery step left behind for the
+   janitor to finish on the next run. A startup janitor recovers interrupted runs (restores a live
+   copy left missing between swap steps — including when the interrupted entry is `pipeline-update`
+   itself — and drops leftover backups/staging); it is scoped strictly to the
+   `.pipeline-*.update-*` artifact namespace, never touching other names, and any recovery failure
+   aborts the run before mutation.
 
    If the runtime does not expose this skill's base dir, locate the installed `pipeline-update/`
    directory (it contains this file) and run the script from there; cannot locate it ⇒ STOP and ask
