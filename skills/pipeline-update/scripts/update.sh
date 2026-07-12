@@ -13,6 +13,48 @@ REPO_URL="https://github.com/jackypanster/pipeline.git"
 REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
+LOCK="" # global: path of the HELD transaction lock ("" = not held) — EXIT-trap released
+
+# Interprocess mutex for the Mode-2 clone+canon transaction. mkdir is the atomic
+# arbiter; the holder's pid is recorded so a DEAD holder's lock is reclaimed (one
+# reclaim attempt, mkdir re-arbitrates the takeover race) while a live — or
+# undeterminable — holder keeps it. Sets LOCK only on success, so release_lock can
+# never remove a lock this process does not own.
+acquire_lock() {
+  local path="$1" holder
+  if mkdir "$path" 2>/dev/null; then echo "$$" > "$path/pid"; LOCK="$path"; return 0; fi
+  holder="$(cat "$path/pid" 2>/dev/null || true)"
+  if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
+  rm -rf "$path" 2>/dev/null || true
+  if mkdir "$path" 2>/dev/null; then echo "$$" > "$path/pid"; LOCK="$path"; return 0; fi
+  return 1
+}
+release_lock() {
+  if [ -n "$LOCK" ]; then
+    rm -rf "$LOCK" \
+      || echo "WARNING: could not release lock $LOCK — the next run reclaims it (holder pid is dead)" >&2
+    LOCK=""
+  fi
+}
+
+# Drop every staging artifact of the current refresh_list and NAME each one that
+# survives — the rc=1 contract promises the output names exactly what a failed
+# recovery step left behind, so `rm || true` alone is not enough. Returns 1 when
+# any residue remains (the janitor retries it next run).
+drop_all_staging() {
+  local n s residue=0
+  for n in $refresh_list; do
+    s="$canon/.$n.update-staging"
+    if [ -e "$s" ] || [ -L "$s" ]; then
+      rm -rf "$s" || true
+      if [ -e "$s" ] || [ -L "$s" ]; then
+        residue=1
+        echo "ERROR: could not drop staging $s — janitor retries next run" >&2
+      fi
+    fi
+  done
+  return $residue
+}
 
 # Roll the Mode-2 clone back to the pre-update HEAD and VERIFY it landed; return 0
 # only when HEAD is PROVEN back at $old (reads main()'s old/new/top via bash dynamic
@@ -27,7 +69,7 @@ rollback_clone() {
 main() {
   local self_dir skills_dir probe top mode old new changed name src canon tgt
   local src_phys staging backup problems refresh_list done_list diff_err diff_rc n2
-  local sweep rolled leftover
+  local sweep rolled leftover lock_path
   self_dir="$(cd "$(dirname "$0")/.." && pwd)"   # …/skills/pipeline-update
   if [ $# -ge 1 ]; then
     skills_dir="$1"
@@ -48,6 +90,42 @@ main() {
 
   if [ "$mode" = 2 ]; then
     old="$(git -C "$top" rev-parse HEAD)"
+    # Canonical-layout sweep (README §Canonical multi-runtime layout): runtimes attach
+    # by SYMLINKING into ONE shared dir of COPIES (~/.agents/skills); a clone-side run
+    # must refresh those copies too (field-failed 2026-07-12: "already latest" while
+    # every runtime served the old shim). Override location: PIPELINE_CANON_SKILLS.
+    # RUN-ATOMIC: janitor (finish any interrupted sweep FIRST) -> detect (zero
+    # mutation) -> stage ALL -> swap ALL (full rollback on any failure, INCLUDING the
+    # clone HEAD; every rollback step guarded + verified) -> drop backups (cleanup
+    # failure = warn only). Recovery artifacts live ONLY in the .pipeline-*.update-*
+    # namespace; the janitor never touches other names. Exit contract: rc=0 => install
+    # correct; rc=1 => not updated — fully rolled back, or the output names exactly
+    # what a failed recovery step left for the janitor to finish next run.
+    canon="${PIPELINE_CANON_SKILLS:-$HOME/.agents/skills}"
+    # Gate on ANY installed canonical pipeline-* entry — a partial install without
+    # pipeline-update still holds stale copies that must be swept — or on recovery
+    # artifacts (the interrupted entry may be the ONLY installed one, its live path
+    # missing; the janitor must still be reachable to restore it). Pure reads only.
+    sweep=0
+    if [ "$(cd "$canon" 2>/dev/null && pwd -P || echo __NO__)" != "$(cd "$top/skills" && pwd -P)" ]; then
+      for leftover in "$canon"/pipeline-* "$canon"/.pipeline-*.update-backup "$canon"/.pipeline-*.update-staging; do
+        if [ -e "$leftover" ] || [ -L "$leftover" ]; then sweep=1; break; fi
+      done
+    fi
+    # Single-flight: the janitor cannot tell a RUNNING updater's in-flight backup/
+    # staging from an interrupted run's leftovers — existence checks alone are TOCTOU
+    # — so the whole clone+canon transaction takes an interprocess lock BEFORE any
+    # mutation, INCLUDING the fetch/reset: a lock-busy run must also leave the clone
+    # alone while the holder stages from it. A live holder aborts this run with
+    # nothing changed; a dead holder's lock is reclaimed (see acquire_lock).
+    if [ "$sweep" = 1 ]; then
+      lock_path="$canon/.pipeline-update.lock"
+      trap release_lock EXIT
+      if ! acquire_lock "$lock_path"; then
+        echo "ERROR: another pipeline-update run is active (lock: $lock_path, holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)) — nothing changed this run; re-run after it finishes." >&2
+        exit 1
+      fi
+    fi
     # Bare `fetch origin`, not `fetch origin main`: reliably updates the origin/main
     # tracking ref before the reset (the sanctioned read-only-consumer refresh,
     # CONTRACT §Self-improvement).
@@ -61,31 +139,6 @@ main() {
       echo "updated $old -> $new; commits + files moved:"
       git -C "$top" log --oneline "$old..$new"
       git -C "$top" diff --name-only "$old" "$new" -- skills CONTRACT.md README.md
-    fi
-    # Canonical-layout sweep (README §Canonical multi-runtime layout): runtimes attach
-    # by SYMLINKING into ONE shared dir of COPIES (~/.agents/skills); a clone-side run
-    # must refresh those copies too (field-failed 2026-07-12: "already latest" while
-    # every runtime served the old shim). Override location: PIPELINE_CANON_SKILLS.
-    # RUN-ATOMIC: janitor (finish any interrupted sweep FIRST) -> detect (zero
-    # mutation) -> stage ALL -> swap ALL (full rollback on any failure, INCLUDING the
-    # clone HEAD; every rollback step guarded + verified) -> drop backups (cleanup
-    # failure = warn only). Recovery artifacts live ONLY in the .pipeline-*.update-*
-    # namespace; the janitor never touches other names. Exit contract: rc=0 => install
-    # correct; rc=1 => not updated — fully rolled back, or the output names exactly
-    # what a failed recovery step left for the janitor to finish next run.
-    canon="${PIPELINE_CANON_SKILLS:-$HOME/.agents/skills}"
-    # Gate on the LAYOUT, not on pipeline-update's live path alone: an interrupted
-    # sweep of pipeline-update ITSELF leaves that live path missing with only its
-    # .update-backup behind — the janitor must still be reachable to restore it.
-    sweep=0
-    if [ "$(cd "$canon" 2>/dev/null && pwd -P || echo __NO__)" != "$(cd "$top/skills" && pwd -P)" ]; then
-      if [ -d "$canon/pipeline-update" ] || [ -L "$canon/pipeline-update" ]; then
-        sweep=1
-      else
-        for leftover in "$canon"/.pipeline-*.update-backup "$canon"/.pipeline-*.update-staging; do
-          if [ -e "$leftover" ] || [ -L "$leftover" ]; then sweep=1; break; fi
-        done
-      fi
     fi
     if [ "$sweep" = 1 ]; then
 
@@ -162,11 +215,16 @@ main() {
         for name in $refresh_list; do
           staging="$canon/.$name.update-staging"
           if [ -e "$staging" ] || [ -L "$staging" ] || ! cp -r "$top/skills/$name" "$staging"; then
-            for n2 in $refresh_list; do rm -rf "$canon/.$n2.update-staging" || true; done
-            if rollback_clone; then
+            rolled=1
+            drop_all_staging || rolled=0
+            if ! rollback_clone; then
+              rolled=0
+              echo "ERROR: clone FAILED to roll back to $old" >&2
+            fi
+            if [ "$rolled" = 1 ]; then
               echo "ERROR: staging failed for $name — canonical copies untouched; clone rolled back to $old." >&2
             else
-              echo "ERROR: staging failed for $name — canonical copies untouched; clone FAILED to roll back to $old." >&2
+              echo "ERROR: staging failed for $name — live canonical copies untouched, but recovery is INCOMPLETE (residue named above); re-run pipeline-update so the janitor can finish." >&2
             fi
             exit 1
           fi
@@ -200,7 +258,7 @@ main() {
                 echo "ERROR: rollback failed for $n2 — previous copy preserved at $canon/.$n2.update-backup (janitor restores it next run)" >&2
               fi
             done
-            for n2 in $refresh_list; do rm -rf "$canon/.$n2.update-staging" || true; done
+            drop_all_staging || rolled=0
             if ! rollback_clone; then
               rolled=0
               echo "ERROR: clone FAILED to roll back to $old" >&2
