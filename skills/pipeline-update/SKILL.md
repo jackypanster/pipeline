@@ -28,6 +28,11 @@ table, from `roles.yaml`, and from the onboarding snippet.
                                                              # (arg used verbatim as the shim dir)
    ```
 
+   Mode 2 additionally sweeps the canonical multi-runtime dir (`~/.agents/skills`, override with
+   `PIPELINE_CANON_SKILLS`): stale COPIES there are refreshed from the just-updated clone, symlinks
+   resolving into the clone are skipped as already fresh — so a clone-side run can no longer report
+   "already latest" while every runtime attachment still serves an old shim.
+
    If the runtime does not expose this skill's base dir, locate the installed `pipeline-update/`
    directory (it contains this file) and run the script from there; cannot locate it ⇒ STOP and ask
    the operator for the runtime skill dir — never guess. **Relay the script's output verbatim** (mode,
