@@ -40,7 +40,8 @@ table, from `roles.yaml`, and from the onboarding snippet.
    per-clone lock guarding every Mode-2 fetch/reset, then the canonical lock (distinct clones can
    target the same canon). A concurrent run aborts with rc 1 having changed nothing; a dead
    holder's lock is reclaimed automatically (takeover is serialized by its own atomic reclaim
-   mutex that re-checks the holder, and both deletion and release verify a unique per-run
+   mutex that re-checks the holder; liveness compares pid AND process start time, so a reused
+   pid cannot masquerade as a live holder; and both deletion and release verify a unique per-run
    ownership token, so no process can ever remove a lock that changed hands). It
    detects first with zero mutation; stages every refresh before touching anything live; on ANY
    failure rolls back every completed swap AND the clone HEAD, with every rollback step guarded and

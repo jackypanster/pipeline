@@ -13,28 +13,59 @@ REPO_URL="https://github.com/jackypanster/pipeline.git"
 REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
-HELD_LOCKS=""                                # lock dirs THIS process acquired (EXIT-released)
+HELD_LOCKS=()                                # lock dirs THIS process acquired (EXIT-released);
+                                             # an ARRAY: paths may contain spaces
 LOCK_TOKEN="$$.$(date +%s).$RANDOM$RANDOM"   # unique ownership token: pid alone is reusable
 
 # Interprocess mutexes for the Mode-2 transaction (per-clone lock + canonical lock).
-# mkdir is the atomic arbiter. Each lock records the holder's pid (liveness probe)
-# and this run's unique token (ownership proof): deletion and release are only ever
-# performed against VERIFIED state, never against a bare path — a path-only rm can
-# destroy a lock that changed hands between probe and removal (TOCTOU).
-try_lock() {   # atomically claim $1 and stamp ownership; records it for release
+# mkdir is the atomic arbiter. Each lock records the holder's pid (liveness probe),
+# its process START TIME (generation — unmasks pid REUSE), and this run's unique
+# token (ownership proof): deletion and release are only ever performed against
+# VERIFIED state, never against a bare path — a path-only rm can destroy a lock
+# that changed hands between probe and removal (TOCTOU).
+drop_lock_dir() {  # remove a lock/reap dir this process created and VERIFY it is
+                   # gone; chmod first — a dir born under a restrictive umask has no
+                   # search bit and defeats a plain rm -rf (silently, reproduced).
+  chmod u+rwx "$1" 2>/dev/null || true
+  rm -rf "$1" 2>/dev/null || true
+  ! { [ -e "$1" ] || [ -L "$1" ]; }
+}
+try_lock() {   # atomically claim $1, stamp ownership, and VERIFY the stamp landed
   local path="$1"
   mkdir "$path" 2>/dev/null || return 1
-  echo "$$" > "$path/pid"
-  echo "$LOCK_TOKEN" > "$path/token"
-  HELD_LOCKS="$HELD_LOCKS $path"
+  { echo "$$" > "$path/pid" && echo "$LOCK_TOKEN" > "$path/token" \
+      && ps -o lstart= -p "$$" > "$path/gen"; } 2>/dev/null || true
+  if [ "$(cat "$path/pid" 2>/dev/null)" != "$$" ] \
+     || [ "$(cat "$path/token" 2>/dev/null)" != "$LOCK_TOKEN" ]; then
+    # An UNSTAMPED lock could never be auto-reclaimed (an empty pid reads as live);
+    # drop the fresh dir instead — provably ours: we just created it, nobody else
+    # can have claimed it. If even that fails, say so: it needs a manual rm.
+    if drop_lock_dir "$path"; then
+      echo "ERROR: could not stamp lock $path (pid/token write failed) — not holding it" >&2
+    else
+      echo "ERROR: could not stamp lock $path AND could not remove it — remove it by hand before the next run" >&2
+    fi
+    return 1
+  fi
+  HELD_LOCKS+=("$path")
   return 0
 }
+holder_alive() {   # $1 = lock dir. Alive unless PROVEN dead: an empty/mid-stamp pid
+                   # stays live (fail-safe); a recorded generation unmasks pid reuse
+                   # (same pid, different start time => the real holder is gone).
+  local pid gen now
+  pid="$(cat "$1/pid" 2>/dev/null || true)"
+  [ -n "$pid" ] || return 0
+  kill -0 "$pid" 2>/dev/null || return 1
+  gen="$(cat "$1/gen" 2>/dev/null || true)"
+  [ -n "$gen" ] || return 0
+  now="$(ps -o lstart= -p "$pid" 2>/dev/null || true)"
+  [ "$now" = "$gen" ]
+}
 acquire_lock() {
-  local path="$1" holder reap
+  local path="$1" reap
   if try_lock "$path"; then return 0; fi
-  holder="$(cat "$path/pid" 2>/dev/null || true)"
-  # An empty/unreadable pid is a lock mid-stamp (or corrupt): treat as LIVE — fail safe.
-  if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
+  if holder_alive "$path"; then return 1; fi
   # Dead holder: reclaim is serialized by its own atomic mutex, and the holder is
   # RE-probed inside it — two contenders may both see the same dead pid, but only
   # the reaper may delete, so the loser can never rm the winner's fresh lock. A
@@ -42,31 +73,30 @@ acquire_lock() {
   # (dead pid inside) is the one artifact an operator removes by hand.
   reap="$path.reap"
   mkdir "$reap" 2>/dev/null || return 1
-  echo "$$" > "$reap/pid"
-  holder="$(cat "$path/pid" 2>/dev/null || true)"
+  echo "$$" > "$reap/pid" 2>/dev/null || true
   if [ -e "$path" ] || [ -L "$path" ]; then
-    if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then
-      rm -rf "$reap" 2>/dev/null || true   # someone re-acquired it alive meanwhile
+    if holder_alive "$path"; then
+      drop_lock_dir "$reap" || true        # someone re-acquired it alive meanwhile
       return 1
     fi
     rm -rf "$path" 2>/dev/null || true     # verified dead UNDER the reclaim mutex
   fi
   if try_lock "$path"; then
-    rm -rf "$reap" 2>/dev/null || true
+    drop_lock_dir "$reap" || true
     return 0
   fi
-  rm -rf "$reap" 2>/dev/null || true       # a normal acquirer won the mkdir race
+  drop_lock_dir "$reap" || true            # a normal acquirer won the mkdir race
   return 1
 }
 release_locks() {
   local l
-  for l in $HELD_LOCKS; do
+  for l in ${HELD_LOCKS[@]+"${HELD_LOCKS[@]}"}; do   # set -u-safe empty-array expansion
     if [ "$(cat "$l/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then
-      rm -rf "$l" \
+      drop_lock_dir "$l" \
         || echo "WARNING: could not release lock $l — a dead holder's lock is reclaimed next run" >&2
     fi   # token mismatch: the lock changed hands (we were presumed dead) — NOT ours to remove
   done
-  HELD_LOCKS=""
+  HELD_LOCKS=()
 }
 
 # Drop every staging artifact of the current refresh_list and NAME each one that
@@ -121,7 +151,6 @@ main() {
   fi
 
   if [ "$mode" = 2 ]; then
-    old="$(git -C "$top" rev-parse HEAD)"
     # Canonical-layout sweep (README §Canonical multi-runtime layout): runtimes attach
     # by SYMLINKING into ONE shared dir of COPIES (~/.agents/skills); a clone-side run
     # must refresh those copies too (field-failed 2026-07-12: "already latest" while
@@ -167,6 +196,10 @@ main() {
         exit 1
       fi
     fi
+    # `old` is read UNDER the clone lock: a pre-lock read can go stale while another
+    # updater advances the shared clone, and a later failure rollback would then
+    # reset the clone BEHIND that updater's legitimate new HEAD.
+    old="$(git -C "$top" rev-parse HEAD)"
     # Bare `fetch origin`, not `fetch origin main`: reliably updates the origin/main
     # tracking ref before the reset (the sanctioned read-only-consumer refresh,
     # CONTRACT §Self-improvement).
