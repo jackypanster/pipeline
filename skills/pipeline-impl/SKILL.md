@@ -76,25 +76,30 @@ entries, once with fabricated copies of earlier entries, and both runs read as n
 The header must match the CONTRACT template EXACTLY:
 `## seq=N · <ISO-8601 UTC> · impl→<to> · <status> · by=<tag>` — seq = current tail's seq + 1;
 `<to> · <status>` is whichever disposition steps 4/5 selected: `review · completed` (green),
-`impl · failed` (informed retry, attempts < 3), `hunt · blocked` (attempts >= 3); REAL clock time
-from `date -u +%Y-%m-%dT%H:%M:%SZ` captured at write time (never a placeholder like `00:00:00Z`,
-never local time wearing a `Z`); the arrow is `→` with NO spaces around it.
+`impl · failed` (informed retry, attempts < 3), `hunt · blocked` (attempts >= 3); REAL clock time:
+capture `WRITE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)` immediately before composing the entry and put
+that exact string in the header (never a placeholder like `00:00:00Z`, never local time wearing a
+`Z`); the arrow is `→` with NO spaces around it.
 
 **Self-verify BEFORE printing the handoff (blocking) — run BOTH checks on the committed file:**
 
-1. The physically-last header PARSES against the full template:
+1. The physically-last header PARSES against the full template, bound to EXACTLY the three legal
+   dispositions, with a non-empty tag and an end anchor:
 
    ```bash
    tail -40 .pipeline/<feature>/journal.md | grep -E \
-     '^## seq=[0-9]+ · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z · [a-z]+→[a-z]+ · (completed|failed|blocked) · by=' \
+     '^## seq=[0-9]+ · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z · impl→(review · completed|impl · failed|hunt · blocked) · by=.+$' \
      | tail -1
    ```
 
-   A spaced arrow, a malformed/non-UTC timestamp shape, or an off-vocabulary status makes this
-   grep miss the line — then the header is malformed, full stop.
-2. It is YOURS and FRESH: the matched line carries your seq and `by=` tag, and its date field
-   equals `date -u +%Y-%m-%d` (catches placeholder midnights and local-time-wearing-a-Z except
-   within minutes of the UTC date boundary — when in doubt, regenerate from the real clock).
+   Illegal transition/status combinations (`impl→review · failed`, `task→done · completed`), a
+   spaced arrow, a malformed timestamp shape, and an empty `by=` all miss this match — then the
+   header is malformed, full stop.
+2. It is YOURS, byte-for-byte: capture `WRITE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)` immediately
+   before composing the entry and reuse that EXACT string as the header timestamp; the matched
+   line must carry your seq, your non-empty `by=` tag, and exactly `$WRITE_TS`. String equality
+   with your own just-captured clock leaves no room for placeholder or same-day fabricated
+   times — no date math, no tolerance window, portable everywhere.
 
 Fail either check ⇒ the run is INCOMPLETE: repair with a NEW correctly-appended entry (never
 rewrite or amend — CONTRACT append-only), then re-verify.
