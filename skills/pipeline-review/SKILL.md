@@ -23,8 +23,10 @@ does it **preserve every existing hard rule + the frozen invariants** (for a sib
 documented hard rules and guarantees)? (b) write the verdict as a PR
 comment; (c) arm the same one-shot GO-gate (step 6) — but a **meta-PR has NO `.pipeline` journal**, so
 its target tuple `(repo · PR# · head OID · base OID · THIS reviewer session)` is held in the reviewer
-session ONLY; a lost session/record fails closed → re-review. On a valid direct-operator token, re-fetch
-+ **squash-merge**. Everything else still holds:
+session ONLY; a lost session/record fails closed → re-review. On a valid direct-operator token, invoke step 6's **expected-head
+compare-and-merge** (`gh pr merge <PR#> --repo <repo> --squash --delete-branch --match-head-commit <armed
+head OID>`; fail closed if the forge cannot enforce an expected-head condition — NEVER a plain
+`gh pr merge --squash`). Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
 **target-repo feature PR**; do not run them against a toolchain meta-PR.
 
@@ -124,6 +126,11 @@ optional bookkeeping — they are the audit contract. A merge without them is an
   (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; any
   drift, ambiguity, or lost session disarms → re-review. A review skill must not commit the
   loose-input-as-consent bug class it exists to catch.
+- **Every merge — in EITHER mode (feature PR AND meta-PR) — MUST atomically assert the armed head** via
+  the forge's expected-head compare-and-merge (github `gh pr merge … --match-head-commit <armed head>`;
+  gitee/other equivalent); a forge that cannot enforce an expected-head condition **fails closed** (no
+  merge, re-review). A plain merge with no head-match is NEVER acceptable — it reopens the
+  approve-then-push race for BOTH paths.
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
