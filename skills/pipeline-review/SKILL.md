@@ -60,9 +60,11 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    gate to merge ONLY when ALL hold:** (a) the operator's NEXT message in THIS SAME reviewer session,
    trimmed, equals EXACTLY one allowed token — whole message, no other content (`go do not merge` /
    `go; …` do NOT qualify); (b) a preflight RE-FETCH shows the PR still open with `headRefOid` == the
-   armed head, base OID unchanged (drift check), and EXACTLY ONE such candidate — **and the merge call
-   itself atomically re-asserts the armed head** (step-6 merge sink), so a head pushed BETWEEN this
-   check and the merge cannot slip in unreviewed; (c) every gate still green. ANY miss — extra content, a
+   armed head, base OID unchanged (drift check), and EXACTLY ONE such candidate — **and, on an
+   expected-head forge, the merge call itself atomically re-asserts the armed head** (step-6 merge sink)
+   so a head pushed between check and merge cannot slip in; on the **no-forge lane** the merge follows
+   CONTRACT §Forge adapter unchanged (its atomic-head hardening is an out-of-scope OPEN item — see the
+   merge sink); (c) every gate still green. ANY miss — extra content, a
    moved head/base, a closed/merged/zero-or-multiple-candidate state, a lost/different session, a
    **coordinator-relayed/forwarded token** (an automated or mistaken relay is indistinguishable from a
    human — NOT a valid confirm), or any non-token reply — **DISARMS the gate: no merge, re-review from
@@ -88,12 +90,13 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    **squash-merge** the `feat/<feature>` PR via the forge adapter's **expected-head compare-and-merge
    where the forge has one** — github: `gh pr merge <PR#> --repo <repo> --squash --delete-branch
    --match-head-commit <armed head OID>`; gitee/other: the equivalent expected-head merge (a head
-   mismatch REJECTS — re-review, don't retry blindly). The **no-forge lane** (CONTRACT §Forge adapter —
-   `git diff base..branch`, air-gapped/intranet, deliberately **fail-OPEN**) has no such primitive: its
-   preflight re-fetch is the sanctioned best-effort and the residual approve-then-push race is that
-   lane's DOCUMENTED tradeoff — **do NOT fail-close it** (that would deadlock a lane the CONTRACT
-   sanctions); this skill DEFERS to CONTRACT §Forge adapter there, never overrides it (delete the merged
-   branch; no local non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
+   mismatch REJECTS — re-review, don't retry blindly). On the **no-forge lane** (CONTRACT §Forge adapter —
+   `git diff base..branch`, air-gapped/intranet) there is no expected-head primitive: this PR does NOT
+   change no-forge merge behaviour — it follows CONTRACT §Forge adapter exactly as today (which never
+   drops the review gate). Making the no-forge merge atomically head-safe (e.g. a compare-and-swap push
+   of the immutable armed OID, reconciled with CONTRACT's `no local non-PR merges`) is an **explicit
+   OPEN item, out of scope for this PR** — NOT resolved here, and its residual race NOT labelled
+   "sanctioned" (delete the merged branch; no local non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
    to the **offending** card **+ a `journal.md` entry** (CONTRACT §Run journal — `status=failed`, the
    rejection is run history), and **flip that card `status: todo`** (`attempts >= 3` ⇒ `blocked`) — on a
@@ -131,11 +134,11 @@ optional bookkeeping — they are the audit contract. A merge without them is an
   loose-input-as-consent bug class it exists to catch.
 - **Every merge — feature PR AND meta-PR — MUST assert the armed head as strongly as the forge allows:**
   on a forge with an expected-head primitive (github `gh pr merge … --match-head-commit <armed head>`;
-  capable-forge equivalent) the merge atomically binds it and a mismatch REJECTS → re-review. The
-  **no-forge lane DEFERS to CONTRACT §Forge adapter** (its deliberate fail-OPEN degrade for
-  air-gapped/intranet — the preflight re-fetch is best-effort, the residual approve-then-push race is
-  that lane's sanctioned tradeoff, NOT a fail-close). Never a blind plain merge where a forge CAN bind
-  head; never fail-close (deadlock) the CONTRACT-sanctioned no-forge lane.
+  capable-forge equivalent) the merge atomically binds it and a mismatch REJECTS → re-review. On the
+  **no-forge lane** the merge is UNCHANGED by this rule — CONTRACT §Forge adapter governs it as today; a
+  head-atomic no-forge merge (a CAS push of the immutable armed OID) is an out-of-scope **OPEN item** —
+  do NOT fail-close/deadlock it, and do NOT label its residual race "sanctioned". Never a blind plain
+  merge where a forge CAN bind head.
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
