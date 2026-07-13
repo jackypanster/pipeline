@@ -45,10 +45,13 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    reading, in the card's `## Freeze coverage` section (step 6b). **"review must read" is a narrow
    exception, not a coverage escape:** a REQUIRED behaviour a hermetic test could detect must carry at
    least a frozen **dry-run / command-construction** assertion (unfrozen ⇒ impl ships it hollow-but-green,
-   caught only late in review); a required behaviour that genuinely cannot be frozen
-   (prompt/PTY-cancel, write atomicity, symlink/temp sinks) is FLAGGED as a **design-review risk**, not
-   silently deferred — a feature dominated by such behaviour is a design-review signal, not an impl-loop
-   one (CONTRACT §Freeze coverage).
+   caught only late in review). Before ruling a required behaviour unfreezable, FIRST seek/design a
+   seam — a **PTY harness**, a **temp dir + injected failure**, a **symlinked/pre-created destination**,
+   or **stubbed executables** (freeze the invocation + args) make most "hard" cases testable; admit
+   "review must read" only after the card records **why no seam exists**. A genuinely un-seamable
+   required behaviour that `arch` did not resolve (or a feature dominated by them) **FAILS CLOSED** —
+   stop before freeze commit 6a, record the risk, route back through `arch`/design-review; not a silent
+   note (CONTRACT §Freeze coverage).
 6. **Freeze the spec in TWO ordered commits to `main`** (CONTRACT §spec-rev double-commit protocol).
    NEVER mix the test and the card in one commit — that breaks the freeze the gate relies on:
    a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s) for **ALL the feature's cards**,

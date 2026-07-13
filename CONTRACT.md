@@ -204,13 +204,21 @@ the command, hit the honest-degrade path — with no real side effect). Otherwis
 letter (green suite) not the intent — an unfrozen required step ships as a no-op/hollow stub that passes
 every frozen test and the full-verify, and only review catches it, late (field lesson: a generated-config
 wizard shipped 4 of 7 required steps as empty stubs behind a fully green suite; the sink defects behind
-the remaining "review must read" surface then took three review rounds to reach `blocked`). When a
-required behaviour genuinely CANNOT be frozen (prompt/PTY-cancel semantics, write atomicity under
-mid-write failure, symlink/temp-race or other filesystem/security sinks), `pipeline-task` FLAGS it in
-`## Freeze coverage` as a **design-review risk** and confirms `arch` addressed it — and a feature
-*dominated* by such un-freezable required behaviour is a signal to design-review it before the
-impl→review loop, not to iterate the loop. This STRENGTHENS coverage; it changes nothing in the freeze
-gate, spec-rev protocol, state machine, or merge rules.
+the remaining "review must read" surface then took three review rounds to reach `blocked`).
+
+**Before ruling any required behaviour "review must read", `pipeline-task` MUST first seek or design an
+honest test SEAM** — most "hard to freeze" surfaces are in fact hermetically testable: a
+**pseudo-terminal harness** (prompt/PTY-cancel/EOF), **a temp dir + an injected failure seam** (write
+atomicity, mid-write failure), a **symlinked/pre-created destination** (symlink/temp-race sinks), and
+**stubbed executables** (network/package steps). Where a command can be stubbed, freeze the
+**invocation AND its arguments**, not merely the command text or an honest-degrade message — those alone
+can still leave the real action path hollow. "review must read" is admissible ONLY after the card
+records **why no such seam exists**. When a required behaviour is genuinely un-seamable **and** `arch`
+did not resolve it — or a feature is *dominated* by such risks — `pipeline-task` **FAILS CLOSED**: it
+does NOT proceed to the freeze commit (6a) or hand off to impl; it **stops, records the risk in
+`## Freeze coverage`, and routes back through `arch`/design-review**. The flag is a hard stop, not a
+silent note. This STRENGTHENS coverage; it changes nothing in the freeze gate, spec-rev protocol, state
+machine, or merge rules.
 
 ## Handoff block — a self-contained briefing for a COLD next node
 
