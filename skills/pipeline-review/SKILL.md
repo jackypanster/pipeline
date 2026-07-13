@@ -24,9 +24,9 @@ documented hard rules and guarantees)? (b) write the verdict as a PR
 comment; (c) arm the same one-shot GO-gate (step 6) — but a **meta-PR has NO `.pipeline` journal**, so
 its target tuple `(repo · PR# · head OID · base OID · THIS reviewer session)` is held in the reviewer
 session ONLY; a lost session/record fails closed → re-review. On a valid direct-operator token, invoke step 6's **expected-head
-compare-and-merge** (`gh pr merge <PR#> --repo <repo> --squash --delete-branch --match-head-commit <armed
-head OID>`; fail closed if the forge cannot enforce an expected-head condition — NEVER a plain
-`gh pr merge --squash`). Everything else still holds:
+compare-and-merge where the forge has one** (github `--match-head-commit <armed head>`; the
+capable-forge equivalent — a mismatch rejects; NEVER a blind plain merge where a forge CAN bind head);
+the no-forge lane defers to CONTRACT §Forge adapter's best-effort. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
 **target-repo feature PR**; do not run them against a toolchain meta-PR.
 
@@ -85,12 +85,15 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    handoff). Do NOT create a `tasks/` card for it — a lingering `blocked` card would deadlock every future
    merge guard; the report is evidence, not an impl card. Never blind-flip a real card. On confirm (cards
    all `review` AND suite green):
-   **squash-merge** the `feat/<feature>` PR via the forge adapter's **expected-head compare-and-merge**
-   — github: `gh pr merge <PR#> --repo <repo> --squash --delete-branch --match-head-commit <armed head
-   OID>`; gitee/other: the equivalent expected-head merge; **FAIL CLOSED (do NOT merge; re-review) if the
-   forge cannot enforce an expected-head condition in the merge call** — so a head pushed after approval
-   can never be merged unreviewed (delete the merged branch; no local
-   non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
+   **squash-merge** the `feat/<feature>` PR via the forge adapter's **expected-head compare-and-merge
+   where the forge has one** — github: `gh pr merge <PR#> --repo <repo> --squash --delete-branch
+   --match-head-commit <armed head OID>`; gitee/other: the equivalent expected-head merge (a head
+   mismatch REJECTS — re-review, don't retry blindly). The **no-forge lane** (CONTRACT §Forge adapter —
+   `git diff base..branch`, air-gapped/intranet, deliberately **fail-OPEN**) has no such primitive: its
+   preflight re-fetch is the sanctioned best-effort and the residual approve-then-push race is that
+   lane's DOCUMENTED tradeoff — **do NOT fail-close it** (that would deadlock a lane the CONTRACT
+   sanctions); this skill DEFERS to CONTRACT §Forge adapter there, never overrides it (delete the merged
+   branch; no local non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
    to the **offending** card **+ a `journal.md` entry** (CONTRACT §Run journal — `status=failed`, the
    rejection is run history), and **flip that card `status: todo`** (`attempts >= 3` ⇒ `blocked`) — on a
@@ -126,11 +129,13 @@ optional bookkeeping — they are the audit contract. A merge without them is an
   (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; any
   drift, ambiguity, or lost session disarms → re-review. A review skill must not commit the
   loose-input-as-consent bug class it exists to catch.
-- **Every merge — in EITHER mode (feature PR AND meta-PR) — MUST atomically assert the armed head** via
-  the forge's expected-head compare-and-merge (github `gh pr merge … --match-head-commit <armed head>`;
-  gitee/other equivalent); a forge that cannot enforce an expected-head condition **fails closed** (no
-  merge, re-review). A plain merge with no head-match is NEVER acceptable — it reopens the
-  approve-then-push race for BOTH paths.
+- **Every merge — feature PR AND meta-PR — MUST assert the armed head as strongly as the forge allows:**
+  on a forge with an expected-head primitive (github `gh pr merge … --match-head-commit <armed head>`;
+  capable-forge equivalent) the merge atomically binds it and a mismatch REJECTS → re-review. The
+  **no-forge lane DEFERS to CONTRACT §Forge adapter** (its deliberate fail-OPEN degrade for
+  air-gapped/intranet — the preflight re-fetch is best-effort, the residual approve-then-push race is
+  that lane's sanctioned tradeoff, NOT a fail-close). Never a blind plain merge where a forge CAN bind
+  head; never fail-close (deadlock) the CONTRACT-sanctioned no-forge lane.
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
