@@ -50,8 +50,10 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
    or **stubbed executables** (freeze the invocation + args) make most "hard" cases testable; admit
    "review must read" only after the card records **why no seam exists**. A genuinely un-seamable
    required behaviour that `arch` did not resolve (or a feature dominated by them) **FAILS CLOSED** —
-   stop before freeze commit 6a, record the risk, route back through `arch`/design-review; not a silent
-   note (CONTRACT §Freeze coverage).
+   stop before freeze commit 6a and route back through `arch`/design-review, recording the risk in the
+   `task→arch` journal handoff (the card does not exist until 6b — never write partial card metadata
+   early); the resumed task records the resolved `## Freeze coverage` on the card at 6b. A hard stop,
+   not a silent note (CONTRACT §Freeze coverage).
 6. **Freeze the spec in TWO ordered commits to `main`** (CONTRACT §spec-rev double-commit protocol).
    NEVER mix the test and the card in one commit — that breaks the freeze the gate relies on:
    a. **Freeze commit** — `git add` ONLY the `spec-paths:` test file(s) for **ALL the feature's cards**,

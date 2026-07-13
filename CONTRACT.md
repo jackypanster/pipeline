@@ -215,9 +215,11 @@ atomicity, mid-write failure), a **symlinked/pre-created destination** (symlink/
 can still leave the real action path hollow. "review must read" is admissible ONLY after the card
 records **why no such seam exists**. When a required behaviour is genuinely un-seamable **and** `arch`
 did not resolve it — or a feature is *dominated* by such risks — `pipeline-task` **FAILS CLOSED**: it
-does NOT proceed to the freeze commit (6a) or hand off to impl; it **stops, records the risk in
-`## Freeze coverage`, and routes back through `arch`/design-review**. The flag is a hard stop, not a
-silent note. This STRENGTHENS coverage; it changes nothing in the freeze gate, spec-rev protocol, state
+does NOT proceed to the freeze commit (6a) or hand off to impl; it **stops and routes back through
+`arch`/design-review**, recording the risk in the artifact that legally exists at that stop — its
+**`task→arch` journal handoff** (the card does not exist until step 6b — never write partial card
+metadata pre-6a). The resumed task records the resolved `## Freeze coverage` on the card in the normal
+6b record commit. The flag is a hard stop, not a silent note. This STRENGTHENS coverage; it changes nothing in the freeze gate, spec-rev protocol, state
 machine, or merge rules.
 
 ## Handoff block — a self-contained briefing for a COLD next node
