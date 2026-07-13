@@ -47,7 +47,16 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
    **Commit both together** — so this durable commit is explained by the journal, never orphaned (the
    merge→done or reject disposition appends its own later entry).
-6. **Approved** ⇒ ask the operator to confirm. **Pre-merge guard (multi-card features):** every card in
+6. **Approved** ⇒ do NOT merge yet: end your turn at an explicit, fail-closed **GO-gate**. FIRST pass the
+   pre-merge guards below (all cards `review` + full-suite GREEN); THEN print an unmistakable prompt the
+   operator acts on **in YOUR terminal** — e.g. `APPROVED — reply 'go' (or 'merge') HERE and I
+   squash-merge + wrap up (review-NN.md · every card→done · stage=done); ANY other reply = no merge.`
+   — and STOP. A later operator message whose FIRST token is an exact `go`/`merge`/`confirm` IS
+   the human confirm and authorizes the merge — reconstruct WHICH PR from state (forge PR open +
+   approved-by-you + journal tail "awaiting human confirm"); ANY other input halts with NO merge. This
+   lets the operator authorize the merge directly at the reviewer — no coordinator poll-and-relay hop.
+   (Who sends the token — the operator typing here, or a coordinator forwarding a bare `go` — is an
+   operator convention; giving the go directly here is the recommended, hop-free path.) **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
    gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
@@ -94,7 +103,9 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 
 ## Hard rules
 
-- The human's "go" is your authorization to merge — never merge without it.
+- The human's **exact** `go`/`merge`/`confirm` token is your authorization to merge — never merge
+  without it, and **never infer consent from arbitrary text** (a review skill must not commit the
+  loose-input-as-consent bug class it exists to catch): any non-token reply at the GO-gate halts, no merge.
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
