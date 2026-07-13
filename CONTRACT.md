@@ -195,6 +195,33 @@ card's `## Freeze coverage` section (e.g. "frozen: `--help`/CLI contract; review
 output logic + inline tests"). `pipeline-review` reads it to decide what to scrutinize beyond the
 deterministic gate.
 
+**"review must read" is a narrow exception, NOT a coverage escape hatch.** It is legitimate only for a
+surface a hermetic test genuinely cannot assert — interactive/TUI cosmetics, real network/package
+execution, or logic with no black-box handle (the binary-crate case above). It is NOT a licence to
+leave a **required** behaviour unfrozen: if a hermetic test could detect that behaviour's *absence*,
+freeze at least a **dry-run / command-construction assertion** (assert the step WOULD act — construct
+the command, hit the honest-degrade path — with no real side effect). Otherwise impl satisfies the
+letter (green suite) not the intent — an unfrozen required step ships as a no-op/hollow stub that passes
+every frozen test and the full-verify, and only review catches it, late (field lesson: a generated-config
+wizard shipped 4 of 7 required steps as empty stubs behind a fully green suite; the sink defects behind
+the remaining "review must read" surface then took three review rounds to reach `blocked`).
+
+**Before ruling any required behaviour "review must read", `pipeline-task` MUST first seek or design an
+honest test SEAM** — most "hard to freeze" surfaces are in fact hermetically testable: a
+**pseudo-terminal harness** (prompt/PTY-cancel/EOF), **a temp dir + an injected failure seam** (write
+atomicity, mid-write failure), a **symlinked/pre-created destination** (symlink/temp-race sinks), and
+**stubbed executables** (network/package steps). Where a command can be stubbed, freeze the
+**invocation AND its arguments**, not merely the command text or an honest-degrade message — those alone
+can still leave the real action path hollow. "review must read" is admissible ONLY after the card
+records **why no such seam exists**. When a required behaviour is genuinely un-seamable **and** `arch`
+did not resolve it — or a feature is *dominated* by such risks — `pipeline-task` **FAILS CLOSED**: it
+does NOT proceed to the freeze commit (6a) or hand off to impl; it **stops and routes back through
+`arch`/design-review**, recording the risk in the artifact that legally exists at that stop — its
+**`task→arch` journal handoff** (the card does not exist until step 6b — never write partial card
+metadata pre-6a). The resumed task records the resolved `## Freeze coverage` on the card in the normal
+6b record commit. The flag is a hard stop, not a silent note. This STRENGTHENS coverage; it changes nothing in the freeze gate, spec-rev protocol, state
+machine, or merge rules.
+
 ## Handoff block — a self-contained briefing for a COLD next node
 
 **The next node is a FRESH session — possibly a different agent on a different frontier LLM — with ZERO
