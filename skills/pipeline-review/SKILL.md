@@ -57,8 +57,10 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    'merge'/'confirm') to squash-merge; anything else disarms → re-review.` — then STOP. **Consume the
    gate to merge ONLY when ALL hold:** (a) the operator's NEXT message in THIS SAME reviewer session,
    trimmed, equals EXACTLY one allowed token — whole message, no other content (`go do not merge` /
-   `go; …` do NOT qualify); (b) a RE-FETCH shows the PR still open with `headRefOid` + base OID == the
-   armed tuple and EXACTLY ONE such candidate; (c) every gate still green. ANY miss — extra content, a
+   `go; …` do NOT qualify); (b) a preflight RE-FETCH shows the PR still open with `headRefOid` == the
+   armed head, base OID unchanged (drift check), and EXACTLY ONE such candidate — **and the merge call
+   itself atomically re-asserts the armed head** (step-6 merge sink), so a head pushed BETWEEN this
+   check and the merge cannot slip in unreviewed; (c) every gate still green. ANY miss — extra content, a
    moved head/base, a closed/merged/zero-or-multiple-candidate state, a lost/different session, a
    **coordinator-relayed/forwarded token** (an automated or mistaken relay is indistinguishable from a
    human — NOT a valid confirm), or any non-token reply — **DISARMS the gate: no merge, re-review from
@@ -81,7 +83,11 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    handoff). Do NOT create a `tasks/` card for it — a lingering `blocked` card would deadlock every future
    merge guard; the report is evidence, not an impl card. Never blind-flip a real card. On confirm (cards
    all `review` AND suite green):
-   **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
+   **squash-merge** the `feat/<feature>` PR via the forge adapter's **expected-head compare-and-merge**
+   — github: `gh pr merge <PR#> --repo <repo> --squash --delete-branch --match-head-commit <armed head
+   OID>`; gitee/other: the equivalent expected-head merge; **FAIL CLOSED (do NOT merge; re-review) if the
+   forge cannot enforce an expected-head condition in the merge call** — so a head pushed after approval
+   can never be merged unreviewed (delete the merged branch; no local
    non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
    to the **offending** card **+ a `journal.md` entry** (CONTRACT §Run journal — `status=failed`, the
