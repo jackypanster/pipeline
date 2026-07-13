@@ -195,6 +195,23 @@ card's `## Freeze coverage` section (e.g. "frozen: `--help`/CLI contract; review
 output logic + inline tests"). `pipeline-review` reads it to decide what to scrutinize beyond the
 deterministic gate.
 
+**"review must read" is a narrow exception, NOT a coverage escape hatch.** It is legitimate only for a
+surface a hermetic test genuinely cannot assert — interactive/TUI cosmetics, real network/package
+execution, or logic with no black-box handle (the binary-crate case above). It is NOT a licence to
+leave a **required** behaviour unfrozen: if a hermetic test could detect that behaviour's *absence*,
+freeze at least a **dry-run / command-construction assertion** (assert the step WOULD act — construct
+the command, hit the honest-degrade path — with no real side effect). Otherwise impl satisfies the
+letter (green suite) not the intent — an unfrozen required step ships as a no-op/hollow stub that passes
+every frozen test and the full-verify, and only review catches it, late (field lesson: a generated-config
+wizard shipped 4 of 7 required steps as empty stubs behind a fully green suite; the sink defects behind
+the remaining "review must read" surface then took three review rounds to reach `blocked`). When a
+required behaviour genuinely CANNOT be frozen (prompt/PTY-cancel semantics, write atomicity under
+mid-write failure, symlink/temp-race or other filesystem/security sinks), `pipeline-task` FLAGS it in
+`## Freeze coverage` as a **design-review risk** and confirms `arch` addressed it — and a feature
+*dominated* by such un-freezable required behaviour is a signal to design-review it before the
+impl→review loop, not to iterate the loop. This STRENGTHENS coverage; it changes nothing in the freeze
+gate, spec-rev protocol, state machine, or merge rules.
+
 ## Handoff block — a self-contained briefing for a COLD next node
 
 **The next node is a FRESH session — possibly a different agent on a different frontier LLM — with ZERO
