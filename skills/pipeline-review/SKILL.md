@@ -21,7 +21,10 @@ in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final ful
 that exists here). Do ONLY: (a) `check` the diff — is it a **real improvement, not a weakening**?
 does it **preserve every existing hard rule + the frozen invariants** (for a sibling repo: its own
 documented hard rules and guarantees)? (b) write the verdict as a PR
-comment; (c) on the human's explicit confirm, **squash-merge**. Everything else still holds:
+comment; (c) arm the same one-shot GO-gate (step 6) — but a **meta-PR has NO `.pipeline` journal**, so
+its target tuple `(repo · PR# · head OID · base OID · THIS reviewer session)` is held in the reviewer
+session ONLY; a lost session/record fails closed → re-review. On a valid direct-operator token, re-fetch
++ **squash-merge**. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
 **target-repo feature PR**; do not run them against a toolchain meta-PR.
 
@@ -47,16 +50,21 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
    **Commit both together** — so this durable commit is explained by the journal, never orphaned (the
    merge→done or reject disposition appends its own later entry).
-6. **Approved** ⇒ do NOT merge yet: end your turn at an explicit, fail-closed **GO-gate**. FIRST pass the
-   pre-merge guards below (all cards `review` + full-suite GREEN); THEN print an unmistakable prompt the
-   operator acts on **in YOUR terminal** — e.g. `APPROVED — reply 'go' (or 'merge') HERE and I
-   squash-merge + wrap up (review-NN.md · every card→done · stage=done); ANY other reply = no merge.`
-   — and STOP. A later operator message whose FIRST token is an exact `go`/`merge`/`confirm` IS
-   the human confirm and authorizes the merge — reconstruct WHICH PR from state (forge PR open +
-   approved-by-you + journal tail "awaiting human confirm"); ANY other input halts with NO merge. This
-   lets the operator authorize the merge directly at the reviewer — no coordinator poll-and-relay hop.
-   (Who sends the token — the operator typing here, or a coordinator forwarding a bare `go` — is an
-   operator convention; giving the go directly here is the recommended, hop-free path.) **Pre-merge guard (multi-card features):** every card in
+6. **Approved** ⇒ do NOT merge yet: after the pre-merge guards below pass (all cards `review` +
+   full-suite GREEN), **ARM a one-shot GO-gate** bound to an immutable target tuple `(repo · PR# ·
+   reviewed head OID · reviewed base OID · THIS reviewer session)` and print it — e.g. `APPROVED · head
+   <oid> base <oid>. Reply IN THIS SESSION with a message whose ENTIRE trimmed text is exactly 'go' (or
+   'merge'/'confirm') to squash-merge; anything else disarms → re-review.` — then STOP. **Consume the
+   gate to merge ONLY when ALL hold:** (a) the operator's NEXT message in THIS SAME reviewer session,
+   trimmed, equals EXACTLY one allowed token — whole message, no other content (`go do not merge` /
+   `go; …` do NOT qualify); (b) a RE-FETCH shows the PR still open with `headRefOid` + base OID == the
+   armed tuple and EXACTLY ONE such candidate; (c) every gate still green. ANY miss — extra content, a
+   moved head/base, a closed/merged/zero-or-multiple-candidate state, a lost/different session, a
+   **coordinator-relayed/forwarded token** (an automated or mistaken relay is indistinguishable from a
+   human — NOT a valid confirm), or any non-token reply — **DISARMS the gate: no merge, re-review from
+   scratch.** Only a DIRECT operator message in the emitting session consumes it. This removes the
+   coordinator poll-and-relay hop while keeping the confirm authentically human AND bound to the reviewed
+   head. **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
    gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
@@ -103,9 +111,13 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 
 ## Hard rules
 
-- The human's **exact** `go`/`merge`/`confirm` token is your authorization to merge — never merge
-  without it, and **never infer consent from arbitrary text** (a review skill must not commit the
-  loose-input-as-consent bug class it exists to catch): any non-token reply at the GO-gate halts, no merge.
+- Merge ONLY by consuming the armed GO-gate (step 6) with a **direct** operator message **in the same
+  reviewer session that emitted it**, whose ENTIRE trimmed content is exactly one allowed token
+  (`go`/`merge`/`confirm`), AND only after a re-fetch confirms the PR still open at the armed head/base
+  with exactly one candidate. NEVER a first-token/substring match, NEVER a relayed/forwarded token
+  (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; any
+  drift, ambiguity, or lost session disarms → re-review. A review skill must not commit the
+  loose-input-as-consent bug class it exists to catch.
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
