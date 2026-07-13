@@ -21,12 +21,8 @@ in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final ful
 that exists here). Do ONLY: (a) `check` the diff — is it a **real improvement, not a weakening**?
 does it **preserve every existing hard rule + the frozen invariants** (for a sibling repo: its own
 documented hard rules and guarantees)? (b) write the verdict as a PR
-comment; (c) arm the same one-shot GO-gate (step 6) — but a **meta-PR has NO `.pipeline` journal**, so
-its target tuple `(repo · PR# · head OID · base OID · THIS reviewer session)` is held in the reviewer
-session ONLY; a lost session/record fails closed → re-review. On a valid direct-operator token, invoke step 6's **expected-head
-compare-and-merge where the forge has one** (github `--match-head-commit <armed head>`; the
-capable-forge equivalent — a mismatch rejects; NEVER a blind plain merge where a forge CAN bind head);
-the no-forge lane defers to CONTRACT §Forge adapter's best-effort. Everything else still holds:
+comment; (c) on the human's explicit confirm via the same self-terminating exact-token GO-gate (step 6 —
+direct operator, same reviewer session), **squash-merge**. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
 **target-repo feature PR**; do not run them against a toolchain meta-PR.
 
@@ -52,25 +48,18 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
    **Commit both together** — so this durable commit is explained by the journal, never orphaned (the
    merge→done or reject disposition appends its own later entry).
-6. **Approved** ⇒ do NOT merge yet: after the pre-merge guards below pass (all cards `review` +
-   full-suite GREEN), **ARM a one-shot GO-gate** bound to an immutable target tuple `(repo · PR# ·
-   reviewed head OID · reviewed base OID · THIS reviewer session)` and print it — e.g. `APPROVED · head
-   <oid> base <oid>. Reply IN THIS SESSION with a message whose ENTIRE trimmed text is exactly 'go' (or
-   'merge'/'confirm') to squash-merge; anything else disarms → re-review.` — then STOP. **Consume the
-   gate to merge ONLY when ALL hold:** (a) the operator's NEXT message in THIS SAME reviewer session,
-   trimmed, equals EXACTLY one allowed token — whole message, no other content (`go do not merge` /
-   `go; …` do NOT qualify); (b) a preflight RE-FETCH shows the PR still open with `headRefOid` == the
-   armed head, base OID unchanged (drift check), and EXACTLY ONE such candidate — **and, on an
-   expected-head forge, the merge call itself atomically re-asserts the armed head** (step-6 merge sink)
-   so a head pushed between check and merge cannot slip in; on the **no-forge lane** the merge follows
-   CONTRACT §Forge adapter unchanged (its atomic-head hardening is an out-of-scope OPEN item — see the
-   merge sink); (c) every gate still green. ANY miss — extra content, a
-   moved head/base, a closed/merged/zero-or-multiple-candidate state, a lost/different session, a
-   **coordinator-relayed/forwarded token** (an automated or mistaken relay is indistinguishable from a
-   human — NOT a valid confirm), or any non-token reply — **DISARMS the gate: no merge, re-review from
-   scratch.** Only a DIRECT operator message in the emitting session consumes it. This removes the
-   coordinator poll-and-relay hop while keeping the confirm authentically human AND bound to the reviewed
-   head. **Pre-merge guard (multi-card features):** every card in
+6. **Approved** ⇒ do NOT merge yet: end your turn at a self-terminating, fail-closed **GO-gate**. After
+   the pre-merge guards below pass, print an unmistakable prompt the operator acts on **in YOUR
+   terminal** — e.g. `APPROVED — reply IN THIS session with a message whose ENTIRE trimmed text is
+   exactly 'go' (or 'merge'/'confirm') to squash-merge; anything else = no merge.` — then STOP.
+   **Consume the gate ONLY when** the operator's NEXT message **in THIS SAME reviewer session**, trimmed,
+   equals EXACTLY one allowed token — whole message, no other content (`go do not merge` / `go; …` do NOT
+   qualify). ANY other input — extra content, a lost/different session, a **coordinator-relayed/forwarded
+   token** (indistinguishable from automation — NOT a human confirm), or a non-token reply — disarms the
+   gate: no merge, re-review. Only a DIRECT operator message in the emitting session consumes it. This
+   removes the coordinator poll-and-relay hop while keeping the confirm authentically human. (Scope: this
+   hardens confirm AUTHENTICITY only; guaranteeing merged head/base == reviewed head/base against an
+   approve-then-push is a separate, pre-existing concern, OUT OF SCOPE here.) **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
    gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
@@ -87,16 +76,8 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    handoff). Do NOT create a `tasks/` card for it — a lingering `blocked` card would deadlock every future
    merge guard; the report is evidence, not an impl card. Never blind-flip a real card. On confirm (cards
    all `review` AND suite green):
-   **squash-merge** the `feat/<feature>` PR via the forge adapter's **expected-head compare-and-merge
-   where the forge has one** — github: `gh pr merge <PR#> --repo <repo> --squash --delete-branch
-   --match-head-commit <armed head OID>`; gitee/other: the equivalent expected-head merge (a head
-   mismatch REJECTS — re-review, don't retry blindly). On the **no-forge lane** (CONTRACT §Forge adapter —
-   `git diff base..branch`, air-gapped/intranet) there is no expected-head primitive: this PR does NOT
-   change no-forge merge behaviour — it follows CONTRACT §Forge adapter exactly as today (which never
-   drops the review gate). Making the no-forge merge atomically head-safe (e.g. a compare-and-swap push
-   of the immutable armed OID, reconciled with CONTRACT's `no local non-PR merges`) is an **explicit
-   OPEN item, out of scope for this PR** — NOT resolved here, and its residual race NOT labelled
-   "sanctioned" (delete the merged branch; no local non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
+   **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
+   non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
    now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
    to the **offending** card **+ a `journal.md` entry** (CONTRACT §Run journal — `status=failed`, the
    rejection is run history), and **flip that card `status: todo`** (`attempts >= 3` ⇒ `blocked`) — on a
@@ -127,18 +108,10 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 
 - Merge ONLY by consuming the armed GO-gate (step 6) with a **direct** operator message **in the same
   reviewer session that emitted it**, whose ENTIRE trimmed content is exactly one allowed token
-  (`go`/`merge`/`confirm`), AND only after a re-fetch confirms the PR still open at the armed head/base
-  with exactly one candidate. NEVER a first-token/substring match, NEVER a relayed/forwarded token
-  (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; any
-  drift, ambiguity, or lost session disarms → re-review. A review skill must not commit the
-  loose-input-as-consent bug class it exists to catch.
-- **Every merge — feature PR AND meta-PR — MUST assert the armed head as strongly as the forge allows:**
-  on a forge with an expected-head primitive (github `gh pr merge … --match-head-commit <armed head>`;
-  capable-forge equivalent) the merge atomically binds it and a mismatch REJECTS → re-review. On the
-  **no-forge lane** the merge is UNCHANGED by this rule — CONTRACT §Forge adapter governs it as today; a
-  head-atomic no-forge merge (a CAS push of the immutable armed OID) is an out-of-scope **OPEN item** —
-  do NOT fail-close/deadlock it, and do NOT label its residual race "sanctioned". Never a blind plain
-  merge where a forge CAN bind head.
+  (`go`/`merge`/`confirm`) — NEVER a first-token/substring match, NEVER a relayed/forwarded token
+  (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; a lost
+  session or any non-token reply disarms → re-review. (This PR hardens confirm authenticity only; head/
+  base merge atomicity vs an approve-then-push is a separate, pre-existing open item.)
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
