@@ -21,7 +21,8 @@ in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final ful
 that exists here). Do ONLY: (a) `check` the diff — is it a **real improvement, not a weakening**?
 does it **preserve every existing hard rule + the frozen invariants** (for a sibling repo: its own
 documented hard rules and guarantees)? (b) write the verdict as a PR
-comment; (c) on the human's explicit confirm, **squash-merge**. Everything else still holds:
+comment; (c) on the human's explicit confirm via the same self-terminating exact-token GO-gate (step 6 —
+direct operator, same reviewer session), **squash-merge**. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
 **target-repo feature PR**; do not run them against a toolchain meta-PR.
 
@@ -47,7 +48,18 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
    **Commit both together** — so this durable commit is explained by the journal, never orphaned (the
    merge→done or reject disposition appends its own later entry).
-6. **Approved** ⇒ ask the operator to confirm. **Pre-merge guard (multi-card features):** every card in
+6. **Approved** ⇒ do NOT merge yet: end your turn at a self-terminating, fail-closed **GO-gate**. After
+   the pre-merge guards below pass, print an unmistakable prompt the operator acts on **in YOUR
+   terminal** — e.g. `APPROVED — reply IN THIS session with a message whose ENTIRE trimmed text is
+   exactly 'go' (or 'merge'/'confirm') to squash-merge; anything else = no merge.` — then STOP.
+   **Consume the gate ONLY when** the operator's NEXT message **in THIS SAME reviewer session**, trimmed,
+   equals EXACTLY one allowed token — whole message, no other content (`go do not merge` / `go; …` do NOT
+   qualify). ANY other input — extra content, a lost/different session, a **coordinator-relayed/forwarded
+   token** (indistinguishable from automation — NOT a human confirm), or a non-token reply — disarms the
+   gate: no merge, re-review. Only a DIRECT operator message in the emitting session consumes it. This
+   removes the coordinator poll-and-relay hop while keeping the confirm authentically human. (Scope: this
+   hardens confirm AUTHENTICITY only; guaranteeing merged head/base == reviewed head/base against an
+   approve-then-push is a separate, pre-existing concern, OUT OF SCOPE here.) **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
    gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
@@ -94,7 +106,12 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 
 ## Hard rules
 
-- The human's "go" is your authorization to merge — never merge without it.
+- Merge ONLY by consuming the armed GO-gate (step 6) with a **direct** operator message **in the same
+  reviewer session that emitted it**, whose ENTIRE trimmed content is exactly one allowed token
+  (`go`/`merge`/`confirm`) — NEVER a first-token/substring match, NEVER a relayed/forwarded token
+  (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; a lost
+  session or any non-token reply disarms → re-review. (This PR hardens confirm authenticity only; head/
+  base merge atomicity vs an approve-then-push is a separate, pre-existing open item.)
 - Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
 - CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
 - **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
