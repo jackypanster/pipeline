@@ -405,6 +405,9 @@ main() {
   echo "scope: refreshed runtime-shared pipeline-* shims only; no target repo .pipeline/ state touched."
 }
 
-# Wrapper so bash parses the whole file before executing: Mode 1's cp may overwrite this
-# very script while it runs (self-update); a fully-parsed main() makes that safe.
-main "$@"
+# Self-update guard: Mode 1's cp may overwrite this very script while it runs. Bash reads
+# scripts incrementally — after main() returns it would fetch the next command from the (now
+# replaced) file at the old byte offset and execute a garbage fragment. `; exit` on the same
+# physical line is parsed together with the call, so bash never reads past it; bare `exit`
+# preserves main's exit status.
+main "$@"; exit
