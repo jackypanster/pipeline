@@ -45,7 +45,11 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `status: todo`** (`attempts >= 3` ⇒ `blocked` instead) so `pipeline-impl` — which picks the oldest
    `todo` — has an actionable retry target, and **name that card in the handoff** so impl re-picks
    exactly it; **commit all**; route to pipeline-impl (or pipeline-hunt if `blocked`). Do not proceed to
-   review.
+   review. **Coordinated mode:** this freeze rejection funnels through the SAME atomic disposition as
+   step 5 — the single commit MUST also include `reviews/review-NN.md` (verdict: freeze violation +
+   the offending `spec-paths` diff summary) alongside the card flip and the `review→impl · failed`
+   (or `review→hunt · blocked`) journal entry, so the watcher observes one routable outcome — never a
+   card/journal commit without its review artifact.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings) **and append a `journal.md`
