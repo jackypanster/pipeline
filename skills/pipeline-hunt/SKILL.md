@@ -9,6 +9,13 @@ Escalation stage (not on the happy path). Follow the **shim loop in CONTRACT.md*
 A `blocked` **card** — OR a feature-level **integration incident report** (`reviews/integration-NN.md`)
 — routes here; **never blind-retry**. (Both are "targets"; see step 1.)
 
+**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
+(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
+stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it. Your
+journal entry MUST use the exact stage-consistent forms `hunt→task · completed` (re-split/re-spec) or
+`hunt→impl · completed` (diagnosed card reset to `todo, attempts: 0`) — the coordinator routes on them.
+
 **Skill:** `hunt` slot resolves to `hunt` — systematic root-cause (confirm cause before any fix,
 especially "used to work / can't fix it after N tries").
 

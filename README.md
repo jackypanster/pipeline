@@ -3,9 +3,10 @@
 Agent-facing skill collection. Consumers are LLM/agents, not humans — read [CONTRACT.md](CONTRACT.md).
 
 **What:** a forge-agnostic, machine-agnostic dev pipeline as 7 thin command-skills over a git+md
-state bus. Human-relayed (no scheduler); each command prints a handoff the operator copies to the
-next bot. The only durable asset is the orchestration contract; the skill behind each command is a
-swappable `roles.yaml` slot.
+state bus. Human-relayed by default (no scheduler); each command prints a handoff the operator copies
+to the next bot. An opt-in per-feature **coordinated mode** may type those handoffs deterministically
+(CONTRACT §Coordinated mode; see §Operating modes). The only durable asset is the orchestration
+contract; the skill behind each command is a swappable `roles.yaml` slot.
 
 ## Files
 
@@ -47,6 +48,16 @@ Drive mode runs end-to-end with exactly ONE human touchpoint:
 A review REJECTION is a "problem found" → stop and show the human the verdict; never
 silently restart the loop. Model split (both modes): frontier for prd/arch/task + review;
 a capable cheap model for impl (per-stage requirement in `roles.yaml`).
+
+**Third track — coordinated mode (opt-in per feature, CONTRACT §Coordinated mode).** The operator
+explicitly requests it in the PRD session; `pipeline-prd` then commits
+`.pipeline/<feature>/control.json` as the authorization audit. From the first journal entry on, the
+deterministic watcher (`pipeline-driver`'s `coordinate.sh`) types every NORMAL stage handoff into the
+right long-lived agent pane — CC (arch/task/hunt), Pi (impl), Codex (review) — routing ONLY on the
+journal tail against a frozen allowlist, halting fail-closed on anything else. Judgment stays where it
+was: stages do their own work, review still verdicts, and the **merge confirm is still a direct
+operator token in the same reviewer session** — the coordinator has no merge path and the GO-gate
+rejects relayed tokens.
 
 ## Onboard a target project (paste into its `AGENTS.md` / `CLAUDE.md`)
 
@@ -96,8 +107,12 @@ repo references are intentional so it works from any project):
 > its `spec-rev`); **who performs that read is the operator's risk-tier call** — default a human,
 > delegable to the coordinating agent only when the operator explicitly chose the drive mode for a
 > low-risk feature (see §Operating modes above). It is the write-side twin of the dashboard, scoped to
-> `impl` ONLY. Every other stage stays human-relayed — **do not build any other scheduler**; the
-> pipeline deliberately has none (see `DESIGN.md`).
+> `impl` ONLY. Every other stage stays human-relayed by default — **do not build any other
+> scheduler**; the pipeline deliberately has none (see `DESIGN.md`). The single sanctioned exception
+> is the opt-in **coordinated mode** (CONTRACT §Coordinated mode): a feature whose
+> `.pipeline/<feature>/control.json` authorizes it may have its normal stage handoffs typed by
+> `pipeline-driver`'s deterministic `coordinate.sh` watcher — no semantic decisions, no merge path,
+> human-direct merge confirm unchanged.
 
 ## Install (agent: execute this; it is written for you, not a human)
 

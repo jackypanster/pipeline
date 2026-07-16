@@ -7,6 +7,11 @@ description: "Pipeline stage 4 — implement one task card: make its frozen red 
 
 Stage 4. Follow the **shim loop in CONTRACT.md** with slot = `impl`.
 
+**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
+(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
+stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+
 **Skill:** the `impl` slot runs an autonomous think→design-tests→code→check loop. The pipeline is
 runtime-agnostic: bind whichever autonomous-coding skill your runtime provides in `roles.yaml`. Whatever
 you bind, the slot value must be that skill's **real, full installed name** on your runtime, never a
@@ -49,7 +54,10 @@ sub-instruction is the cheap seam if your skill supports one).
    the PR must be opened manually (branch + base named). **Next-card routing:** if the feature still has
    any `status: todo` card,
    hand off to **pipeline-impl** for the next card (the same `feat/<feature>` branch/PR accumulates all
-   cards). Only when NO `todo`/`in-progress` cards remain (every card is `status: review`) hand off to
+   cards) — this continuation's journal header is **`impl→impl · completed`** (CONTRACT §Coordinated
+   mode, stage-consistent transitions: the to-stage names the routed next node, so a mid-feature card
+   completion never reads as "feature ready for review"). Only when NO `todo`/`in-progress` cards remain
+   (every card is `status: review`) write **`impl→review · completed`** and hand off to
    **pipeline-review** — review runs ONCE on the complete feature, never on a partial one.
 5. **Fail / budget exhausted** ⇒ on `main`: `attempts++`, then **decide the disposition by the retry
    budget BEFORE committing** (CONTRACT state machine):
@@ -75,7 +83,8 @@ entries, once with fabricated copies of earlier entries, and both runs read as n
 
 The header must match the CONTRACT template EXACTLY:
 `## seq=N · <ISO-8601 UTC> · impl→<to> · <status> · by=<tag>` — seq = current tail's seq + 1;
-`<to> · <status>` is whichever disposition steps 4/5 selected: `review · completed` (green),
+`<to> · <status>` is whichever disposition steps 4/5 selected: `review · completed` (green, every
+card now `review`), `impl · completed` (green, todo cards remain — next-card continuation),
 `impl · failed` (informed retry, attempts < 3), `hunt · blocked` (attempts >= 3); REAL clock time:
 capture `WRITE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)` immediately before composing the entry and put
 that exact string in the header (never a placeholder like `00:00:00Z`, never local time wearing a
@@ -88,7 +97,7 @@ that exact string in the header (never a placeholder like `00:00:00Z`, never loc
 
    ```bash
    tail -40 .pipeline/<feature>/journal.md | grep -E \
-     '^## seq=[0-9]+ · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z · impl→(review · completed|impl · failed|hunt · blocked) · by=.+$' \
+     '^## seq=[0-9]+ · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z · impl→(review · completed|impl · completed|impl · failed|hunt · blocked) · by=.+$' \
      | tail -1
    ```
 

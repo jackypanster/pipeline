@@ -299,6 +299,90 @@ Rules:
 - A `failed`/`blocked` stage still appends an entry (status + the failure handoff to hunt) — the dead end
   is part of the auditable history, not silently dropped.
 
+## Coordinated mode (optional, feature-authorized) — a deterministic typist, human gates unchanged
+
+**Default remains human-relayed.** A feature MAY opt in to an external deterministic coordinator
+(`pipeline-driver`'s `coordinate.sh` — normative design: `coordinator-design.md` in
+[`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver)) that replaces the
+human's TYPING between stages, never a judgment. It observes remote Git only, validates the journal
+tail against a frozen route allowlist, and types the next `pipeline-*` command into the right agent
+pane. It writes NO target artifacts and NO journal entries, makes NO semantic decision, and halts
+fail-closed on anything outside the allowlist. **It cannot merge and cannot confirm a merge** — the
+review GO-gate already rejects any relayed/forwarded token as non-human.
+
+### `control.json` — feature-level authorization
+
+Coordinated mode is authorized by a tracked file `.pipeline/<feature>/control.json`:
+
+```json
+{ "schema_version": 1, "mode": "coordinated", "merge_gate": "human-direct" }
+```
+
+- `schema_version` MUST be `1`; `mode` MUST be `human` or `coordinated`; `merge_gate` MUST be
+  `human-direct` — no other merge policy exists.
+- **Absence = human mode** (the coordinator observes but never dispatches). No migration ever adds
+  this file to an existing feature.
+- **`pipeline-prd` creates it, ONLY when the operator explicitly requested coordinated mode in the
+  initial PRD session** — never by default, never inferred. Git history is the authorization audit.
+- Every other stage **preserves the file and never modifies it**.
+
+### Dispatch envelope (arrives as command arguments)
+
+Every coordinator-typed command carries five plain fields — there is no derived hash identifier:
+
+```text
+repo=<absolute role clone path>  branch=<trunk>  feature=<slug>
+expected_seq=<journal tail seq the coordinator observed>  expected_commit=<full trunk commit>
+```
+
+### Pre-write stale-dispatch guard (MANDATORY whenever an envelope is present)
+
+Run it immediately after shim step 1 (`git pull --rebase`), **before ANY file write**:
+
+1. `git fetch` the configured remote trunk.
+2. Verify EXACTLY, field by field, against the observed remote state: remote identity, branch,
+   feature, trunk commit == `expected_commit`, journal tail `seq` == `expected_seq`, and the tail's
+   `>>> NEXT` first line names YOUR stage command.
+3. Verify `control.json` at that commit still says `mode: coordinated`, `schema_version: 1`.
+4. Any mismatch ⇒ print `STALE_DISPATCH <field> observed=<value> expected=<envelope value>` and
+   **STOP — zero writes, zero commits.** Refusing stale/duplicate work is the guard's whole job; the
+   coordinator redelivers safely BECAUSE this guard exists.
+
+Exact-match and fail-closed — a natural-language "check git first" is not a substitute. No envelope
+(human-relay) ⇒ the guard does not apply; nothing else about the shim loop changes.
+
+### Stage-consistent transitions (coordinated features MUST emit)
+
+The coordinator routes ONLY on the journal tail's `<from>→<to> · <status>` plus the `>>> NEXT` first
+line — never on prose. A coordinated feature therefore MUST emit the stage-specific forms; the
+load-bearing one is impl's next-card continuation, which human-relay journals wrote as
+`impl→review · completed` even mid-feature:
+
+- impl card green, **todo cards remain** ⇒ `impl→impl · completed`, NEXT `Run pipeline-impl`.
+- impl card green, **every card `review`** ⇒ `impl→review · completed`, NEXT `Run pipeline-review`.
+- impl fail `attempts < 3` ⇒ `impl→impl · failed`; `attempts >= 3` ⇒ `impl→hunt · blocked` (unchanged).
+- hunt re-split/re-spec ⇒ `hunt→task · completed`; hunt re-queue (card reset `todo, attempts: 0`) ⇒
+  `hunt→impl · completed`.
+- review rejected ⇒ `review→impl · failed` (exactly ONE named, flipped card) or
+  `review→hunt · blocked` (named card or `reviews/integration-NN.md` report). Approved ⇒ the atomic
+  outcome below; merged ⇒ `review→done · completed` terminal.
+
+### Atomic review outcome (coordinated mode is strict)
+
+The review verdict must become visible in Git in ONE commit — never an intermediate "verdict written;
+disposition follows" commit the coordinator can observe but not route:
+
+- **Approved** ⇒ ONE commit: `reviews/review-NN.md` + a `review→review · completed` journal entry
+  whose handoff's FIRST line after `>>> NEXT` is exactly:
+  `Await human-direct merge confirmation in this reviewer session.`
+  The coordinator observes this marker, stops dispatching, and waits read-only; the merge still
+  happens ONLY via the GO-gate (direct operator token in the same reviewer session).
+- **Changes requested** ⇒ ONE commit: `reviews/review-NN.md` + the offending card's
+  `status`/`attempts` update + the `review→impl · failed` / `review→hunt · blocked` journal entry.
+
+Human-relay mode may keep the existing two-step (verdict commit, then disposition); coordinated mode
+may not.
+
 ## Forge adapter (review/merge only)
 
 Keyed on `git config --get remote.origin.url`:

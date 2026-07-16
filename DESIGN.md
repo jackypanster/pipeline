@@ -136,7 +136,8 @@ not a built-in mechanism).
 
 No cron, no scheduler in the contract (human relays) — an OPTIONAL external driver (`pipeline-driver`,
 the write-side twin of the read-only `pipeline-dashboard`) MAY auto-advance exactly TWO bounded,
-human-bracketed spans, and nothing else: (1) the `impl` multi-card loop on a cheap model, STOPPING
+human-bracketed spans plus ONE feature-authorized coordinated mode, and nothing else: (1) the `impl`
+multi-card loop on a cheap model, STOPPING
 before the review/merge gate, which stays human-run (the merge itself is a human step; trunk may
 additionally be protected against force-push/deletion server-side where the plan allows); (2) the
 review↔fix RELAY of a toolchain-repo meta-PR (the CONTRACT §Self-improvement lane): the review is
@@ -144,7 +145,15 @@ still `pipeline-review` in meta-PR mode, the verdict still lands on the PR, and 
 reviewer-only squash-merge gate is untouched — the relay automates the TYPING between verdicts under
 capped rounds and fail-closed halts, never a review judgment and never a merge. Both spans begin and
 end at a human read; they are never chained to each other or to anything
-else; the contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
+else. (3) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
+(`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
+the deterministic watcher `coordinate.sh` MAY type every NORMAL stage handoff — it observes remote Git
+only, validates the journal tail against a frozen route allowlist, makes no semantic decision, halts
+fail-closed on anything outside the allowlist, and can neither merge nor confirm a merge (the review
+GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
+prohibition stays the DEFAULT — coordinated mode is its one explicit, opt-in, journal-audited
+exception (normative design: `coordinator-design.md` in `pipeline-driver`). The
+contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
 any machine · LLM-agnostic (reasoning commands want a
 frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new
 ~20-line shim + one `roles.yaml` line + the prior command's handoff naming it (e.g. `deploy`, `test`,
