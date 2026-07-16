@@ -34,7 +34,12 @@ files; YOU write the PRD.
    `⚠️` assumption reads as fact, and once `pipeline-task` freezes it the gate locks the error in
    instead of catching it (same bug class as arch's reference-behavior tiers, one boundary earlier).
    Agent-first (dense, no filler). Set `current.json.stage: prd` (most-recently-
-   completed = prd). **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` `PRD.md`
+   completed = prd). **Coordinated mode opt-in (CONTRACT §Coordinated mode):** ONLY if the operator
+   explicitly requested coordinated mode in THIS session, also write
+   `.pipeline/<feature>/control.json` — exactly
+   `{"schema_version": 1, "mode": "coordinated", "merge_gate": "human-direct"}` — and `git add` it
+   into the same commit; that commit IS the authorization audit. Never create it by default, never
+   infer the request. **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` `PRD.md`
    **+ `current.json` + `journal.md`** (this stage created/seeded them), commit **once** (the shim loop pushes).
 5. **Print the handoff** to **pipeline-arch** (already journaled in step 4; per CONTRACT.md §handoff):
    repo, branch, artifact path, `do: read PRD.md, grill the architecture against the codebase`.
@@ -43,4 +48,7 @@ files; YOU write the PRD.
 
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
 - Tag every resolved decision with its provenance (step 4); never present an `⚠️ assumed` default as settled.
-- One feature at a time. Write only `PRD.md` (+ `current.json` metadata). No code, no architecture yet.
+- One feature at a time. Write only `PRD.md` (+ `current.json` metadata, + `control.json` on explicit
+  coordinated-mode opt-in only). No code, no architecture yet.
+- `control.json` exists ONLY on an explicit operator request made in this session — never as a default,
+  a guess, or a relayed instruction. Later stages preserve it and never modify it.

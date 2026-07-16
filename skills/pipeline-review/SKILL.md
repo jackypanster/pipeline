@@ -8,6 +8,11 @@ description: "Pipeline stage 5 — semantic review of a card's diff/PR, enforce 
 Stage 5. Follow the **shim loop in CONTRACT.md** with slot = `review`. **This is the only command
 that merges, and only after an explicit human confirm.**
 
+**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
+(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
+stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+
 **Skill:** `review` slot resolves to `check` — semantic review of the diff. The forge adapter and
 the freeze gate are YOUR I/O, not check's.
 
@@ -40,7 +45,11 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `status: todo`** (`attempts >= 3` ⇒ `blocked` instead) so `pipeline-impl` — which picks the oldest
    `todo` — has an actionable retry target, and **name that card in the handoff** so impl re-picks
    exactly it; **commit all**; route to pipeline-impl (or pipeline-hunt if `blocked`). Do not proceed to
-   review.
+   review. **Coordinated mode:** this freeze rejection funnels through the SAME atomic disposition as
+   step 5 — the single commit MUST also include `reviews/review-NN.md` (verdict: freeze violation +
+   the offending `spec-paths` diff summary) alongside the card flip and the `review→impl · failed`
+   (or `review→hunt · blocked`) journal entry, so the watcher observes one routable outcome — never a
+   card/journal commit without its review artifact.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings) **and append a `journal.md`
@@ -48,6 +57,26 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
    **Commit both together** — so this durable commit is explained by the journal, never orphaned (the
    merge→done or reject disposition appends its own later entry).
+
+   **Coordinated mode is stricter (CONTRACT §Coordinated mode · atomic review outcome):** when the
+   feature's `control.json` says `mode: coordinated`, the verdict and its disposition are ONE commit —
+   never the two-step above (an intermediate "verdict written; disposition follows" commit is a state
+   the coordinator can observe but not route). **Approved** ⇒ FIRST run every step-6 pre-merge guard —
+   the every-card-is-`review` completeness guard AND the final full-suite gate (GREEN on the
+   `feat/<feature>` HEAD, via `current.json.full-verify`) — and only when ALL pass, publish one
+   commit: `review-NN.md` + a `review→review · completed` journal entry whose handoff FIRST line
+   after `>>> NEXT` is exactly
+   `Await human-direct merge confirmation in this reviewer session.` — then arm the GO-gate (step 6)
+   and STOP; the merge→done entry rides the later merge commit as usual. The marker promises
+   merge-ready-but-for-the-human-token: publishing it over an incomplete or red feature is a contract
+   violation (the watcher would enter `WAITING_HUMAN_MERGE` on a feature that must not merge). If a
+   guard fails, the outcome is NOT approved — emit the matching rejection form instead.
+   **Changes requested, single-owner** ⇒ one commit: `review-NN.md` + the offending card's
+   `status`/`attempts` flip + the `review→impl · failed` (name exactly that one card in the handoff)
+   or `review→hunt · blocked` (at `attempts >= 3`) journal entry. **Cross-card integration failure,
+   no single owner** ⇒ one commit: `review-NN.md` + `reviews/integration-NN.md` + the
+   `review→hunt · blocked` journal entry (output = the report path) — NO card is mutated (never
+   blind-flip a real card; the report is the hunt target).
 6. **Approved** ⇒ do NOT merge yet: end your turn at a self-terminating, fail-closed **GO-gate**. After
    the pre-merge guards below pass, print an unmistakable prompt the operator acts on **in YOUR
    terminal** — e.g. `APPROVED — reply IN THIS session with a message whose ENTIRE trimmed text is

@@ -7,6 +7,11 @@ description: "Pipeline stage 3 — decompose an architecture into atomic, landab
 
 Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
 
+**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
+(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
+stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+
 **Skill:** `task` slot resolves to `think` — it produces the decomposition (think writes NO code).
 **YOU write the red-test code and the card frontmatter** — that is the shim's I/O, not think's.
 

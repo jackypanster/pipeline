@@ -7,6 +7,11 @@ description: "Pipeline stage 2 — turn a PRD into an architecture. Uses grill-w
 
 Stage 2. Follow the **shim loop in CONTRACT.md** with slot = `arch`.
 
+**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
+(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
+stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+
 **Skill:** `arch` slot resolves to `grill-with-docs` — it walks each branch of the design tree,
 challenges the plan against the repo's existing domain model, sharpens terminology, and updates
 `CONTEXT.md` + ADRs inline. YOU ensure the artifacts land under `.pipeline/<feature>/`.
