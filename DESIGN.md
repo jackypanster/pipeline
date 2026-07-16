@@ -147,12 +147,14 @@ capped rounds and fail-closed halts, never a review judgment and never a merge. 
 end at a human read; they are never chained to each other or to anything
 else. (3) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
-the deterministic watcher `coordinate.sh` MAY type every NORMAL stage handoff — it observes remote Git
-only, validates the journal tail against a frozen route allowlist, makes no semantic decision, halts
-fail-closed on anything outside the allowlist, and can neither merge nor confirm a merge (the review
+a coordinator MAY type every NORMAL stage handoff — v1 is a CC session running the
+`pipeline-coordinate` playbook (the deterministic `coordinate.sh` watcher remains a future option;
+design history in `pipeline-driver` `coordinator-design.md` §25). It observes remote Git only, routes
+on the journal tail's transition forms, performs no stage work belonging to another role, halts
+fail-closed on anything outside the known forms, and can neither merge nor confirm a merge (the review
 GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
 prohibition stays the DEFAULT — coordinated mode is its one explicit, opt-in, journal-audited
-exception (normative design: `coordinator-design.md` in `pipeline-driver`). The
+exception. The
 contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
 any machine · LLM-agnostic (reasoning commands want a
 frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new

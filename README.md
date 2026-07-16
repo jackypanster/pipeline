@@ -24,6 +24,7 @@ contract; the skill behind each command is a swappable `roles.yaml` slot.
 | pipeline-review | check | diff/PR → review + merge (only stage that merges) |
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
+| pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR — see §Operating modes |
 
 ## Operating modes — the two-track SOP (operator decision, 2026-07-08)
 
@@ -51,13 +52,15 @@ a capable cheap model for impl (per-stage requirement in `roles.yaml`).
 
 **Third track — coordinated mode (opt-in per feature, CONTRACT §Coordinated mode).** The operator
 explicitly requests it in the PRD session; `pipeline-prd` then commits
-`.pipeline/<feature>/control.json` as the authorization audit. From the first journal entry on, the
-deterministic watcher (`pipeline-driver`'s `coordinate.sh`) types every NORMAL stage handoff into the
-right long-lived agent pane — CC (arch/task/hunt), Pi (impl), Codex (review) — routing ONLY on the
-journal tail against a frozen allowlist, halting fail-closed on anything else. Judgment stays where it
-was: stages do their own work, review still verdicts, and the **merge confirm is still a direct
-operator token in the same reviewer session** — the coordinator has no merge path and the GO-gate
-rejects relayed tokens.
+`.pipeline/<feature>/control.json` as the authorization audit. From the first journal entry on, a
+coordinator types every NORMAL stage handoff into the right long-lived agent pane — **v1 is a CC
+session running the `pipeline-coordinate` playbook skill** (CC coordinates and runs the reasoning
+stages; Pi implements; Codex reviews — three roles on three different models so no model grades its
+own work), routing ONLY on the journal tail, halting fail-closed on anything else. Judgment stays
+where it was: stages do their own work, review still verdicts, and the **merge confirm is still a
+direct operator token in the same reviewer session** — the coordinator has no merge path and the
+GO-gate rejects relayed tokens. (A deterministic `coordinate.sh` watcher in `pipeline-driver` remains
+a future option; its `doctor`/`status` preflight ships today and the playbook uses it.)
 
 ## Onboard a target project (paste into its `AGENTS.md` / `CLAUDE.md`)
 
@@ -110,9 +113,9 @@ repo references are intentional so it works from any project):
 > `impl` ONLY. Every other stage stays human-relayed by default — **do not build any other
 > scheduler**; the pipeline deliberately has none (see `DESIGN.md`). The single sanctioned exception
 > is the opt-in **coordinated mode** (CONTRACT §Coordinated mode): a feature whose
-> `.pipeline/<feature>/control.json` authorizes it may have its normal stage handoffs typed by
-> `pipeline-driver`'s deterministic `coordinate.sh` watcher — no semantic decisions, no merge path,
-> human-direct merge confirm unchanged.
+> `.pipeline/<feature>/control.json` authorizes it may have its normal stage handoffs typed by a
+> coordinator — v1 is a CC session running the `pipeline-coordinate` playbook skill — with no stage
+> work belonging to another role, no merge path, and the human-direct merge confirm unchanged.
 
 ## Install (agent: execute this; it is written for you, not a human)
 
