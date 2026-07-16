@@ -57,13 +57,22 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    **Coordinated mode is stricter (CONTRACT §Coordinated mode · atomic review outcome):** when the
    feature's `control.json` says `mode: coordinated`, the verdict and its disposition are ONE commit —
    never the two-step above (an intermediate "verdict written; disposition follows" commit is a state
-   the coordinator can observe but not route). **Approved** ⇒ one commit: `review-NN.md` + a
-   `review→review · completed` journal entry whose handoff FIRST line after `>>> NEXT` is exactly
+   the coordinator can observe but not route). **Approved** ⇒ FIRST run every step-6 pre-merge guard —
+   the every-card-is-`review` completeness guard AND the final full-suite gate (GREEN on the
+   `feat/<feature>` HEAD, via `current.json.full-verify`) — and only when ALL pass, publish one
+   commit: `review-NN.md` + a `review→review · completed` journal entry whose handoff FIRST line
+   after `>>> NEXT` is exactly
    `Await human-direct merge confirmation in this reviewer session.` — then arm the GO-gate (step 6)
-   and STOP; the merge→done entry rides the later merge commit as usual. **Changes requested** ⇒ one
-   commit: `review-NN.md` + the offending card's `status`/`attempts` flip + the
-   `review→impl · failed` (name exactly that one card in the handoff) or `review→hunt · blocked`
-   journal entry.
+   and STOP; the merge→done entry rides the later merge commit as usual. The marker promises
+   merge-ready-but-for-the-human-token: publishing it over an incomplete or red feature is a contract
+   violation (the watcher would enter `WAITING_HUMAN_MERGE` on a feature that must not merge). If a
+   guard fails, the outcome is NOT approved — emit the matching rejection form instead.
+   **Changes requested, single-owner** ⇒ one commit: `review-NN.md` + the offending card's
+   `status`/`attempts` flip + the `review→impl · failed` (name exactly that one card in the handoff)
+   or `review→hunt · blocked` (at `attempts >= 3`) journal entry. **Cross-card integration failure,
+   no single owner** ⇒ one commit: `review-NN.md` + `reviews/integration-NN.md` + the
+   `review→hunt · blocked` journal entry (output = the report path) — NO card is mutated (never
+   blind-flip a real card; the report is the hunt target).
 6. **Approved** ⇒ do NOT merge yet: end your turn at a self-terminating, fail-closed **GO-gate**. After
    the pre-merge guards below pass, print an unmistakable prompt the operator acts on **in YOUR
    terminal** — e.g. `APPROVED — reply IN THIS session with a message whose ENTIRE trimmed text is

@@ -343,7 +343,9 @@ Run it immediately after shim step 1 (`git pull --rebase`), **before ANY file wr
 2. Verify EXACTLY, field by field, against the observed remote state: remote identity, branch,
    feature, trunk commit == `expected_commit`, journal tail `seq` == `expected_seq`, and the tail's
    `>>> NEXT` first line names YOUR stage command.
-3. Verify `control.json` at that commit still says `mode: coordinated`, `schema_version: 1`.
+3. Verify `control.json` at that commit still carries the COMPLETE authorization tuple:
+   `schema_version` == `1` AND `mode` == `coordinated` AND `merge_gate` == `human-direct`. A missing
+   file, a missing field, or any other value is a mismatch — fail closed.
 4. Any mismatch ⇒ print `STALE_DISPATCH <field> observed=<value> expected=<envelope value>` and
    **STOP — zero writes, zero commits.** Refusing stale/duplicate work is the guard's whole job; the
    coordinator redelivers safely BECAUSE this guard exists.
@@ -372,13 +374,23 @@ load-bearing one is impl's next-card continuation, which human-relay journals wr
 The review verdict must become visible in Git in ONE commit — never an intermediate "verdict written;
 disposition follows" commit the coordinator can observe but not route:
 
-- **Approved** ⇒ ONE commit: `reviews/review-NN.md` + a `review→review · completed` journal entry
-  whose handoff's FIRST line after `>>> NEXT` is exactly:
+- **Approved** ⇒ run EVERY pre-merge guard FIRST — the freeze gate, the semantic review, the
+  every-card-is-`review` completeness guard, and the final full-suite gate (GREEN on the
+  `feat/<feature>` HEAD) — and only when ALL pass, publish ONE commit: `reviews/review-NN.md` + a
+  `review→review · completed` journal entry whose handoff's FIRST line after `>>> NEXT` is exactly:
   `Await human-direct merge confirmation in this reviewer session.`
-  The coordinator observes this marker, stops dispatching, and waits read-only; the merge still
-  happens ONLY via the GO-gate (direct operator token in the same reviewer session).
-- **Changes requested** ⇒ ONE commit: `reviews/review-NN.md` + the offending card's
-  `status`/`attempts` update + the `review→impl · failed` / `review→hunt · blocked` journal entry.
+  The marker is a promise that the feature is merge-ready but for the human token — a watcher that
+  sees it enters `WAITING_HUMAN_MERGE`, so publishing it over an incomplete or red feature is a
+  contract violation. If any guard fails, the outcome is NOT approved — emit the matching rejection
+  form below instead. The coordinator observes the marker, stops dispatching, and waits read-only;
+  the merge still happens ONLY via the GO-gate (direct operator token in the same reviewer session).
+- **Changes requested, single-owner** ⇒ ONE commit: `reviews/review-NN.md` + the offending card's
+  `status`/`attempts` update + the `review→impl · failed` (or `review→hunt · blocked` at
+  `attempts >= 3`) journal entry, naming that card in the handoff.
+- **Cross-card integration failure, no single owner** ⇒ ONE commit: `reviews/review-NN.md` +
+  `reviews/integration-NN.md` + the `review→hunt · blocked` journal entry (output = the report
+  path) — **no card is mutated** (§State authority: never blind-flip a real card; the report is the
+  hunt target).
 
 Human-relay mode may keep the existing two-step (verdict commit, then disposition); coordinated mode
 may not.
