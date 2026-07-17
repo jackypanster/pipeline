@@ -11,28 +11,39 @@ counter file: call N emits file min(N, max) and increments the counter. A respon
 may hold a JSON body, or one of the tokens SLEEP / GARBAGE / RC1.
 
 When HERDR_FAKE_SPAWN_CHILD is set, each fake-herdr call ALSO spawns a same-process-group
-descendant (a `python -c` one-liner) with its stdout/stderr redirected to /dev/null (so it
+descendant (a `python -c` script) with its stdout/stderr redirected to /dev/null (so it
 does not hold the leader's pipe open). This exercises the frozen process-group kill: once
 the leader has exited, the descendant can only be reaped by watch-pane's unconditional
-`os.killpg(pgid, SIGKILL)` (finding #1).
+process-group kill (finding #1).
 
-Harness lifecycle contract (round 3):
+Harness lifecycle contract (round 4; supersedes the round-3 signal/ownership items 3-4):
   1. Spawn = record. Each descendant writes its OWN pid (once alive) into a per-scenario
      registry; the fake herdr records the spawn pid (`$!`) into a separate spawn list.
   2. Record = verify. Before the dead-descendant assertion, the readiness list must EQUAL
      the spawn list AND the expected per-scenario child count. Short/missing/mismatched =>
      FAIL loudly (a child replaced by immediate exit must NOT pass — the r3 repro).
-  3. Signal = own. Before ANY kill, revalidate that the pid's `ps -o command=` carries this
-     run's unique token (its temp-dir path); never signal a pid that is dead or unverifiable
-     (a reused pid belonging to an unrelated process is never signaled).
-  4. Cleanup = guaranteed. Every registry is tracked on the Runner and cleaned in a `finally`
-     that runs BEFORE temp-dir deletion on every path — normal, scenario exception, and
-     SIGINT mid-run (no leaked descendants; the registry is not deleted while children live).
+  3. Bounded lease + cooperative stop (was: signal = own). Each descendant lives SECONDS,
+     not an hour: it loops in ~100ms ticks, self-exits when the per-run STOP file appears,
+     and self-exits unconditionally at a 30s hard lease cap — the worst-case leak bound; no
+     external actor is ever required to reap a child. Runner.cleanup() STOPS children by
+     creating the STOP file; it NEVER sends a destructive signal to a bare PID, so the
+     check-and-signal TOCTOU (a recycled PID destroyed between the ownership check and
+     the signal) is gone structurally — there is no signal.
+  4. Prove death before deleting evidence (was: cleanup = guaranteed via a destructive
+     bare-PID signal). After
+     writing the STOP file, cleanup bounded-awaits (<=5s) until EVERY recorded pid
+     (spawn ∪ readiness) is proven dead via the NON-destructive `os.kill(pid, 0)` (ESRCH =>
+     dead) — no `ps`, no external binary, so the ps-unavailable failure mode is gone too.
+     Only when ALL are proven dead may it delete the registry/temp dir and report success.
+     Any pid not proven dead within the bound => LOUD failure naming the pids, the
+     registry/temp dir is KEPT, and the suite exits nonzero (SIGINT path included: the
+     all-cleaned message prints ONLY on proven death). A false "alive" from PID reuse fails
+     the suite closed (harmless — no signal is ever sent). Scenario A/B dead-descendant
+     checks stay read-only and also use `os.kill(pid, 0)`.
 """
 
 import os
 import shutil
-import signal
 import stat
 import subprocess
 import sys
@@ -42,15 +53,23 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 WATCH_PANE = os.path.join(HERE, "watch-pane.py")
 
-# Descendant one-liner. argv[1] = registry file: the descendant APPENDS its own pid once
-# alive (contract item 1), then sleeps until killed. Its stdout/stderr are redirected to
-# /dev/null by the fake herdr so it never holds the leader's pipe. Its command line carries
-# the registry path (under this run's temp dir), which is the ownership token (item 3).
+LEASE_SECONDS = 30.0   # hard cap on a descendant's life (worst-case leak bound)
+STOP_TICK = 0.1        # descendant checks the STOP file this often
+CLEANUP_WAIT = 5.0     # cleanup bounded-awaits proven death this long
+
+# Descendant (a multi-line `python -c` script). argv[1] = registry: the descendant APPENDS
+# its own pid once alive (contract item 1). argv[2] = per-run STOP file. It then ticks every
+# 100ms, self-exiting when STOP appears or at the LEASE_SECONDS cap (item 3). Its
+# stdout/stderr are redirected to /dev/null by the fake herdr so it never holds the leader's
+# pipe; its command line carries the registry path (under this run's temp dir).
 DESCENDANT = (
-    "import os,sys,time;"
-    "r=open(sys.argv[1],'a');print(os.getpid(),file=r);r.close();"
-    "time.sleep(3600)"
-)
+    "import os,sys,time\n"
+    "r=open(sys.argv[1],'a');print(os.getpid(),file=r);r.close()\n"
+    "stop=sys.argv[2];deadline=time.monotonic()+%r\n"
+    "while time.monotonic()<deadline:\n"
+    " if os.path.exists(stop):break\n"
+    " time.sleep(%r)\n"
+) % (LEASE_SECONDS, STOP_TICK)
 
 # The fake `herdr`. Reads $HERDR_FAKE_DIR/counter (default 0), emits file min(call, max),
 # then increments the counter. Tokens SLEEP / GARBAGE / RC1 override the body. When
@@ -83,7 +102,7 @@ body=$(cat "$resp")
 # group (non-interactive sh, no job control), so watch-pane's process-group kill is the only
 # thing that reaps it once the leader has exited.
 if [ -n "$HERDR_FAKE_SPAWN_CHILD" ]; then
-  "$HERDR_FAKE_PYTHON" -c "$HERDR_FAKE_DESCENDANT" "$HERDR_FAKE_CHILD_REGISTRY" >/dev/null 2>&1 &
+  "$HERDR_FAKE_PYTHON" -c "$HERDR_FAKE_DESCENDANT" "$HERDR_FAKE_CHILD_REGISTRY" "$HERDR_FAKE_CHILD_STOP" >/dev/null 2>&1 &
   dpid=$!
   printf '%s\n' "$dpid" >> "$HERDR_FAKE_CHILD_SPAWNED"
   # Contract item 1: wait for the child to record its OWN pid in the registry (grep -x the
@@ -191,40 +210,18 @@ def _read_pids(path):
 
 def _pid_dead(pid):
     # type: (int) -> bool
-    """True if `pid` is gone (reaped) or a zombie. The descendant is reparented to PID 1
-    after its leader exits, so we cannot waitpid it; read its state via `ps`. On any ps
-    failure, be conservative (treat as alive) so a dead-descendant assertion never passes
-    on undeterminable state."""
+    """True iff `pid` is gone (no such process). NON-destructive: signal 0 sends no signal.
+    Used both for the read-only scenario A/B dead check and for cleanup's prove-death step.
+    A recycled PID (rare, within the short proof window) reads 'alive' -> the suite fails
+    closed (harmless: no signal is ever sent)."""
     try:
-        out = subprocess.run(
-            ["ps", "-o", "stat=", "-p", str(pid)],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, timeout=2.0,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return False  # cannot determine — be conservative (treat as alive)
-    state = out.stdout.strip()
-    if not state:
-        return True  # no such process — reaped/gone
-    return state[0] == "Z"  # zombie = exited, awaiting reap = dead for our purposes
-
-
-def _owned_alive(pid, token):
-    # type: (int, str) -> bool
-    """Contract item 3: True ONLY if `pid` is alive AND its command line carries this run's
-    unique `token` (the run temp-dir path, which appears in the descendant's argv). A pid
-    that is dead, or that was reused by an unrelated process (command lacks the token), or
-    that is undeterminable, returns False — it must NEVER be signaled."""
-    try:
-        out = subprocess.run(
-            ["ps", "-ww", "-o", "command=", "-p", str(pid)],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, timeout=2.0,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return False  # unverifiable — never signal
-    cmd = out.stdout
-    return bool(cmd) and token in cmd
+        os.kill(pid, 0)
+    except ProcessLookupError:  # ESRCH — reaped/gone
+        return True
+    except OSError:
+        # EPERM etc.: process exists but is not probeable — treat as alive (fail closed)
+        return False
+    return False  # os.kill succeeded -> process exists -> alive (incl. a not-yet-reaped zombie)
 
 
 def _descendants_all_dead(pids, timeout=2.0):
@@ -239,24 +236,10 @@ def _descendants_all_dead(pids, timeout=2.0):
         time.sleep(0.02)
 
 
-def _cleanup_pids_owned(pids, token):
-    # type: (list, str) -> None
-    """Contract items 3-4: SIGKILL only pids that are alive AND owned by this run (command
-    carries `token`). Never signal a pid already dead or unverifiable. Never a
-    process-table-wide pattern — only the pids this run recorded."""
-    for pid in sorted(set(pids)):
-        if not _owned_alive(pid, token):
-            continue
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except (ProcessLookupError, OSError):
-            pass
-
-
 class Runner:
     def __init__(self):
         self.tmp = tempfile.mkdtemp(prefix="watch-pane-test-")
-        self.token = self.tmp  # unique per-run ownership token (in every descendant's argv)
+        self.stop_path = os.path.join(self.tmp, "STOP")  # per-run cooperative-stop signal
         self.bindir = self._install_fake()
         self._registries = []  # list of (spawned_path, registry_path); tracked for cleanup
 
@@ -281,6 +264,13 @@ class Runner:
                 f.write(body)
         return d
 
+    def _recorded_pids(self):
+        pids = set()
+        for spawned_path, registry_path in self._registries:
+            pids |= set(_read_pids(spawned_path))
+            pids |= set(_read_pids(registry_path))
+        return pids
+
     def run(self, label, files, expected, args, env_overrides=None, expect_fast=False,
             child=False, child_count=0, stderr_contains=None):
         env_overrides = env_overrides or {}
@@ -292,6 +282,7 @@ class Runner:
         env["HERDR_FAKE_DIR"] = scn
         env["HERDR_FAKE_PYTHON"] = sys.executable
         env["HERDR_FAKE_DESCENDANT"] = DESCENDANT
+        env["HERDR_FAKE_CHILD_STOP"] = self.stop_path  # per-run cooperative-stop signal
         spawned_path = registry_path = None
         if child:
             spawned_path = os.path.join(scn, "child_spawned")
@@ -327,14 +318,16 @@ class Runner:
                               % (len(spawned), len(ready), child_count))
                 ok = False
             else:
+                # read-only dead check immediately after the watch-pane run (item 4 allows
+                # os.kill(pid,0)). watch-pane's group kill already reaped each descendant; this
+                # bounded poll confirms it. No signal is sent here — survivors are reaped
+                # later by cleanup() via the cooperative stop / lease.
                 dead = _descendants_all_dead(ready)
                 if dead is True:
                     child_note = " [%d descendants dead]" % len(ready)
                 else:
                     child_note = " [descendant ALIVE]"
                     ok = False
-            # kill only owned+alive tracked pids (items 3-4)
-            _cleanup_pids_owned(set(spawned) | set(ready), self.token)
         status = "PASS" if ok else "FAIL"
         detail = "exit=%d(exp %d) %.2fs%s" % (proc.returncode, expected, elapsed, child_note)
         if expect_fast:
@@ -348,19 +341,37 @@ class Runner:
         return ok
 
     def cleanup(self):
-        # Contract item 4: kill every tracked descendant (owned + alive) BEFORE removing the
-        # temp dir, on every path — normal, scenario exception, or SIGINT mid-run. The
-        # registry is not deleted while children live. Per-registry try so one failure does
-        # not skip the rest; the outer finally still deletes the temp dir.
+        """Cooperative stop + prove-death (contract items 3-4). Returns True iff every
+        recorded child was proven dead (os.kill(pid,0) == ESRCH) within CLEANUP_WAIT.
+        NEVER sends a destructive signal to a bare PID: it writes the per-run STOP file
+        (descendants self-exit on the next tick or at the lease cap), then bounded-awaits
+        proven death. On success it deletes the temp dir; on any unproven pid it prints a
+        LOUD failure, KEEPS the registry/temp dir as evidence, and returns False (caller
+        makes the suite exit nonzero — SIGINT path included)."""
+        # 1. cooperative stop — create the STOP file (descendants self-exit on next tick)
         try:
-            for spawned_path, registry_path in self._registries:
-                try:
-                    pids = set(_read_pids(spawned_path)) | set(_read_pids(registry_path))
-                    _cleanup_pids_owned(sorted(pids), self.token)
-                except Exception:
-                    pass
-        finally:
-            shutil.rmtree(self.tmp, ignore_errors=True)
+            open(self.stop_path, "w").close()
+        except OSError:
+            pass
+        # 2. bounded-await proven death for every recorded pid (spawn ∪ readiness)
+        pids = sorted(self._recorded_pids())
+        deadline = time.monotonic() + CLEANUP_WAIT
+        remaining = list(pids)
+        while remaining:
+            remaining = [p for p in remaining if not _pid_dead(p)]
+            if not remaining:
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+        if remaining:
+            sys.stderr.write(
+                "watch-pane-test: CLEANUP FAILED — pids not proven dead within %.0fs: %s; "
+                "registry/temp RETAINED at %s (descendants self-expire by the %.0fs lease)\n"
+                % (CLEANUP_WAIT, remaining, self.tmp, LEASE_SECONDS))
+            return False  # evidence kept; caller exits nonzero
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        return True
 
 
 def main():
@@ -414,11 +425,17 @@ def main():
     except KeyboardInterrupt:
         interrupted = True
     finally:
-        r.cleanup()
+        clean = r.cleanup()
     if interrupted:
-        print("\n[interrupt: all tracked descendants cleaned, temp dir removed]")
+        # The all-cleaned message prints ONLY on proven death (the r4 repro was a false
+        # all-cleaned on unproven death). cleanup() already printed the LOUD failure if not.
+        if clean:
+            print("\n[interrupt: all tracked descendants proven dead, temp dir removed]")
         return 130
     print("---\n%d/%d scenarios passed" % (passed, total))
+    if not clean:
+        sys.stderr.write("suite exit nonzero: cleanup did not prove all descendants dead\n")
+        return 1
     return 0 if passed == total else 1
 
 
