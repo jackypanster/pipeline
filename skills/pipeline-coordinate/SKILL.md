@@ -67,6 +67,14 @@ The human is the fourth, final gate.
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
 - **send** — `herdr pane run <pane> '<single line>'` (atomic text+Enter); never into your own pane.
+  **Claude Code TUI gotcha (field-verified 2026-07-17):** a line starting with `/` opens the
+  slash-command completion popup, which EATS the trailing Enter — the text sits unsubmitted on the
+  input line. The recovery is a NARROWLY GUARDED CONTINUATION of the same logical send, not a
+  general empty-send exception (the empty-input invariant below still binds every NEW send): take a
+  fresh authoritative+idle sample; read the pane and require the visible input line to EXACTLY equal
+  the slash command you just dispatched — byte-for-byte, nothing more; only then send the empty
+  follow-up (`herdr pane run <pane> ''`) and read back to verify it submitted. Any other content on
+  the line (edited, partial, someone else's draft) = do NOT press Enter; stop and surface it.
   **Per-send readiness, immediately before every send:** take ONE sample —
   `herdr agent explain <pane> --json` — and require BOTH `authority` (matched rule / lifecycle hook,
   `.fallback_reason == null`) AND `state == idle` from that SAME sample (state without authority is
@@ -154,7 +162,17 @@ human-relayed plain-diff review (CONTRACT §Forge adapter), not by this profile.
 4. **Review dispatch.** send Codex:
    `$pipeline-review meta-PR <pr-url> — toolchain meta-PR, no .pipeline state. base=<b> head=<sha>.
    git fetch origin first. <two or three review axes specific to the change>. Verdict as a PR
-   comment; arm the GO-gate; merge ONLY on a direct human token in this session.`
+   comment ONLY — do not type it into any other pane (the coordinator watches the PR; a pane
+   write-back is redundant and is often blocked by the unsent-text guard anyway). Arm the GO-gate;
+   merge ONLY on a direct human token in this session.`
+   **Immediately after dispatching, arm your own verdict watcher — EDGE-TRIGGERED per dispatch:**
+   snapshot the latest matching comment's ID/timestamp (filter by the reviewer's author; forge bots
+   comment too) IMMEDIATELY BEFORE the dispatch, and accept only a comment NEWER than the snapshot —
+   after round 1 the same author already has verdict comments on the PR, and a count- or
+   presence-based poll re-armed on re-dispatch returns the OLD verdict and routes you on stale
+   evidence. Bind the accepted verdict to the head SHA you dispatched (the verdict text names its
+   reviewed head; mismatch = not your verdict). Never rely on an operator relay or a reviewer pane
+   write-back to wake you: git/the forge is the bus, panes are command transport.
 5. **Relay loop** (the heart of the flow):
    - Verdict = changes requested → save it VERBATIM to a file; write a fix handoff for Pi: the
      verdict file path + per-finding evidence requirements + the standing constraints. Evidence is
@@ -164,8 +182,9 @@ human-relayed plain-diff review (CONTRACT §Forge adapter), not by this profile.
      never a hollow test manufactured to satisfy a blanket rule. Dispatch, watch, VERIFY (rerun
      everything; re-prove each claimed evidence item yourself), push.
    - Re-dispatch: `re-review <pr-url> — findings fixed; new head <sha>. Review ONLY the delta
-     <old>..<new>. <finding→fix→evidence mapping>. Verdict as PR comment; GO-gate; direct human
-     token only.`
+     <old>..<new>. <finding→fix→evidence mapping>. Verdict as PR comment ONLY (no pane
+     write-back); GO-gate; direct human token only.` Re-arm your verdict watcher after every
+     re-dispatch.
    - Three rounds without convergence → stop, hand the human the verdict trail (hard rule 4).
 6. **Merge gate.** Verdict = approved → tell the human: reply `go`/`merge`/`confirm` as the ENTIRE
    message in the Codex pane. **From the moment a GO-gate is armed until the PR merges (or the human
