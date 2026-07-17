@@ -299,16 +299,21 @@ Rules:
 - A `failed`/`blocked` stage still appends an entry (status + the failure handoff to hunt) — the dead end
   is part of the auditable history, not silently dropped.
 
-## Coordinated mode (optional, feature-authorized) — a deterministic typist, human gates unchanged
+## Coordinated mode (optional, feature-authorized) — a coordinator types, human gates unchanged
 
-**Default remains human-relayed.** A feature MAY opt in to an external deterministic coordinator
-(`pipeline-driver`'s `coordinate.sh` — normative design: `coordinator-design.md` in
-[`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver)) that replaces the
-human's TYPING between stages, never a judgment. It observes remote Git only, validates the journal
-tail against a frozen route allowlist, and types the next `pipeline-*` command into the right agent
-pane. It writes NO target artifacts and NO journal entries, makes NO semantic decision, and halts
-fail-closed on anything outside the allowlist. **It cannot merge and cannot confirm a merge** — the
-review GO-gate already rejects any relayed/forwarded token as non-human.
+**Default remains human-relayed.** A feature MAY opt in to an external coordinator that replaces the
+human's TYPING between stages — never a judgment that belongs to a stage or to the human. **v1 is a
+CC session running the `pipeline-coordinate` playbook skill** (this repo); a deterministic watcher
+(`pipeline-driver`'s `coordinate.sh` — design history: `coordinator-design.md` §25 in
+[`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver)) remains a future
+option. EITHER coordinator observes remote Git as the only business truth, routes on the journal
+tail's transition forms below, and types the next `pipeline-*` command into the right agent pane. As
+COORDINATOR it writes no target artifacts and no journal entries and performs no stage work belonging
+to another role; the CC-playbook session may separately execute the CC-role stages (arch/task/hunt)
+under their own write-sets — the three-role/three-model separation (CC coordinates+reasons, Pi
+implements, Codex reviews) is the invariant, not the process count. It halts fail-closed on anything
+outside the known forms. **It cannot merge and cannot confirm a merge** — the review GO-gate already
+rejects any relayed/forwarded token as non-human.
 
 ### `control.json` — feature-level authorization
 
@@ -347,8 +352,11 @@ Run it immediately after shim step 1 (`git pull --rebase`), **before ANY file wr
    `schema_version` == `1` AND `mode` == `coordinated` AND `merge_gate` == `human-direct`. A missing
    file, a missing field, or any other value is a mismatch — fail closed.
 4. Any mismatch ⇒ print `STALE_DISPATCH <field> observed=<value> expected=<envelope value>` and
-   **STOP — zero writes, zero commits.** Refusing stale/duplicate work is the guard's whole job; the
-   coordinator redelivers safely BECAUSE this guard exists.
+   **STOP — zero writes, zero commits.** The guard refuses CONSUMED seqs, which protects dispatches
+   whose effect is already observed in Git — it does NOT make blind redelivery safe: an unconsumed
+   dispatch is ambiguous among never-delivered / delivered-not-started / ran-without-delivering (the
+   two delivered-but-unrecorded windows recorded in `coordinator-design.md` v1.2), and a coordinator
+   without a delivery ledger must STOP for human inspection instead of re-sending.
 
 Exact-match and fail-closed — a natural-language "check git first" is not a substitute. No envelope
 (human-relay) ⇒ the guard does not apply; nothing else about the shim loop changes.
