@@ -87,47 +87,22 @@ The human is the fourth, final gate.
   observed leave the idle state — the first post-send `idle` sample may be the PRE-dispatch state
   (`pane run` proves delivery to the TUI, not processing):
 
-  ```bash
-  # bounded_ms <ms> <cmd…>: the reviewed process-group-killing deadline (drive.sh pattern) — a
-  # wedged `herdr agent explain` must not hang the loop; its own counters cannot bound a stuck
-  # command substitution.
-  bounded_ms() { local ms=$1; shift; perl -e '
-    use POSIX ":sys_wait_h"; use Time::HiRes qw(ualarm);
-    my $ms=shift; my $p=fork; if(!$p){setpgrp(0,0); exec @ARGV or exit 127;}
-    $SIG{ALRM}=sub{kill "KILL",-$p; waitpid $p,0; exit 124};
-    ualarm($ms*1000); waitpid $p,0; my $rc=$?>>8; my $sg=$?&127; ualarm(0);
-    kill "KILL",-$p; exit($sg?128+$sg:$rc)' -- "$ms" "$@"; }
-  # sample(): ONE explain → "<authority> <state>", the exact fail-closed predicate the reviewed
-  # driver uses: (full lifecycle hook OR matched rule) AND no fallback. The transport rc is checked
-  # BEFORE parsing — piping bounded_ms straight into jq would let jq consume JSON that arrived
-  # before a hang and erase the 124 timeout; timeout/nonzero/malformed all yield "0 unknown".
-  sample() {
-    local j
-    if ! j=$(bounded_ms 5000 herdr agent explain <pane> --json 2>/dev/null); then
-      printf '0 unknown'; return 0
-    fi
-    printf '%s' "$j" | jq -r '
-      (if (((.screen_detection_skip_reason == "full_lifecycle_hook_authority")
-            or (.matched_rule != null)) and (.fallback_reason == null)) then "1" else "0" end)
-      + " " + ((.state // "unknown") | tostring)' 2>/dev/null || printf '0 unknown'
-  }
-  # phase 1: wait for the pane to START (working) — no start within ~2min = stop and inspect;
-  # phase 2: wait for idle. Authoritative `blocked` and any state outside idle|working fail
-  # IMMEDIATELY in either phase (a fast permission/quota prompt can skip the sampled working state).
-  started=0
-  for i in $(seq 1 135); do
-    set -- $(sample); a=$1; s=$2
-    [ "$a" = 1 ] || exit 4                          # lost/never-had authority — fail closed
-    case "$s" in blocked) exit 2 ;; idle|working) ;; *) exit 4 ;; esac
-    if [ "$started" = 0 ]; then
-      [ "$s" = working ] && started=1
-      [ "$i" -ge 6 ] && [ "$s" = idle ] && exit 5   # never started processing
-    else
-      [ "$s" = idle ] && exit 0
-    fi
-    sleep 20
-  done; exit 3
-  ```
+  Invocation: `python3 <skill-base-dir>/scripts/watch-pane.py <pane>` (the skill base dir is
+  provided at skill invocation); requires `python3` ≥3.9 on PATH, stdlib only. Env knobs (outside
+  the documented range → exit 64): `HERDR_WATCH_SAMPLE_MS` 1..86400000 (default 5000),
+  `HERDR_WATCH_INTERVAL_S` 0..86400 (20), `HERDR_WATCH_START_SAMPLES` 1..1000000 (6),
+  `HERDR_WATCH_MAX_SAMPLES` 1..1000000 (135). Frozen exit codes:
+
+  | code | meaning |
+  |---|---|
+  | 0 | working→idle |
+  | 2 | authoritative blocked |
+  | 3 | max samples exhausted |
+  | 4 | authority lost / unexpected state / sample failure (fail closed) |
+  | 5 | never started processing |
+  | 64 | usage / bad env |
+
+  The script is the normative implementation of the reviewed inline loop (single-sample authority+state — state without authority is the fallback's always-idle lie; bounded sampling; fail closed); its semantics are frozen — change only via meta-PR.
 
   Exit 0 means the pane went working→idle — it is NOT completion by itself: completion additionally
   requires the expected Git/deliverable evidence (new commits in the worktree, an advanced journal
