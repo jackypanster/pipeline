@@ -352,8 +352,11 @@ Run it immediately after shim step 1 (`git pull --rebase`), **before ANY file wr
    `schema_version` == `1` AND `mode` == `coordinated` AND `merge_gate` == `human-direct`. A missing
    file, a missing field, or any other value is a mismatch — fail closed.
 4. Any mismatch ⇒ print `STALE_DISPATCH <field> observed=<value> expected=<envelope value>` and
-   **STOP — zero writes, zero commits.** Refusing stale/duplicate work is the guard's whole job; the
-   coordinator redelivers safely BECAUSE this guard exists.
+   **STOP — zero writes, zero commits.** The guard refuses CONSUMED seqs, which protects dispatches
+   whose effect is already observed in Git — it does NOT make blind redelivery safe: an unconsumed
+   dispatch is ambiguous among never-delivered / delivered-not-started / ran-without-delivering (the
+   two delivered-but-unrecorded windows recorded in `coordinator-design.md` v1.2), and a coordinator
+   without a delivery ledger must STOP for human inspection instead of re-sending.
 
 Exact-match and fail-closed — a natural-language "check git first" is not a substitute. No envelope
 (human-relay) ⇒ the guard does not apply; nothing else about the shim loop changes.

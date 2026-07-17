@@ -28,8 +28,9 @@ The human is the fourth, final gate.
    Do NOT take over the implementation. A compromise directive ("CC, take over") can come ONLY from
    the human, and it does not bend rule 1 — it ENDS the coordinated run for that work item and starts
    a separately attributed TWO-MODEL fallback workflow (CC implements with honest attribution in
-   every commit and PR body; Codex still independently reviews; the human still merges). Resume
-   coordinated mode only when three distinct models are available again.
+   every commit and PR body; Codex still independently reviews AND remains the only role that
+   executes the merge, on the human's direct token — only-reviewer-merges holds in the fallback
+   too). Resume coordinated mode only when three distinct models are available again.
 3. **Git is the only truth.** Verify the implementer's work yourself (rerun the tests, check the diff
    scope) before pushing anything; never trust a self-report. Never paste artifact bodies between
    panes — git is the bus, handoffs carry paths.
@@ -51,11 +52,17 @@ The human is the fourth, final gate.
    the human to attest which models back each pane; do not proceed on assumption.
 4. Coordinating a pipeline feature (Profile B)? Run `pipeline-driver`'s read-only preflight. Cold
    start: `git clone https://github.com/jackypanster/pipeline-driver` (or reuse an existing clone),
-   `cp coordinate.config.example coordinate.config`, fill it — `OBSERVER_WORKDIR` = a clone this
-   session may fetch in, `CC_WORKDIR`/`PI_WORKDIR`/`CODEX_WORKDIR` = the three role clones matching
-   the panes from step 1, `BRANCH` + the five command/timeout fields per the example's comments —
-   then `bash coordinate.sh doctor --config coordinate.config`. Any MISS blocks the run;
-   `coordinate.sh status --config …` shows the last observed state at any time.
+   `cp coordinate.config.example coordinate.config`, fill EVERY non-optional field per the example's
+   comments — `OBSERVER_WORKDIR` = a clone this session may fetch in,
+   `CC_WORKDIR`/`PI_WORKDIR`/`CODEX_WORKDIR` = the three role clones matching the panes from step 1,
+   `BRANCH`, the five command-prefix fields, and the three timeout fields (pane pins / `STATE_DIR` /
+   `ON_HALT_EXEC` are optional). **Run `bash coordinate.sh doctor --config coordinate.config` from a
+   NON-ROLE shell** — a plain terminal or a fourth utility pane, never from the CC/Pi/Codex panes:
+   the shipped tool captures its own `HERDR_PANE_ID` as "self" and excludes that pane from role
+   resolution (a dispatcher must never type into itself), so under this playbook's same-session
+   topology a doctor run inside the CC pane can never resolve the CC role and fails
+   `PANE_NOT_FOUND` by design. Any MISS blocks the run; `coordinate.sh status --config …` shows the
+   last observed state at any time.
 
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
@@ -73,20 +80,35 @@ The human is the fourth, final gate.
   (`pane run` proves delivery to the TUI, not processing):
 
   ```bash
+  # bounded_ms <ms> <cmd…>: the reviewed process-group-killing deadline (drive.sh pattern) — a
+  # wedged `herdr agent explain` must not hang the loop; its own counters cannot bound a stuck
+  # command substitution.
+  bounded_ms() { local ms=$1; shift; perl -e '
+    use POSIX ":sys_wait_h"; use Time::HiRes qw(ualarm);
+    my $ms=shift; my $p=fork; if(!$p){setpgrp(0,0); exec @ARGV or exit 127;}
+    $SIG{ALRM}=sub{kill "KILL",-$p; waitpid $p,0; exit 124};
+    ualarm($ms*1000); waitpid $p,0; my $rc=$?>>8; my $sg=$?&127; ualarm(0);
+    kill "KILL",-$p; exit($sg?128+$sg:$rc)' -- "$ms" "$@"; }
+  # sample(): ONE explain → "<authority> <state>", the exact fail-closed predicate the reviewed
+  # driver uses: (full lifecycle hook OR matched rule) AND no fallback; timeout/nonzero/malformed
+  # payloads yield "0 unknown" and fail closed.
+  sample() { bounded_ms 5000 herdr agent explain <pane> --json 2>/dev/null | jq -r '
+    (if (((.screen_detection_skip_reason == "full_lifecycle_hook_authority")
+          or (.matched_rule != null)) and (.fallback_reason == null)) then "1" else "0" end)
+    + " " + ((.state // "unknown") | tostring)' 2>/dev/null || printf '0 unknown'; }
   # phase 1: wait for the pane to START (working) — no start within ~2min = stop and inspect;
-  # phase 2: wait for idle/blocked. Each explain is one bounded call; the counters bound the loop.
+  # phase 2: wait for idle. Authoritative `blocked` and any state outside idle|working fail
+  # IMMEDIATELY in either phase (a fast permission/quota prompt can skip the sampled working state).
   started=0
   for i in $(seq 1 135); do
-    j=$(herdr agent explain <pane> --json 2>/dev/null)
-    a=$(printf '%s' "$j" | jq -r 'if .fallback_reason == null then "1" else "0" end')
-    s=$(printf '%s' "$j" | jq -r '.state // "unknown"')
-    [ "$a" = 1 ] || exit 4                       # lost authority — fail closed
+    set -- $(sample); a=$1; s=$2
+    [ "$a" = 1 ] || exit 4                          # lost/never-had authority — fail closed
+    case "$s" in blocked) exit 2 ;; idle|working) ;; *) exit 4 ;; esac
     if [ "$started" = 0 ]; then
       [ "$s" = working ] && started=1
       [ "$i" -ge 6 ] && [ "$s" = idle ] && exit 5   # never started processing
     else
       [ "$s" = idle ] && exit 0
-      [ "$s" = blocked ] && exit 2
     fi
     sleep 20
   done; exit 3
@@ -108,7 +130,10 @@ replay-safe to move past.
 ## Profile A — meta-PR flow (toolchain, docs, small changes; quality via adversarial review)
 
 For changes with no `.pipeline` feature state (CONTRACT §Self-improvement lane). No envelope needed:
-review pins the head sha, which is the staleness guard.
+review pins the head sha, which is the staleness guard. **Coordinated Profile A requires a forge
+with a PR thread** (github via `gh`, gitee via `gitee-cli`) — the relay loop below depends on a PR
+URL, durable verdict comments, and observable PR state. No forge ⇒ the change goes by the normal
+human-relayed plain-diff review (CONTRACT §Forge adapter), not by this profile.
 
 1. **Handoff.** Write ONE disposable markdown file: context, constraints (files it may touch, files
    it must NOT touch), deliverables, done-when, "commit locally, do NOT push". Create a git worktree
@@ -118,8 +143,7 @@ review pins the head sha, which is the staleness guard.
 3. **Verify (acceptance, not review).** On idle: rerun every test yourself, `git diff --stat` against
    the base, check no forbidden file moved. Broken → send a correction handoff (this is acceptance
    rejection, not review). Green → push, open the PR via the CONTRACT forge adapter (github → `gh pr
-   create`; gitee → `gitee-cli`; no forge → push the branch and review the plain `git diff
-   base..branch` — same gates, no PR thread), with an honest authorship note.
+   create`; gitee → `gitee-cli`), with an honest authorship note.
 4. **Review dispatch.** send Codex:
    `$pipeline-review meta-PR <pr-url> — toolchain meta-PR, no .pipeline state. base=<b> head=<sha>.
    git fetch origin first. <two or three review axes specific to the change>. Verdict as a PR
@@ -190,8 +214,10 @@ CONTRACT.md binds; this profile only adds who types what.
 
 - **Review axes line** (step 4): name the 2–3 things this specific diff could get wrong — scope
   creep, a weakened rule, an untested path. Generic "please review" wastes the reviewer's round.
-- **Fix handoff skeleton**: verdict path · per-finding fix requirement · regression-must-fail-on
-  `<old head>` · unchanged constraints · "commit locally, do not push".
+- **Fix handoff skeleton**: verdict path · per-finding fix requirement · TYPED old-head evidence per
+  finding (behavioral ⇒ a regression test failing on `<old head>`; doc/contract ⇒ the contradictory
+  old-head text quoted, resolved in the new diff) · unchanged constraints · "commit locally, do not
+  push".
 - **Honest attribution**: every commit/PR body names who implemented and who verified (e.g.
   "Implemented by Pi against <handoff>; verified and pushed by the coordinator").
 
