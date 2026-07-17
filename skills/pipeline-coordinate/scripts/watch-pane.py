@@ -49,29 +49,80 @@ def _fail(code, i, reason, last):
     sys.exit(code)
 
 
-def _kill_group(pid):
+def _kill_group(pgid):
     # type: (int) -> None
-    """SIGKILL the whole process group led by `pid`. No-op if the group is already gone."""
-    try:
-        pgid = os.getpgid(pid)
-    except (ProcessLookupError, OSError):
-        return
+    """SIGKILL the whole process group `pgid`. No-op if it is already gone (ESRCH).
+
+    Uses the known PGID directly: `start_new_session=True` made the leader's PID == PGID for
+    the whole life of the group. Do NOT resolve via os.getpgid(leader_pid) — once the leader
+    has exited, getpgid raises ESRCH even though a same-group descendant still lives, and that
+    descendant would be orphaned (the load-bearing regression of finding #1).
+    """
     try:
         os.killpg(pgid, signal.SIGKILL)
     except (ProcessLookupError, OSError):
         pass
 
 
-def _read_env_int(name, default):
-    # type: (str, int) -> int
+def _reap(proc, timeout=2.0):
+    # type: (subprocess.Popen, float) -> None
+    """Bounded reap. Never blocks longer than `timeout` — never rely on Popen.__exit__'s
+    unbounded wait after a kill (finding #1: no path may re-enter an unbounded wait)."""
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _read_env_int(name, default, minimum):
+    # type: (str, int, int) -> int
     raw = os.environ.get(name)
     if raw is None or raw == "":
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        _fail(64, 0, "bad_env", "%s=%r is not an integer" % (name, raw))
+        val = default
+    else:
+        try:
+            val = int(raw)
+        except ValueError:
+            _fail(64, 0, "bad_env", "%s=%r is not an integer" % (name, raw))
+            return default  # unreachable: _fail exits
+    if val < minimum:
+        _fail(64, 0, "bad_env", "%s=%d is below minimum %d" % (name, val, minimum))
         return default  # unreachable: _fail exits
+    return val
+
+
+def _parse_sample(raw):
+    # type: (str) -> Tuple[int, str, str]
+    """Decode one `herdr agent explain --json` payload -> (authority, state, last).
+
+    Un-parseable / non-object JSON -> (0, "unknown", <diagnostic>).
+    """
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return 0, "unknown", "unparseable JSON: " + raw.strip()
+    if not isinstance(payload, dict):
+        return 0, "unknown", "non-object JSON: " + raw.strip()
+    sdsr = payload.get("screen_detection_skip_reason")
+    matched_rule = payload.get("matched_rule")
+    fallback_reason = payload.get("fallback_reason")
+    authority = 1 if (
+        (sdsr == "full_lifecycle_hook_authority" or matched_rule is not None)
+        and fallback_reason is None
+    ) else 0
+    state_val = payload.get("state")
+    if state_val is None:
+        state = "unknown"
+    else:
+        if not isinstance(state_val, str):
+            state_val = str(state_val)
+        # Frozen bash-tokenization compatibility: the reference `set -- $(sample)` word-splits
+        # the emitted "<authority> <state>" line and the loop consumes only the FIRST whitespace
+        # token of the state. An empty/whitespace-only state yields an empty token, which then
+        # fails the idle|working membership check -> exit 4 (same as bash `$2` unset).
+        parts = state_val.split()
+        state = parts[0] if parts else ""
+    return authority, state, raw.strip()
 
 
 def _sample(pane_id, sample_ms):
@@ -98,49 +149,35 @@ def _sample(pane_id, sample_ms):
         return 0, "unknown", "herdr binary not found on PATH"
     except OSError as exc:
         return 0, "unknown", "spawn failed: %s" % exc
+
+    # start_new_session=True guarantees PGID == proc.pid for the whole life of the group;
+    # capture it ONCE here (see _kill_group for why os.getpgid is never re-resolved later).
+    pgid = proc.pid
+    timed_out = False
+    out = ""
     try:
-        with proc:
-            try:
-                out, _ = proc.communicate(timeout=timeout_s)
-            except subprocess.TimeoutExpired:
-                # Frozen semantic: kill the WHOLE process group. `start_new_session=True`
-                # made the child a group leader; a wedged herdr may have spawned children
-                # that subprocess.run's internal single-process kill() would orphan,
-                # re-hanging on a stuck grandchild. We reproduce the reference bash
-                # `kill "KILL",-$p` (process-group kill) via os.killpg before continuing.
-                _kill_group(proc.pid)
-                try:
-                    proc.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
-                    pass
-                return 0, "unknown", "herdr agent explain timed out after %dms" % sample_ms
-            rc = proc.returncode
-        if rc != 0:
-            return 0, "unknown", "herdr agent explain exited rc=%d" % rc
-        raw = out or ""
         try:
-            payload = json.loads(raw)
-        except ValueError:
-            return 0, "unknown", "unparseable JSON: " + raw.strip()
-        if not isinstance(payload, dict):
-            return 0, "unknown", "non-object JSON: " + raw.strip()
-        sdsr = payload.get("screen_detection_skip_reason")
-        matched_rule = payload.get("matched_rule")
-        fallback_reason = payload.get("fallback_reason")
-        authority = 1 if (
-            (sdsr == "full_lifecycle_hook_authority" or matched_rule is not None)
-            and fallback_reason is None
-        ) else 0
-        state_val = payload.get("state")
-        if state_val is None:
-            state = "unknown"
-        elif isinstance(state_val, str):
-            state = state_val
+            out, _ = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        if timed_out:
+            result = (0, "unknown", "herdr agent explain timed out after %dms" % sample_ms)
         else:
-            state = str(state_val)
-        return authority, state, raw.strip()
+            rc = proc.returncode  # communicate() already reaped the leader here
+            if rc != 0:
+                result = (0, "unknown", "herdr agent explain exited rc=%d" % rc)
+            else:
+                result = _parse_sample(out)
+        return result
     except Exception as exc:  # never raise out of sample — fail closed
         return 0, "unknown", "sample internal error: %s" % exc
+    finally:
+        # Unconditional process-group kill on EVERY sample exit path (normal rc==0, rc!=0,
+        # timeout, parse failure, internal error) — mirrors the reviewed perl `kill "KILL",-$p`
+        # that ran after every waitpid. The known PGID is used directly so a descendant that
+        # outlives the exited leader is still reaped; then a bounded reap (never Popen.__exit__).
+        _kill_group(pgid)
+        _reap(proc)
 
 
 def _main(argv):
@@ -149,10 +186,10 @@ def _main(argv):
         _fail(64, 0, "usage", USAGE)
     pane_id = argv[0]
 
-    sample_ms = _read_env_int("HERDR_WATCH_SAMPLE_MS", 5000)
-    interval_s = _read_env_int("HERDR_WATCH_INTERVAL_S", 20)
-    start_samples = _read_env_int("HERDR_WATCH_START_SAMPLES", 6)
-    max_samples = _read_env_int("HERDR_WATCH_MAX_SAMPLES", 135)
+    sample_ms = _read_env_int("HERDR_WATCH_SAMPLE_MS", 5000, minimum=1)
+    interval_s = _read_env_int("HERDR_WATCH_INTERVAL_S", 20, minimum=0)
+    start_samples = _read_env_int("HERDR_WATCH_START_SAMPLES", 6, minimum=1)
+    max_samples = _read_env_int("HERDR_WATCH_MAX_SAMPLES", 135, minimum=1)
 
     started = False
     last = ""
