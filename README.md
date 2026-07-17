@@ -4,9 +4,10 @@ Agent-facing skill collection. Consumers are LLM/agents, not humans — read [CO
 
 **What:** a forge-agnostic, machine-agnostic dev pipeline as 7 thin command-skills over a git+md
 state bus. Human-relayed by default (no scheduler); each command prints a handoff the operator copies
-to the next bot. An opt-in per-feature **coordinated mode** may type those handoffs deterministically
-(CONTRACT §Coordinated mode; see §Operating modes). The only durable asset is the orchestration
-contract; the skill behind each command is a swappable `roles.yaml` slot.
+to the next bot. An opt-in per-feature **coordinated mode** lets a coordinator type those handoffs
+(CONTRACT §Coordinated mode; see §Operating modes — v1 is an attended CC playbook; a deterministic
+watcher remains a future option). The only durable asset is the orchestration contract; the skill
+behind each command is a swappable `roles.yaml` slot.
 
 ## Files
 

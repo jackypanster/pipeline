@@ -21,12 +21,15 @@ The human is the fourth, final gate.
 1. **Three roles, three models.** CC coordinates and authors requirements artifacts only; it does NOT
    write product/implementation code and does NOT review. Pi implements only; it does NOT review and
    does NOT merge. Codex reviews only; it is the ONLY role that merges, and only on a direct human
-   token typed in ITS OWN session. Any two roles collapsing into one model is a violation.
+   token typed in ITS OWN session. Any two roles collapsing into one model is a violation that VOIDS
+   the coordinated run.
 2. **Implementer death = STOP.** If the implementer pane dies (quota exhausted, crash, blocked), stop
    the run, report the exact break point (committed vs uncommitted work, last green state), and wait.
    Do NOT take over the implementation. A compromise directive ("CC, take over") can come ONLY from
-   the human; when given, execute with honest attribution in every commit and PR body, and the review
-   edge unchanged (Codex still independently reviews whatever CC wrote).
+   the human, and it does not bend rule 1 — it ENDS the coordinated run for that work item and starts
+   a separately attributed TWO-MODEL fallback workflow (CC implements with honest attribution in
+   every commit and PR body; Codex still independently reviews; the human still merges). Resume
+   coordinated mode only when three distinct models are available again.
 3. **Git is the only truth.** Verify the implementer's work yourself (rerun the tests, check the diff
    scope) before pushing anything; never trust a self-report. Never paste artifact bodies between
    panes — git is the bus, handoffs carry paths.
@@ -42,28 +45,65 @@ The human is the fourth, final gate.
 2. `herdr agent explain <pane> --json` per role pane — require an AUTHORITATIVE state source
    (`.fallback_reason == null` and a matched rule / lifecycle hook). Non-authoritative = stop: you
    cannot safely tell working from idle.
-3. Coordinating a pipeline feature? Run the read-only preflight from `pipeline-driver`:
-   `coordinate.sh doctor --config <cfg>` (clones, remote agreement, journal parse, pane authority).
-   Any MISS blocks the run.
+3. **Model identities.** Pane agent type is not model identity. Read each role pane's visible
+   footer/title (`herdr pane read <pane> --source visible --lines 3` — Pi and Codex TUIs show their
+   model there) and confirm three DISTINCT underlying models. Unknown or duplicate → stop and ask
+   the human to attest which models back each pane; do not proceed on assumption.
+4. Coordinating a pipeline feature (Profile B)? Run `pipeline-driver`'s read-only preflight. Cold
+   start: `git clone https://github.com/jackypanster/pipeline-driver` (or reuse an existing clone),
+   `cp coordinate.config.example coordinate.config`, fill it — `OBSERVER_WORKDIR` = a clone this
+   session may fetch in, `CC_WORKDIR`/`PI_WORKDIR`/`CODEX_WORKDIR` = the three role clones matching
+   the panes from step 1, `BRANCH` + the five command/timeout fields per the example's comments —
+   then `bash coordinate.sh doctor --config coordinate.config`. Any MISS blocks the run;
+   `coordinate.sh status --config …` shows the last observed state at any time.
 
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
-- **send** — `herdr pane run <pane> '<single line>'` (atomic text+Enter). Only into an authoritative,
-  IDLE pane; never into your own.
-- **status** — `herdr agent explain <pane> --json | jq -r .state` → `idle|working|blocked`.
-- **watch** (background, so you are woken instead of polling by hand):
+- **send** — `herdr pane run <pane> '<single line>'` (atomic text+Enter); never into your own pane.
+  **Per-send readiness, immediately before every send:** take ONE sample —
+  `herdr agent explain <pane> --json` — and require BOTH `authority` (matched rule / lifecycle hook,
+  `.fallback_reason == null`) AND `state == idle` from that SAME sample (state without authority is
+  the fallback's always-idle lie); then `herdr pane read <pane> --source visible --lines 3` and
+  verify the input line is EMPTY (an idle pane can hold draft text your Enter would submit). Either
+  check failing = do not send; re-sample or stop.
+- **status** — same single-sample discipline: read state AND authority together; lost authority at
+  ANY poll fails closed (stop, tell the human), never "keep polling state".
+- **watch** (background, so you are woken instead of polling by hand). Arm it only AFTER a send you
+  observed leave the idle state — the first post-send `idle` sample may be the PRE-dispatch state
+  (`pane run` proves delivery to the TUI, not processing):
 
   ```bash
+  # phase 1: wait for the pane to START (working) — no start within ~2min = stop and inspect;
+  # phase 2: wait for idle/blocked. Each explain is one bounded call; the counters bound the loop.
+  started=0
   for i in $(seq 1 135); do
-    s=$(herdr agent explain <pane> --json 2>/dev/null | jq -r '.state // "unknown"')
-    [ "$s" = idle ] && exit 0
-    [ "$s" = blocked ] && exit 2
+    j=$(herdr agent explain <pane> --json 2>/dev/null)
+    a=$(printf '%s' "$j" | jq -r 'if .fallback_reason == null then "1" else "0" end')
+    s=$(printf '%s' "$j" | jq -r '.state // "unknown"')
+    [ "$a" = 1 ] || exit 4                       # lost authority — fail closed
+    if [ "$started" = 0 ]; then
+      [ "$s" = working ] && started=1
+      [ "$i" -ge 6 ] && [ "$s" = idle ] && exit 5   # never started processing
+    else
+      [ "$s" = idle ] && exit 0
+      [ "$s" = blocked ] && exit 2
+    fi
     sleep 20
   done; exit 3
   ```
 
-  Exit 2 (blocked) → read the pane (`herdr pane read <pane> --source visible --lines 30`) to see the
-  blocker; quota/crash → hard rule 2.
+  Exit 0 means the pane went working→idle — it is NOT completion by itself: completion additionally
+  requires the expected Git/deliverable evidence (new commits in the worktree, an advanced journal
+  seq, a posted verdict). Idle WITHOUT that evidence = the stage ended without delivering → stop and
+  inspect (never re-send on a hunch; see the redelivery rule below). Exit 2 (blocked) → read the
+  pane to see the blocker; quota/crash → hard rule 2.
+
+**Redelivery is NOT generally safe.** With no delivery ledger, an unconsumed dispatch cannot be
+distinguished among "never delivered", "delivered, not yet started", and "ran and ended without
+delivering" (the load-bearing PR #12 lesson recorded in coordinator-design v1.2/§25). An ambiguous
+send, or unchanged Git after a send, always STOPS for human inspection of the pane transcript. Only
+a dispatch whose effect is OBSERVED (journal advanced / commits landed / verdict posted) is
+replay-safe to move past.
 
 ## Profile A — meta-PR flow (toolchain, docs, small changes; quality via adversarial review)
 
@@ -77,22 +117,38 @@ review pins the head sha, which is the staleness guard.
    <worktree>. Commit locally as you go; do not push.` Then watch.
 3. **Verify (acceptance, not review).** On idle: rerun every test yourself, `git diff --stat` against
    the base, check no forbidden file moved. Broken → send a correction handoff (this is acceptance
-   rejection, not review). Green → push, `gh pr create` with an honest authorship note.
+   rejection, not review). Green → push, open the PR via the CONTRACT forge adapter (github → `gh pr
+   create`; gitee → `gitee-cli`; no forge → push the branch and review the plain `git diff
+   base..branch` — same gates, no PR thread), with an honest authorship note.
 4. **Review dispatch.** send Codex:
    `$pipeline-review meta-PR <pr-url> — toolchain meta-PR, no .pipeline state. base=<b> head=<sha>.
    git fetch origin first. <two or three review axes specific to the change>. Verdict as a PR
    comment; arm the GO-gate; merge ONLY on a direct human token in this session.`
 5. **Relay loop** (the heart of the flow):
    - Verdict = changes requested → save it VERBATIM to a file; write a fix handoff for Pi: the
-     verdict file path + per-finding "fix + a regression test that FAILS on the reviewed head
-     <sha>" + the standing constraints. Dispatch, watch, VERIFY (rerun everything; for each claimed
-     regression test, prove it fails on the old head via a temp worktree), push.
+     verdict file path + per-finding evidence requirements + the standing constraints. Evidence is
+     TYPED: a behavioral defect needs a regression test that FAILS on the reviewed head <sha>
+     (proven in a temp worktree); a documentation/contract defect needs deterministic old-head
+     evidence instead (the contradictory text quoted at the old head, resolved in the new diff) —
+     never a hollow test manufactured to satisfy a blanket rule. Dispatch, watch, VERIFY (rerun
+     everything; re-prove each claimed evidence item yourself), push.
    - Re-dispatch: `re-review <pr-url> — findings fixed; new head <sha>. Review ONLY the delta
      <old>..<new>. <finding→fix→evidence mapping>. Verdict as PR comment; GO-gate; direct human
      token only.`
    - Three rounds without convergence → stop, hand the human the verdict trail (hard rule 4).
 6. **Merge gate.** Verdict = approved → tell the human: reply `go`/`merge`/`confirm` as the ENTIRE
-   message in the Codex pane. Watch the PR state; on merge, clean up the worktree and report.
+   message in the Codex pane. **From the moment a GO-gate is armed until the PR merges (or the human
+   says otherwise), the coordinator MUST NOT send ANYTHING to the reviewer pane** — no re-review, no
+   status ping, nothing: while the gate is armed, every keystroke into that pane is
+   indistinguishable from the human token, so the only safe coordinator behavior is silence toward
+   that pane (dispatching a NEW review round after a changes-requested verdict is fine — the gate is
+   not armed then). Watch the PR state via the forge; on merge, clean up the worktree and report.
+
+   *Accepted limitation (known, deliberate):* transport-level enforcement of human-only token
+   provenance does not exist in the current Herdr — a malicious coordinator could type the token.
+   The mitigations are this send-freeze rule, the human's own view of the reviewer TUI (a forged
+   token is visible in scrollback), and the audit trail; a channel/ACL that mechanically denies the
+   coordinator write access to an armed reviewer pane is future work for the transport layer.
 
 ## Profile B — pipeline feature flow (product code; quality via the frozen-spec contract)
 
@@ -108,14 +164,20 @@ CONTRACT.md binds; this profile only adds who types what.
   obeying each stage's write-set. Implementation is dispatched to the Pi pane; review to the Codex
   pane. Coordinating and executing the CC-role stages in one session is the sanctioned
   simplification of the old design's separate CC pane — the model separation is what matters.
+  **In-session stages carry the envelope too:** invoke every coordinated stage — including your own
+  `arch`/`task`/`hunt` — with all five fields (`repo= branch= feature= expected_seq=
+  expected_commit=`) built from ONE fresh journal observation, so the stage's mandatory pre-write
+  stale-dispatch guard and control-tuple check run rather than the human-relay path. Cannot
+  construct the tuple (unreadable tail, missing control) → stop; never invoke bare.
 - **Routing.** After every stage: `git pull --rebase`, read the journal tail's header and its
   `>>> NEXT` line, and follow CONTRACT §Coordinated mode's transition forms. The tail is the ONLY
   authority. A tail that matches no known form → stop and show the human (never force a route).
 - **Dispatching a stage to a pane.** Compose the stage command + the envelope, e.g. send Pi:
   `<PI_IMPL_CMD> repo=<pi-clone> branch=<b> feature=<f> expected_seq=<N> expected_commit=<full sha>`
-  — the stage's pre-write stale guard (CONTRACT §Coordinated mode) verifies it; that guard is what
-  makes any redelivery safe. Watch the pane; when it idles, pull and read the tail. An idle pane
-  with NO new journal entry = the stage broke its promise → stop, surface it (hard rule 4).
+  — the stage's pre-write stale guard (CONTRACT §Coordinated mode) verifies it; the guard refuses
+  CONSUMED seqs, which protects observed-complete dispatches — it does NOT make blind redelivery
+  safe (see the redelivery rule above). Watch the pane; when it idles, pull and read the tail. An
+  idle pane with NO new journal entry = the stage broke its promise → stop, surface it (hard rule 4).
 - **Retries and hunt** follow the CONTRACT state machine as written (attempts, `>=3 ⇒ blocked ⇒
   hunt`); you validate the card evidence by READING it, and stop on any disagreement between journal
   and cards.
