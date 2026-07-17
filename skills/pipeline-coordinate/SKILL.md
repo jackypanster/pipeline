@@ -90,12 +90,19 @@ The human is the fourth, final gate.
     ualarm($ms*1000); waitpid $p,0; my $rc=$?>>8; my $sg=$?&127; ualarm(0);
     kill "KILL",-$p; exit($sg?128+$sg:$rc)' -- "$ms" "$@"; }
   # sample(): ONE explain → "<authority> <state>", the exact fail-closed predicate the reviewed
-  # driver uses: (full lifecycle hook OR matched rule) AND no fallback; timeout/nonzero/malformed
-  # payloads yield "0 unknown" and fail closed.
-  sample() { bounded_ms 5000 herdr agent explain <pane> --json 2>/dev/null | jq -r '
-    (if (((.screen_detection_skip_reason == "full_lifecycle_hook_authority")
-          or (.matched_rule != null)) and (.fallback_reason == null)) then "1" else "0" end)
-    + " " + ((.state // "unknown") | tostring)' 2>/dev/null || printf '0 unknown'; }
+  # driver uses: (full lifecycle hook OR matched rule) AND no fallback. The transport rc is checked
+  # BEFORE parsing — piping bounded_ms straight into jq would let jq consume JSON that arrived
+  # before a hang and erase the 124 timeout; timeout/nonzero/malformed all yield "0 unknown".
+  sample() {
+    local j
+    if ! j=$(bounded_ms 5000 herdr agent explain <pane> --json 2>/dev/null); then
+      printf '0 unknown'; return 0
+    fi
+    printf '%s' "$j" | jq -r '
+      (if (((.screen_detection_skip_reason == "full_lifecycle_hook_authority")
+            or (.matched_rule != null)) and (.fallback_reason == null)) then "1" else "0" end)
+      + " " + ((.state // "unknown") | tostring)' 2>/dev/null || printf '0 unknown'
+  }
   # phase 1: wait for the pane to START (working) — no start within ~2min = stop and inspect;
   # phase 2: wait for idle. Authoritative `blocked` and any state outside idle|working fail
   # IMMEDIATELY in either phase (a fast permission/quota prompt can skip the sampled working state).
