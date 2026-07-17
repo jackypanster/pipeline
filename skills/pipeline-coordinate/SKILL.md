@@ -128,6 +128,17 @@ human-relayed plain-diff review (CONTRACT §Forge adapter), not by this profile.
 1. **Handoff.** Write ONE disposable markdown file: context, constraints (files it may touch, files
    it must NOT touch), deliverables, done-when, "commit locally, do NOT push". Create a git worktree
    for the implementer; state its absolute path and forbid touching the pane's own cwd.
+   **Spec-completeness for reimplementation handoffs (field lesson, PR #48 — five rounds):** when
+   the deliverable re-expresses existing behavior in another language/runtime, freeze the IMPLICIT
+   substrate semantics alongside the visible ones — tokenization/charset (bash default IFS is
+   space/tab/newline ONLY), process-lifecycle side effects (e.g. an unconditional group kill after
+   every wait), and input robustness the original never had to define (env parsing/ranges) — every
+   implicit behavior left unfrozen is a review round waiting to happen. And when the evidence plan
+   requires a process-spawning test harness, give the harness its OWN lifecycle spec in the same
+   handoff, written as OUTCOMES (nothing may signal a process outside this run; no leak outlives a
+   bounded self-expiring lease; death is PROVEN by read-only checks before any evidence deletion or
+   success report), never as mechanisms — a prescribed mechanism with a hole becomes a mandated
+   hole (reference endpoint: stop-file + bounded lease + `os.kill(pid, 0)` proof).
 2. **Dispatch.** send Pi: `Read <handoff path> in full and implement it completely. Work ONLY in
    <worktree>. Commit locally as you go; do not push.` Then watch.
 3. **Verify (acceptance, not review).** On idle: rerun every test yourself, `git diff --stat` against
