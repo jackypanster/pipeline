@@ -80,10 +80,11 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
 6. **Approved** ⇒ do NOT merge yet: end your turn at a self-terminating, fail-closed **GO-gate**. After
    the pre-merge guards below pass, print an unmistakable prompt the operator acts on **in YOUR
    terminal** — e.g. `APPROVED — reply IN THIS session with a message whose ENTIRE trimmed text is
-   exactly 'go' (or 'merge'/'confirm') to squash-merge; anything else = no merge.` — then STOP.
+   'go' (or 'merge'/'confirm', any letter case) to squash-merge; anything else = no merge.` — then STOP.
    **Consume the gate ONLY when** the operator's NEXT message **in THIS SAME reviewer session**, trimmed,
-   equals EXACTLY one allowed token — whole message, no other content (`go do not merge` / `go; …` do NOT
-   qualify). ANY other input — extra content, a lost/different session, a **coordinator-relayed/forwarded
+   equals one allowed token compared CASE-INSENSITIVELY (`go`/`GO`/`Go` all qualify — letter case
+   carries no authenticity; the whole-message, same-session, direct-operator requirements are what
+   do) — whole message, no other content (`go do not merge` / `go; …` do NOT qualify). ANY other input — extra content, a lost/different session, a **coordinator-relayed/forwarded
    token** (indistinguishable from automation — NOT a human confirm), or a non-token reply — disarms the
    gate: no merge, re-review. Only a DIRECT operator message in the emitting session consumes it. This
    removes the coordinator poll-and-relay hop while keeping the confirm authentically human. (Scope: this
@@ -136,8 +137,8 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 ## Hard rules
 
 - Merge ONLY by consuming the armed GO-gate (step 6) with a **direct** operator message **in the same
-  reviewer session that emitted it**, whose ENTIRE trimmed content is exactly one allowed token
-  (`go`/`merge`/`confirm`) — NEVER a first-token/substring match, NEVER a relayed/forwarded token
+  reviewer session that emitted it**, whose ENTIRE trimmed content is one allowed token
+  (`go`/`merge`/`confirm`, compared case-insensitively) — NEVER a first-token/substring match, NEVER a relayed/forwarded token
   (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; a lost
   session or any non-token reply disarms → re-review. (This PR hardens confirm authenticity only; head/
   base merge atomicity vs an approve-then-push is a separate, pre-existing open item.)
