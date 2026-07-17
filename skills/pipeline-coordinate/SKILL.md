@@ -88,9 +88,10 @@ The human is the fourth, final gate.
   (`pane run` proves delivery to the TUI, not processing):
 
   Invocation: `python3 <skill-base-dir>/scripts/watch-pane.py <pane>` (the skill base dir is
-  provided at skill invocation); requires `python3` ≥3.9 on PATH, stdlib only. Env knobs (integers,
-  else exit 64): `HERDR_WATCH_SAMPLE_MS` (5000), `HERDR_WATCH_INTERVAL_S` (20),
-  `HERDR_WATCH_START_SAMPLES` (6), `HERDR_WATCH_MAX_SAMPLES` (135). Frozen exit codes:
+  provided at skill invocation); requires `python3` ≥3.9 on PATH, stdlib only. Env knobs (outside
+  the documented range → exit 64): `HERDR_WATCH_SAMPLE_MS` 1..86400000 (default 5000),
+  `HERDR_WATCH_INTERVAL_S` 0..86400 (20), `HERDR_WATCH_START_SAMPLES` 1..1000000 (6),
+  `HERDR_WATCH_MAX_SAMPLES` 1..1000000 (135). Frozen exit codes:
 
   | code | meaning |
   |---|---|

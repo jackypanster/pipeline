@@ -20,6 +20,7 @@ Exit-code contract (frozen):
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -74,8 +75,8 @@ def _reap(proc, timeout=2.0):
         pass
 
 
-def _read_env_int(name, default, minimum):
-    # type: (str, int, int) -> int
+def _read_env_int(name, default, minimum, maximum):
+    # type: (str, int, int, int) -> int
     raw = os.environ.get(name)
     if raw is None or raw == "":
         val = default
@@ -85,8 +86,9 @@ def _read_env_int(name, default, minimum):
         except ValueError:
             _fail(64, 0, "bad_env", "%s=%r is not an integer" % (name, raw))
             return default  # unreachable: _fail exits
-    if val < minimum:
-        _fail(64, 0, "bad_env", "%s=%d is below minimum %d" % (name, val, minimum))
+    if val < minimum or val > maximum:
+        _fail(64, 0, "bad_env", "%s=%d is outside the allowed range [%d, %d]"
+              % (name, val, minimum, maximum))
         return default  # unreachable: _fail exits
     return val
 
@@ -117,10 +119,13 @@ def _parse_sample(raw):
         if not isinstance(state_val, str):
             state_val = str(state_val)
         # Frozen bash-tokenization compatibility: the reference `set -- $(sample)` word-splits
-        # the emitted "<authority> <state>" line and the loop consumes only the FIRST whitespace
-        # token of the state. An empty/whitespace-only state yields an empty token, which then
-        # fails the idle|working membership check -> exit 4 (same as bash `$2` unset).
-        parts = state_val.split()
+        # the emitted "<authority> <state>" line on bash's DEFAULT IFS (space/tab/newline only)
+        # and the loop consumes only the FIRST token. CR/VT/FF/NBSP and all other Unicode
+        # whitespace are ORDINARY characters that stay inside the token, so e.g. "working\rdetail"
+        # is ONE token -> fails the idle|working check -> exit 4, exactly as bash. str.split()
+        # is NOT used (it splits every Unicode whitespace char). An empty/IFS-only state yields
+        # an empty token -> exit 4 (same as bash `$2` unset).
+        parts = [t for t in re.split(r"[ \t\n]+", state_val) if t]
         state = parts[0] if parts else ""
     return authority, state, raw.strip()
 
@@ -186,10 +191,10 @@ def _main(argv):
         _fail(64, 0, "usage", USAGE)
     pane_id = argv[0]
 
-    sample_ms = _read_env_int("HERDR_WATCH_SAMPLE_MS", 5000, minimum=1)
-    interval_s = _read_env_int("HERDR_WATCH_INTERVAL_S", 20, minimum=0)
-    start_samples = _read_env_int("HERDR_WATCH_START_SAMPLES", 6, minimum=1)
-    max_samples = _read_env_int("HERDR_WATCH_MAX_SAMPLES", 135, minimum=1)
+    sample_ms = _read_env_int("HERDR_WATCH_SAMPLE_MS", 5000, minimum=1, maximum=86400000)
+    interval_s = _read_env_int("HERDR_WATCH_INTERVAL_S", 20, minimum=0, maximum=86400)
+    start_samples = _read_env_int("HERDR_WATCH_START_SAMPLES", 6, minimum=1, maximum=1000000)
+    max_samples = _read_env_int("HERDR_WATCH_MAX_SAMPLES", 135, minimum=1, maximum=1000000)
 
     started = False
     last = ""

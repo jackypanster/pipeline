@@ -11,14 +11,17 @@ counter file: call N emits file min(N, max) and increments the counter. A respon
 may hold a JSON body, or one of the tokens SLEEP / GARBAGE / RC1.
 
 When HERDR_FAKE_SPAWN_CHILD is set, each fake-herdr call ALSO spawns a same-process-group
-descendant (a `python -c` one-liner) that holds an exclusive flock on a lockfile, with its
-stdout/stderr redirected to /dev/null (so it does not hold the leader's pipe open). The
-leader waits for a readiness file before emitting its body. This exercises the frozen
-process-group kill: once the leader has exited, the descendant can only be reaped by
-watch-pane's unconditional `os.killpg(pgid, SIGKILL)` (finding #1).
+descendant (a `python -c` one-liner) with its stdout/stderr redirected to /dev/null (so it
+does not hold the leader's pipe open). The fake herdr RECORDS that descendant's PID ($!)
+into a per-scenario file under this run's own temp dir and waits for a readiness signal
+before emitting its body. The runner's dead-descendant assertion and its cleanup operate on
+EXACTLY those recorded PIDs (every child from multi-sample A included) — there is no
+process-table-wide pattern (each run kills only its own recorded PIDs), so two concurrent
+suite runs never cross-kill.
+This exercises the frozen process-group kill: once the leader has exited, the descendant can
+only be reaped by watch-pane's unconditional `os.killpg(pgid, SIGKILL)` (finding #1).
 """
 
-import fcntl
 import os
 import shutil
 import signal
@@ -31,20 +34,19 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 WATCH_PANE = os.path.join(HERE, "watch-pane.py")
 
-# Sentinel var so lingering descendants from a regression run can be swept with
-# `pkill -f _wpdesc=1` (best-effort hygiene; the normal fixed run leaves none).
+# Descendant one-liner. argv[1] = readiness file: the descendant writes its own PID there
+# (proving it reached the sleep), then sleeps until killed. Its stdout/stderr are redirected
+# to /dev/null by the fake herdr so it never holds the leader's pipe.
 DESCENDANT = (
-    "_wpdesc=1;"
-    "import fcntl,os,sys,time;"
-    "f=open(sys.argv[1],'a');"
-    "fcntl.flock(f,fcntl.LOCK_EX);"
-    "r=open(sys.argv[2],'w');r.write(str(os.getpid()));r.close();"
+    "import os,sys,time;"
+    "r=open(sys.argv[1],'w');r.write(str(os.getpid()));r.close();"
     "time.sleep(3600)"
 )
 
 # The fake `herdr`. Reads $HERDR_FAKE_DIR/counter (default 0), emits file min(call, max),
 # then increments the counter. Tokens SLEEP / GARBAGE / RC1 override the body. When
-# $HERDR_FAKE_SPAWN_CHILD is set it first spawns a same-group descendant (finding #1).
+# $HERDR_FAKE_SPAWN_CHILD is set it first spawns a same-group descendant (finding #1) and
+# records that descendant's PID into $HERDR_FAKE_CHILD_PIDS.
 FAKE_HERDR = r'''#!/bin/sh
 # Fake herdr agent explain — deterministic, stateful across calls via a counter file.
 DIR="$HERDR_FAKE_DIR"
@@ -66,14 +68,17 @@ resp="$DIR/$idx"
 [ -f "$resp" ] || resp="$DIR/$max"
 if [ ! -f "$resp" ]; then printf '%s' ''; exit 0; fi
 body=$(cat "$resp")
-# Optional same-group descendant holding an exclusive flock (finding #1 regression). Its
-# stdout/stderr are redirected to /dev/null so it does NOT hold the leader's pipe open; it
-# stays in the leader's process group (non-interactive sh, no job control), so watch-pane's
-# process-group kill is the only thing that reaps it once the leader has exited.
+# Optional same-group descendant (finding #1 regression). Its stdout/stderr are redirected
+# to /dev/null so it does NOT hold the leader's pipe open; it stays in the leader's process
+# group (non-interactive sh, no job control), so watch-pane's process-group kill is the only
+# thing that reaps it once the leader has exited. RECORD its PID in this run's own temp file
+# (the runner asserts/cleans exactly these PIDs — never a process-table-wide pattern).
 if [ -n "$HERDR_FAKE_SPAWN_CHILD" ]; then
-  "$HERDR_FAKE_PYTHON" -c "$HERDR_FAKE_DESCENDANT" "$HERDR_FAKE_LOCKFILE" "$HERDR_FAKE_READYFILE" >/dev/null 2>&1 &
+  : > "$HERDR_FAKE_CHILD_READY"
+  "$HERDR_FAKE_PYTHON" -c "$HERDR_FAKE_DESCENDANT" "$HERDR_FAKE_CHILD_READY" >/dev/null 2>&1 &
+  printf '%s\n' "$!" >> "$HERDR_FAKE_CHILD_PIDS"
   k=0
-  while [ ! -f "$HERDR_FAKE_READYFILE" ] && [ "$k" -lt 200 ]; do k=$((k+1)); sleep 0.01; done
+  while [ ! -s "$HERDR_FAKE_CHILD_READY" ] && [ "$k" -lt 200 ]; do k=$((k+1)); sleep 0.01; done
 fi
 case "$body" in
   SLEEP) sleep 3; printf '%s' '{"state":"working","matched_rule":{"id":"r"},"screen_detection_skip_reason":null,"fallback_reason":null}';;
@@ -116,7 +121,7 @@ FALLBACK_IDLE = (
     '{"state":"idle","matched_rule":null,"screen_detection_skip_reason":null,'
     '"fallback_reason":"default_known_agent_idle_fallback"}'
 )
-# Finding #2: authoritative state strings carrying a trailing whitespace token. The bash
+# Finding #2: authoritative state strings carrying a trailing space token. The bash
 # `set -- $(sample)` consumes only the first token, so these classify as working/idle.
 WORKING_DETAIL = (
     '{"state":"working detail","matched_rule":{"id":"r"},'
@@ -130,42 +135,83 @@ STATE_EMPTY = (
     '{"state":"","matched_rule":{"id":"r"},'
     '"screen_detection_skip_reason":null,"fallback_reason":null}'
 )
+# Finding #1 (round 2): bash default-IFS splits ONLY space/tab/newline. CR and NBSP are
+# ORDINARY chars and stay inside the token, so these are ONE token -> exit 4. The JSON uses
+# the escapes \r and \u00a0 so json.loads yields a state containing a real CR / NBSP byte.
+WORKING_CR_DETAIL = (
+    '{"state":"working\\rdetail","matched_rule":{"id":"r"},'
+    '"screen_detection_skip_reason":null,"fallback_reason":null}'
+)
+IDLE_CR_DETAIL = (
+    '{"state":"idle\\rdetail","matched_rule":{"id":"r"},'
+    '"screen_detection_skip_reason":null,"fallback_reason":null}'
+)
+WORKING_NBSP_X = (
+    '{"state":"working\\u00a0x","matched_rule":{"id":"r"},'
+    '"screen_detection_skip_reason":null,"fallback_reason":null}'
+)
+IDLE_NBSP_X = (
+    '{"state":"idle\\u00a0x","matched_rule":{"id":"r"},'
+    '"screen_detection_skip_reason":null,"fallback_reason":null}'
+)
+
+HUGE_INT = "1" * 400           # 400-digit positive integer (overflow on float conversion)
+OVERFLOW_INTERVAL = "9" * 20   # 99999999999999999999 >> 86400
 
 
-def _descendant_dead(lock_path, ready_path, timeout=2.0):
-    """True if the descendant is gone (lock acquirable); False if still alive; None if the
-    readiness file never appeared (descendant never reached lock-acquire — invalid scenario)."""
-    if not os.path.exists(ready_path):
-        return None
-    f = open(lock_path, "r+")
+def _read_pids(path):
+    # type: (str) -> list
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+    pids = []
+    for line in lines:
+        s = line.strip()
+        if s.isdigit():
+            pids.append(int(s))
+    return pids
+
+
+def _pid_dead(pid):
+    # type: (int) -> bool
+    """True if `pid` is gone (reaped) or a zombie. The descendant is reparented to PID 1
+    after its leader exits, so we cannot waitpid it; read its state via `ps`."""
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=2.0,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False  # cannot determine — be conservative (treat as alive)
+    state = out.stdout.strip()
+    if not state:
+        return True  # no such process — reaped/gone
+    return state[0] == "Z"  # zombie = exited, awaiting reap = dead for our purposes
+
+
+def _descendants_all_dead(pids, timeout=2.0):
+    if not pids:
+        return None  # no PIDs recorded -> descendant path never ran -> invalid scenario
     deadline = time.monotonic() + timeout
-    try:
-        while True:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return True
-            except (OSError, IOError):
-                if time.monotonic() >= deadline:
-                    return False
-                time.sleep(0.02)
-    finally:
+    while True:
+        if all(_pid_dead(p) for p in pids):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.02)
+
+
+def _cleanup_pids(pids):
+    # type: (list) -> None
+    """SIGKILL exactly the PIDs this runner recorded (best-effort; never a global pattern)."""
+    for pid in pids:
         try:
-            f.close()
-        except OSError:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
             pass
-
-
-def _cleanup_ready_pid(ready_path):
-    """Best-effort SIGKILL of the PID recorded in the readiness file (regression-run hygiene)."""
-    try:
-        with open(ready_path) as fh:
-            pid = int(fh.read().strip())
-    except (OSError, ValueError):
-        return
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, OSError):
-        pass
 
 
 class Runner:
@@ -204,16 +250,15 @@ class Runner:
         env["HERDR_FAKE_DIR"] = scn
         env["HERDR_FAKE_PYTHON"] = sys.executable
         env["HERDR_FAKE_DESCENDANT"] = DESCENDANT
-        lock_path = ready_path = None
+        pids_path = ready_path = None
         if child:
-            lock_path = os.path.join(scn, "child.lock")
-            ready_path = os.path.join(scn, "child.ready")
-            open(lock_path, "w").close()  # pre-create empty lockfile
-            if os.path.exists(ready_path):
-                os.remove(ready_path)
+            pids_path = os.path.join(scn, "child_pids")
+            ready_path = os.path.join(scn, "child_ready")
+            open(pids_path, "w").close()
+            open(ready_path, "w").close()
             env["HERDR_FAKE_SPAWN_CHILD"] = "1"
-            env["HERDR_FAKE_LOCKFILE"] = lock_path
-            env["HERDR_FAKE_READYFILE"] = ready_path
+            env["HERDR_FAKE_CHILD_PIDS"] = pids_path
+            env["HERDR_FAKE_CHILD_READY"] = ready_path
         cmd = [sys.executable, WATCH_PANE] + args
         t0 = time.monotonic()
         proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
@@ -223,16 +268,17 @@ class Runner:
             ok = False
         child_note = ""
         if child:
-            dead = _descendant_dead(lock_path, ready_path)
+            pids = _read_pids(pids_path)
+            dead = _descendants_all_dead(pids)
             if dead is None:
-                child_note = " [descendant readiness MISSING]"
+                child_note = " [no descendant PIDs recorded]"
                 ok = False
-            elif dead is True:
-                child_note = " [descendant dead]"
+            elif dead:
+                child_note = " [%d descendants dead]" % len(pids)
             else:
                 child_note = " [descendant ALIVE]"
                 ok = False
-            _cleanup_ready_pid(ready_path)
+            _cleanup_pids(pids)  # kill only the PIDs this run created
         status = "PASS" if ok else "FAIL"
         detail = "exit=%d(exp %d) %.2fs%s" % (proc.returncode, expected, elapsed, child_note)
         if expect_fast:
@@ -244,12 +290,6 @@ class Runner:
         return ok
 
     def cleanup(self):
-        # best-effort sweep of any lingering descendants (regression run only)
-        try:
-            subprocess.run(["pkill", "-9", "-f", "_wpdesc=1"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except (OSError, FileNotFoundError):
-            pass
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
@@ -271,20 +311,30 @@ def main():
             ("7b-rc1", {"1": "RC1"}, 4, ["p1"], {}, False, False),
             ("8a-no-argv", {}, 64, [], {}, False, False),
             ("8b-bad-env", {"1": IDLE_RULE}, 64, ["p1"], {"HERDR_WATCH_SAMPLE_MS": "abc"}, False, False),
-            # --- finding #1: unconditional process-group kill on every sample path ---
+            # --- finding #1 (round 1): unconditional process-group kill on every sample path ---
             # A: authoritative working then idle, each sample spawns a same-group descendant
-            #    that outlives the exited leader. watch-pane must return 0 AND the descendant
-            #    must be dead (the lock acquirable).
+            #    that outlives the exited leader. watch-pane must return 0 AND every recorded
+            #    descendant PID (multi-sample) must be dead.
             ("A-child-work-idle", {"1": WORKING_RULE, "2": IDLE_RULE}, 0, ["p1"], {}, False, True),
             # B: leader exits rc 1 before the sample timeout leaving a descendant (the ESRCH
             #    path); watch-pane exits 4 and the descendant must be dead.
             ("B-child-rc1", {"1": "RC1"}, 4, ["p1"], {}, False, True),
-            # --- finding #2: bash `set -- $(sample)` whitespace-tokenization of state ---
+            # --- finding #2 (round 1): bash whitespace-tokenization of state (space IS IFS) ---
             ("2b-state-tokens", {"1": WORKING_DETAIL, "2": IDLE_DETAIL}, 0, ["p1"], {}, False, False),
             ("2c-state-empty", {"1": STATE_EMPTY}, 4, ["p1"], {}, False, False),
-            # --- finding #3: env range validation (exit 64, no traceback) ---
+            # --- finding #3 (round 1): env range validation (exit 64, no traceback) ---
             ("8c-interval-neg", {"1": IDLE_RULE}, 64, ["p1"], {"HERDR_WATCH_INTERVAL_S": "-1"}, False, False),
             ("8d-sample-ms-zero", {"1": IDLE_RULE}, 64, ["p1"], {"HERDR_WATCH_SAMPLE_MS": "0"}, False, False),
+            # --- finding #1 (round 2): bash default-IFS is space/tab/newline ONLY ---
+            # CR is an ordinary char -> one token -> exit 4 at sample 1 (fails open on 2baca68).
+            ("2d-state-cr", {"1": WORKING_CR_DETAIL, "2": IDLE_CR_DETAIL}, 4, ["p1"], {}, False, False),
+            # NBSP is an ordinary char -> one token -> exit 4 (fails open on 2baca68).
+            ("2e-state-nbsp", {"1": WORKING_NBSP_X, "2": IDLE_NBSP_X}, 4, ["p1"], {}, False, False),
+            # --- finding #2 (round 2): safe upper bounds (overflow -> exit 64, no traceback) ---
+            ("8e-sample-ms-huge", {"1": BLOCKED_RULE}, 64, ["p1"], {"HERDR_WATCH_SAMPLE_MS": HUGE_INT}, False, False),
+            ("8f-interval-huge", {"1": WORKING_RULE}, 64, ["p1"], {"HERDR_WATCH_INTERVAL_S": OVERFLOW_INTERVAL}, False, False),
+            ("8g-interval-86400-ok", {"1": BLOCKED_RULE}, 2, ["p1"], {"HERDR_WATCH_INTERVAL_S": "86400"}, False, False),
+            ("8h-interval-86401-bad", {"1": BLOCKED_RULE}, 64, ["p1"], {"HERDR_WATCH_INTERVAL_S": "86401"}, False, False),
         ]
         for label, files, expected, args, overrides, fast, child in cases:
             total += 1
