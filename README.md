@@ -154,29 +154,30 @@ src=~/workspace/pipeline/roles.yaml
 if [ -e "$roles" ] || [ -L "$roles" ]; then
   echo "roles.yaml already present — preserved; reconcile any new slots by hand"    # steady state, rc 0
 else
-  rc=0
   (
     td="$(dirname "$roles")/.roles.tmp.$$"
-    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: best-effort cleanup, then die (nonzero)
-    mkdir "$td" || exit 1
-    cp "$src" "$td/roles" || { rm -rf "$td"; exit 3; }    # genuine copy error => nonzero, dest untouched
-    # Cleanup is EXPLICIT and CHECKED on every normal result path — do NOT rely on an EXIT trap: bash
-    # preserves the pre-trap status, so a failed rm in an EXIT trap is swallowed and would falsely claim
-    # a clean, sole-artifact success while a .roles.tmp.* dir lingers. Checked cleanup => nonzero instead.
-    if link "$td/roles" "$roles" 2>/dev/null; then         # published complete content atomically
-      rm -rf "$td" || exit 6; exit 0
-    elif [ -e "$roles" ] || [ -L "$roles" ]; then          # race-lost: victim untouched (link never wrote)
-      rm -rf "$td" || exit 6; exit 4
+    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: best-effort cleanup, still nonzero
+    mkdir "$td" || { echo "ERROR: cannot create temp dir under $(dirname "$roles")" >&2; exit 1; }
+    # Report the OPERATION outcome and the CLEANUP outcome truthfully and separately. Cleanup is CHECKED
+    # on EVERY path (created / race-lost / copy-error / link-error) — never left to a status-swallowing
+    # EXIT trap. `finish 1` = a real bind success; `finish 0` = the bind failed; either way a cleanup
+    # failure downgrades to nonzero and names the exact leftover to remove, never a faked clean success.
+    finish() {  # $1: ok(1)/fail(0)   $2: truthful operation context
+      if rm -rf "$td"; then
+        if [ "$1" = 1 ]; then echo "$2"; exit 0; else echo "ERROR: $2" >&2; exit 1; fi
+      fi
+      echo "ERROR: $2 — AND temp cleanup failed; remove $td by hand" >&2; exit 6
+    }
+    if ! cp "$src" "$td/roles"; then
+      finish 0 "cannot read $src — roles.yaml not written"
+    elif link "$td/roles" "$roles" 2>/dev/null; then       # published complete content atomically
+      finish 1 "roles.yaml created — now set the impl slot to your real skill name"
+    elif [ -e "$roles" ] || [ -L "$roles" ]; then          # EEXIST: destination belongs to the racer
+      finish 1 "roles.yaml appeared concurrently — preserved, not overwritten (bind wrote nothing)"
     else
-      rm -rf "$td"; exit 5                                 # genuine link failure => nonzero
+      finish 0 "could not publish roles.yaml — link failed and the destination is absent"
     fi
-  ) || rc=$?
-  case $rc in
-    0) echo "roles.yaml created — now set the impl slot to your real skill name" ;;
-    4) echo "roles.yaml appeared concurrently — preserved, not overwritten" ;;     # rc 0 overall
-    6) echo "ERROR: bind wrote roles.yaml but temp cleanup failed — remove $(dirname "$roles")/.roles.tmp.* by hand" >&2; exit 1 ;;
-    *) echo "ERROR: could not create $roles (rc=$rc)" >&2; exit 1 ;;               # genuine failure fails
-  esac
+  ) || exit $?
 fi
 ```
 
