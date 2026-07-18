@@ -137,17 +137,29 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 #    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
 #      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
 
-# 3. Per target project, bind the slots. Create the file ONLY if absent; never clobber an existing
-#    roles.yaml (regular file OR symlink) — overwriting a configured project wipes its slot bindings and
-#    restores the unresolved <autonomous-coding-skill> placeholder (a regression, not a re-install).
-#    Guard with an existence test, NOT `cp -n`: BSD/macOS `cp -n` returns a non-zero exit on an existing
-#    target, so a normal rerun would read as a FAILED install under fail-fast. Both branches are success:
+# 3. Per target project, bind the slots. Create roles.yaml ONLY if absent; never clobber an existing one
+#    (regular file OR symlink) — overwriting a configured project wipes its bindings and restores the
+#    unresolved <autonomous-coding-skill> placeholder. A bare existence-test-then-cp has a TOCTOU hole: a
+#    file/symlink that appears in the gap gets overwritten or its referent truncated (the symlink race
+#    that sank the old installer). Use an ATOMIC no-clobber create instead — copy into a same-dir temp
+#    (so a real copy error fails BEFORE the destination is touched), then `ln` it into place: `ln` fails
+#    closed if the target exists and never follows a symlink, so the publish is atomic. NOT `cp -n`
+#    either — BSD/macOS `cp -n` returns non-zero on an existing target, which reads as a failed install.
 mkdir -p <target-repo>/.pipeline
 roles=<target-repo>/.pipeline/roles.yaml
+src=~/workspace/pipeline/roles.yaml
 if [ -e "$roles" ] || [ -L "$roles" ]; then
-  echo "roles.yaml already present — preserved; reconcile any new slots by hand"   # rc 0, NOT a failure
+  echo "roles.yaml already present — preserved; reconcile any new slots by hand"    # steady state, rc 0
 else
-  cp ~/workspace/pipeline/roles.yaml "$roles"   # freshly created ⇒ set the impl slot to your real skill name
+  tmp=$(mktemp "$(dirname "$roles")/.roles.XXXXXX") || exit 1
+  cp "$src" "$tmp" || { rm -f "$tmp"; echo "ERROR: cannot read $src" >&2; exit 1; }  # real copy error fails
+  if ln "$tmp" "$roles" 2>/dev/null; then
+    rm -f "$tmp"; echo "roles.yaml created — now set the impl slot to your real skill name"
+  elif [ -e "$roles" ] || [ -L "$roles" ]; then
+    rm -f "$tmp"; echo "roles.yaml appeared concurrently — preserved, not overwritten"   # race-lost, rc 0
+  else
+    rm -f "$tmp"; echo "ERROR: atomic create of $roles failed" >&2; exit 1              # honest failure
+  fi
 fi
 ```
 
