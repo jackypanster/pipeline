@@ -14,6 +14,10 @@ REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
 TXN=""   # global (same reason): Mode 1's private same-filesystem transaction dir
+TXN_KEEP=""   # global: set when a Mode-1 rollback is INCOMPLETE, so the EXIT trap RETAINS $TXN's
+              # private backups (deleting them would destroy the only recovery copy) instead of dropping it
+M1_ROLLED=""  # global: a Mode-1 rollback sets this to 0 the moment any step is unproven; the caller
+              # then reports INCOMPLETE + retains backups instead of falsely claiming UNTOUCHED
 HELD_LOCKS=()                                # lock dirs THIS process acquired (EXIT-released);
                                              # an ARRAY: paths may contain spaces
 LOCK_TOKEN="$$.$(date +%s).$RANDOM$RANDOM"   # unique ownership token: pid alone is reusable
@@ -127,18 +131,46 @@ release_locks() {
 # _m1_rollback <done_list> — restore every completed Mode-1 swap from its PRIVATE backup
 # ($TXN/.bak.<name>): a replaced entry is put back, a newly-added entry is removed. Reads $TXN
 # (global) and main's $skills_dir via dynamic scoping. Every caller is an error path, so each step
-# is guarded — it must never itself trip set -e; a step that cannot recover names the artifact.
+# is guarded (never trips set -e) AND VERIFIED: a step whose result cannot be proven sets M1_ROLLED=0
+# and names the retained artifact, so the caller reports INCOMPLETE instead of a false UNTOUCHED.
 _m1_rollback() {
   local n
   for n in ${1:-}; do
+    # ALWAYS clear the live slot first and PROVE it is empty — a failed rm would let the restore `mv`
+    # NEST the backup inside the leftover dir, and a plain [ -e ] check would then read as "restored"
+    # while the slot holds the wrong tree. If the slot cannot be cleared, fail closed + retain.
+    rm -rf "$skills_dir/$n" 2>/dev/null || true
+    if [ -e "$skills_dir/$n" ] || [ -L "$skills_dir/$n" ]; then
+      M1_ROLLED=0
+      if [ -e "$TXN/.bak.$n" ] || [ -L "$TXN/.bak.$n" ]; then
+        echo "ERROR: rollback for $n could not clear $skills_dir/$n — previous copy RETAINED at $TXN/.bak.$n (restore by hand)" >&2
+      else
+        echo "ERROR: rollback for $n could not remove the newly-added $skills_dir/$n — remove it by hand" >&2
+      fi
+      continue
+    fi
+    # Slot is proven empty. A replaced entry restores its backup into it; a newly-added entry is done.
     if [ -e "$TXN/.bak.$n" ] || [ -L "$TXN/.bak.$n" ]; then
-      rm -rf "$skills_dir/$n" 2>/dev/null || true
-      mv "$TXN/.bak.$n" "$skills_dir/$n" 2>/dev/null \
-        || echo "ERROR: rollback failed for $n — previous copy is at $TXN/.bak.$n (restore by hand)" >&2
-    else
-      rm -rf "$skills_dir/$n" 2>/dev/null || true   # newly-added entry — remove it
+      if ! mv "$TXN/.bak.$n" "$skills_dir/$n" 2>/dev/null \
+         || ! { [ -e "$skills_dir/$n" ] || [ -L "$skills_dir/$n" ]; }; then
+        M1_ROLLED=0
+        echo "ERROR: rollback failed for $n — previous copy RETAINED at $TXN/.bak.$n (restore by hand)" >&2
+      fi
     fi
   done
+}
+
+# _m1_finish_fail — after a rollback, print the HONEST verdict and exit 1. If every rollback step was
+# proven (M1_ROLLED=1) the install is UNTOUCHED and the EXIT trap drops $TXN; otherwise recovery is
+# INCOMPLETE, so RETAIN $TXN's private backups (TXN_KEEP) and say so — never claim UNTOUCHED on faith.
+_m1_finish_fail() {
+  if [ "${M1_ROLLED:-0}" = 1 ]; then
+    echo "      → all completed swaps rolled back; install in $skills_dir left UNTOUCHED." >&2
+  else
+    TXN_KEEP=1
+    echo "      → rollback INCOMPLETE; private backups RETAINED in $TXN (restore by hand). Do NOT assume UNTOUCHED." >&2
+  fi
+  exit 1
 }
 
 # Drop every staging artifact of the current refresh_list and NAME each one that
@@ -406,9 +438,10 @@ main() {
     # a symlink-attached dir an ABSENT skill is REPORTED, not materialized as a stray copy; a copy dir
     # still materializes absent skills (how a new upstream skill reaches a copy runtime).
     TMP="$(mktemp -d)"
-    # EXIT cleanup: private transaction dir + clone temp, THEN release the single-flight lock.
-    # ${TXN:+…} keeps an unset TXN from becoming `rm ""`; release_locks is self-guarded + token-checked.
-    trap 'rm -rf "$TMP" ${TXN:+"$TXN"} 2>/dev/null || true; release_locks' EXIT
+    # EXIT cleanup: clone temp always; the private transaction dir ONLY when recovery was complete
+    # (TXN_KEEP unset) — an INCOMPLETE rollback keeps $TXN so its private backups survive for manual
+    # recovery. Then release the single-flight lock. release_locks is self-guarded + token-checked.
+    trap 'rm -rf "$TMP" 2>/dev/null || true; [ -n "${TXN_KEEP:-}" ] || rm -rf ${TXN:+"$TXN"} 2>/dev/null || true; release_locks' EXIT
     # Single-flight lock on THIS install dir (reuse the shared lock helpers) — one refresh at a time,
     # so the swap below can never race a concurrent run; a dead holder is reclaimed automatically. This
     # is also where a non-writable $skills_dir surfaces (the lock mkdir fails).
@@ -469,30 +502,36 @@ main() {
           exit 1
         fi
       done
-      # Phase B — swap all. Backups go INTO the private txn dir (unpredictable), so no swap step can
-      # follow an attacker-planted symlink; and the live slot is re-checked NON-symlink immediately
-      # before the move (classify could be stale), so a raced attachment is refused, never followed out
-      # of $skills_dir. ANY failure restores every completed swap and exits with the install UNTOUCHED.
+      # Phase B — swap all. Backups go INTO the private txn dir (unpredictable), so no swap step targets
+      # a predictable path a symlink could hijack, and the live slot is checked NON-symlink before the
+      # move. `mv` is NOT an atomic no-follow rename on macOS, so the publish is VERIFIED after the fact:
+      # if the destination is not the real staged directory (a symlink the non-atomic mv may have
+      # followed), the raced symlink is removed WITHOUT following it, this entry's backup is restored,
+      # and the run rolls back. RESIDUAL (documented, lock-mitigated): a non-cooperating writer that does
+      # not take this lock could still win the sub-millisecond publish window — such a writer already has
+      # write access to $skills_dir and could corrupt it directly; the post-verify guarantees this run
+      # never prints success or drops the backup on such a race. Every failure rolls back with a VERIFIED,
+      # honest UNTOUCHED-or-INCOMPLETE verdict (never a false UNTOUCHED); backups are retained if recovery
+      # cannot be proven.
       done_list=""
       for name in $refresh_list; do
         dst="$skills_dir/$name"; backup="$TXN/.bak.$name"
         if [ -L "$dst" ]; then                        # a symlink raced into a to-refresh slot after classify
-          _m1_rollback "$done_list"
-          echo "ERROR: $name became a symlink mid-run ($(readlink "$dst" 2>/dev/null)) — refused and rolled back; install in $skills_dir left UNTOUCHED." >&2
-          exit 1
+          echo "ERROR: $name became a symlink mid-run ($(readlink "$dst" 2>/dev/null)) — refused, not followed." >&2
+          M1_ROLLED=1; _m1_rollback "$done_list"; _m1_finish_fail
         fi
         if [ -e "$dst" ]; then
           if ! mv "$dst" "$backup"; then
-            _m1_rollback "$done_list"
-            echo "ERROR: could not back up $name — rolled back; install in $skills_dir left UNTOUCHED." >&2
-            exit 1
+            echo "ERROR: could not back up $name before its swap." >&2
+            M1_ROLLED=1; _m1_rollback "$done_list"; _m1_finish_fail
           fi
         fi
-        if ! mv "$TXN/$name" "$dst"; then
+        # Publish, then VERIFY: $dst must now be the real staged dir, not a raced symlink mv followed.
+        if ! mv "$TXN/$name" "$dst" || [ -L "$dst" ] || [ ! -d "$dst" ]; then
+          [ -L "$dst" ] && { rm -f "$dst" 2>/dev/null || true; }             # drop a raced symlink (no-follow)
           [ -e "$backup" ] && { mv "$backup" "$dst" 2>/dev/null || true; }   # restore THIS entry's backup
-          _m1_rollback "$done_list"
-          echo "ERROR: could not install $name — rolled back; install in $skills_dir left UNTOUCHED." >&2
-          exit 1
+          echo "ERROR: could not safely install $name — destination was not the expected directory." >&2
+          M1_ROLLED=1; _m1_rollback "$done_list"; _m1_finish_fail
         fi
         done_list="$done_list $name"; echo "updated: $name"
       done
