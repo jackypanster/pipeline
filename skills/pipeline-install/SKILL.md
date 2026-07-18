@@ -47,12 +47,18 @@ runtime — do not paste a second copy of the steps here, so the two can never d
    its own slot is missing, so surfacing it now avoids a mid-run stop).
 
 3. **Per-project bind (the repeated cost — run per target repo).** If a target repo was given (arg) or
-   the operator names one, execute README §Install step 3:
-   `mkdir -p <target>/.pipeline && cp ~/workspace/pipeline/roles.yaml <target>/.pipeline/roles.yaml`.
-   Then set the impl slot to the runtime's REAL installed skill name (e.g. the full `goal-driven-*`
-   name), NEVER the `<autonomous-coding-skill>` placeholder or a bare token — a phantom slot name costs
-   a real trial run. This is the ONLY per-project artifact; everything else was the one-time machine
-   install above. No target given ⇒ skip this step and say the machine is ready to bind projects.
+   the operator names one, execute README §Install step 3. **Create the binding only when absent; never
+   clobber an existing `roles.yaml`** — overwriting a configured project wipes its slot bindings and
+   restores the unresolved `<autonomous-coding-skill>` placeholder (a regression, not a re-install).
+   So: `mkdir -p <target>/.pipeline`, then `cp -n ~/workspace/pipeline/roles.yaml
+   <target>/.pipeline/roles.yaml` (`-n` = no-clobber: writes only if the target is missing).
+   - **Freshly created** ⇒ set the impl slot to the runtime's REAL installed skill name (e.g. the full
+     `goal-driven-*` name), NEVER the `<autonomous-coding-skill>` placeholder or a bare token — a phantom
+     slot name costs a real trial run.
+   - **Already present** (`cp -n` skipped it) ⇒ leave it as-is; report it and reconcile any new/missing
+     slots by hand or with explicit operator confirmation — never replace a configured file silently.
+   This is the ONLY per-project artifact; everything else was the one-time machine install above. No
+   target given ⇒ skip this step and say the machine is ready to bind projects.
 
 4. **Report — install is the operator's ground truth.** State what was installed / attached / already
    present / skipped, and every unresolved slot with its source. Do NOT print a blanket "installed OK":
@@ -67,8 +73,10 @@ runtime — do not paste a second copy of the steps here, so the two can never d
 - **Wrap README §Install; never fork it.** The mechanics live in that one section — execute it, do not
   duplicate or hand-reimplement the steps. A wrong step gets fixed there via `pipeline-improve`, not
   worked around here. (This is the install-side analogue of update's "mechanics live in the script".)
-- **Idempotent + additive.** Re-running never duplicates a skill, force-migrates an existing install, or
-  clobbers a project's existing `roles.yaml` bindings without saying so. Existing installs keep working.
+- **Idempotent + additive.** Re-running never duplicates a skill or force-migrates an existing install.
+  A project's `roles.yaml` is created only when absent (`cp -n`); an existing one is never replaced
+  without explicit operator confirmation — bindings are preserved or reconciled, never silently clobbered.
+  Existing installs keep working.
 - **Tool-agnostic.** Concrete runtime / skill / LLM names are install EXAMPLES for shaping the current
   runtime only — never write a brand/runtime/tool name into `roles.yaml` or the onboarding snippet; both
   reach target projects and must stay generic.

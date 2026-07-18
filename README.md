@@ -137,8 +137,13 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 #    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
 #      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
 
-# 3. Per target project, point the slots at your chosen skills:
-mkdir -p <target-repo>/.pipeline && cp ~/workspace/pipeline/roles.yaml <target-repo>/.pipeline/roles.yaml
+# 3. Per target project, bind the slots — create the file ONLY if absent; never clobber an existing
+#    one. Overwriting a configured project wipes its slot bindings and restores the unresolved
+#    <autonomous-coding-skill> placeholder — a regression, not a re-install. `cp -n` (no-clobber)
+#    writes only when the target is missing and silently skips when it already exists.
+mkdir -p <target-repo>/.pipeline && cp -n ~/workspace/pipeline/roles.yaml <target-repo>/.pipeline/roles.yaml
+# Freshly created ⇒ set the impl slot to your runtime's real skill name (never leave the placeholder).
+# Already present ⇒ leave it; reconcile any new/missing slots by hand or with explicit confirmation.
 ```
 
 ### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)
