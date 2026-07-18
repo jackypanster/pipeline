@@ -157,17 +157,24 @@ else
   rc=0
   (
     td="$(dirname "$roles")/.roles.tmp.$$"
-    trap 'rm -rf "$td"' EXIT                              # any exit path clears the temp dir
-    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: clear temp, leave no artifact
+    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: best-effort cleanup, then die (nonzero)
     mkdir "$td" || exit 1
-    cp "$src" "$td/roles" || exit 3                       # genuine copy error => nonzero, dest untouched
-    if link "$td/roles" "$roles" 2>/dev/null; then exit 0 # published complete content atomically
-    elif [ -e "$roles" ] || [ -L "$roles" ]; then exit 4  # race-lost: victim untouched (link never wrote)
-    else exit 5; fi
+    cp "$src" "$td/roles" || { rm -rf "$td"; exit 3; }    # genuine copy error => nonzero, dest untouched
+    # Cleanup is EXPLICIT and CHECKED on every normal result path — do NOT rely on an EXIT trap: bash
+    # preserves the pre-trap status, so a failed rm in an EXIT trap is swallowed and would falsely claim
+    # a clean, sole-artifact success while a .roles.tmp.* dir lingers. Checked cleanup => nonzero instead.
+    if link "$td/roles" "$roles" 2>/dev/null; then         # published complete content atomically
+      rm -rf "$td" || exit 6; exit 0
+    elif [ -e "$roles" ] || [ -L "$roles" ]; then          # race-lost: victim untouched (link never wrote)
+      rm -rf "$td" || exit 6; exit 4
+    else
+      rm -rf "$td"; exit 5                                 # genuine link failure => nonzero
+    fi
   ) || rc=$?
   case $rc in
     0) echo "roles.yaml created — now set the impl slot to your real skill name" ;;
     4) echo "roles.yaml appeared concurrently — preserved, not overwritten" ;;     # rc 0 overall
+    6) echo "ERROR: bind wrote roles.yaml but temp cleanup failed — remove $(dirname "$roles")/.roles.tmp.* by hand" >&2; exit 1 ;;
     *) echo "ERROR: could not create $roles (rc=$rc)" >&2; exit 1 ;;               # genuine failure fails
   esac
 fi

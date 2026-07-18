@@ -59,8 +59,11 @@ runtime — do not paste a second copy of the steps here, so the two can never d
    zero-byte stub. Do NOT use the `ln` CLI (it treats a symlinked directory as a directory operand and
    links inside the referent, falsely reporting success), a bare existence-test-then-`cp` (TOCTOU), or
    `cp -n` (non-zero on an existing target, reads as a failed install). All traps live inside the subshell
-   so the caller's own INT/TERM/HUP handlers survive intact, and the temp dir is the only auxiliary
-   artifact — removed on every exit path and every caught signal, leaving roles.yaml as the sole artifact:
+   so the caller's own INT/TERM/HUP handlers survive intact. Temp-dir cleanup is EXPLICIT and CHECKED on
+   every normal result path — never left to an EXIT trap, whose failed `rm` bash silently swallows (the
+   pre-trap status is preserved), which would falsely claim a clean sole-artifact success while a
+   `.roles.tmp.*` dir lingers; a checked cleanup failure returns nonzero instead. On a caught signal the
+   cleanup is best-effort but the exit is still nonzero, so success is never falsely claimed:
    - **Absent** ⇒ the staged temp is `link`ed into place, then set the impl slot to the runtime's REAL
      installed skill name (e.g. the full `goal-driven-*` name), NEVER the `<autonomous-coding-skill>`
      placeholder or a bare token — a phantom slot name costs a real trial run.
@@ -89,9 +92,11 @@ runtime — do not paste a second copy of the steps here, so the two can never d
   an existing one — regular file or symlink (even a symlink-to-directory, even one that raced in after the
   check) — is never replaced without explicit operator confirmation: bindings are preserved or reconciled,
   never silently clobbered. roles.yaml is never partial (absent or complete, never a zero-byte stub) and is
-  the sole per-project artifact — the temp dir is cleaned on every exit path and every caught signal, and
-  all trap handling stays inside the subshell so caller signal handlers survive. A configured-project rerun
-  is a success (rc 0), not a failure; a genuine copy error still fails. Existing installs keep working.
+  the sole per-project artifact — the temp dir is cleaned by EXPLICIT, CHECKED cleanup on every normal
+  result path (not an EXIT trap, whose swallowed `rm` failure would falsely claim clean success); a cleanup
+  failure returns nonzero. All trap handling stays inside the subshell so caller signal handlers survive. A
+  configured-project rerun is a success (rc 0), not a failure; a genuine copy error still fails. Existing
+  installs keep working.
 - **Tool-agnostic.** Concrete runtime / skill / LLM names are install EXAMPLES for shaping the current
   runtime only — never write a brand/runtime/tool name into `roles.yaml` or the onboarding snippet; both
   reach target projects and must stay generic.
