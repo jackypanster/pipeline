@@ -121,6 +121,9 @@ repo references are intentional so it works from any project):
 ## Install (agent: execute this; it is written for you, not a human)
 
 You are an agent installing this collection on your runtime. Do it once, then verify dependencies.
+To run this as a triggerable command instead of following it by hand, invoke the `pipeline-install`
+skill — it executes exactly the steps below (idempotent machine install + per-project `roles.yaml`
+bind), the setup-side twin of `pipeline-update`.
 
 ```bash
 # 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
@@ -134,8 +137,48 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 #    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
 #      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
 
-# 3. Per target project, point the slots at your chosen skills:
-mkdir -p <target-repo>/.pipeline && cp ~/workspace/pipeline/roles.yaml <target-repo>/.pipeline/roles.yaml
+# 3. Per target project, bind the slots. Create roles.yaml ONLY if absent; never clobber an existing one
+#    (regular file OR symlink) — overwriting a configured project wipes its bindings and restores the
+#    unresolved <autonomous-coding-skill> placeholder. Stage complete content in a private temp dir whose
+#    cleanup trap is armed BEFORE the dir exists (so no interval is unprotected and no stray temp can
+#    survive a caught signal), then publish with link(2) via the `link` utility: ONE atomic no-clobber
+#    syscall that fails EEXIST on ANY pre-existing destination — regular file, symlink-to-file, even a
+#    symlink-to-DIRECTORY — WITHOUT dereferencing it. roles.yaml is thus never partial (absent until the
+#    link, complete after it, never a zero-byte stub), and it is the only per-project artifact. (Do NOT use
+#    the `ln` CLI: it treats a symlinked directory as a directory operand, links inside the referent, and
+#    falsely returns success. Do NOT use `cp -n`: BSD/macOS returns non-zero on an existing target.) All
+#    trap handling is confined to the subshell, so the caller's own INT/TERM/HUP handlers are untouched.
+mkdir -p <target-repo>/.pipeline
+roles=<target-repo>/.pipeline/roles.yaml
+src=~/workspace/pipeline/roles.yaml
+if [ -e "$roles" ] || [ -L "$roles" ]; then
+  echo "roles.yaml already present — preserved; reconcile any new slots by hand"    # steady state, rc 0
+else
+  (
+    td="$(dirname "$roles")/.roles.tmp.$$"
+    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: best-effort cleanup, still nonzero
+    mkdir "$td" || { echo "ERROR: cannot create temp dir under $(dirname "$roles")" >&2; exit 1; }
+    # Report the OPERATION outcome and the CLEANUP outcome truthfully and separately. Cleanup is CHECKED
+    # on EVERY path (created / race-lost / copy-error / link-error) — never left to a status-swallowing
+    # EXIT trap. `finish 1` = a real bind success; `finish 0` = the bind failed; either way a cleanup
+    # failure downgrades to nonzero and names the exact leftover to remove, never a faked clean success.
+    finish() {  # $1: ok(1)/fail(0)   $2: truthful operation context
+      if rm -rf "$td"; then
+        if [ "$1" = 1 ]; then echo "$2"; exit 0; else echo "ERROR: $2" >&2; exit 1; fi
+      fi
+      echo "ERROR: $2 — AND temp cleanup failed; remove $td by hand" >&2; exit 6
+    }
+    if ! cp "$src" "$td/roles"; then
+      finish 0 "cannot read $src — roles.yaml not written"
+    elif link "$td/roles" "$roles" 2>/dev/null; then       # published complete content atomically
+      finish 1 "roles.yaml created — now set the impl slot to your real skill name"
+    elif [ -e "$roles" ] || [ -L "$roles" ]; then          # EEXIST: destination belongs to the racer
+      finish 1 "roles.yaml appeared concurrently — preserved, not overwritten (bind wrote nothing)"
+    else
+      finish 0 "could not publish roles.yaml — link failed and the destination is absent"
+    fi
+  ) || exit $?
+fi
 ```
 
 ### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)
