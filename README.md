@@ -137,13 +137,18 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 #    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
 #      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
 
-# 3. Per target project, bind the slots — create the file ONLY if absent; never clobber an existing
-#    one. Overwriting a configured project wipes its slot bindings and restores the unresolved
-#    <autonomous-coding-skill> placeholder — a regression, not a re-install. `cp -n` (no-clobber)
-#    writes only when the target is missing and silently skips when it already exists.
-mkdir -p <target-repo>/.pipeline && cp -n ~/workspace/pipeline/roles.yaml <target-repo>/.pipeline/roles.yaml
-# Freshly created ⇒ set the impl slot to your runtime's real skill name (never leave the placeholder).
-# Already present ⇒ leave it; reconcile any new/missing slots by hand or with explicit confirmation.
+# 3. Per target project, bind the slots. Create the file ONLY if absent; never clobber an existing
+#    roles.yaml (regular file OR symlink) — overwriting a configured project wipes its slot bindings and
+#    restores the unresolved <autonomous-coding-skill> placeholder (a regression, not a re-install).
+#    Guard with an existence test, NOT `cp -n`: BSD/macOS `cp -n` returns a non-zero exit on an existing
+#    target, so a normal rerun would read as a FAILED install under fail-fast. Both branches are success:
+mkdir -p <target-repo>/.pipeline
+roles=<target-repo>/.pipeline/roles.yaml
+if [ -e "$roles" ] || [ -L "$roles" ]; then
+  echo "roles.yaml already present — preserved; reconcile any new slots by hand"   # rc 0, NOT a failure
+else
+  cp ~/workspace/pipeline/roles.yaml "$roles"   # freshly created ⇒ set the impl slot to your real skill name
+fi
 ```
 
 ### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)

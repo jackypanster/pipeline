@@ -48,15 +48,17 @@ runtime — do not paste a second copy of the steps here, so the two can never d
 
 3. **Per-project bind (the repeated cost — run per target repo).** If a target repo was given (arg) or
    the operator names one, execute README §Install step 3. **Create the binding only when absent; never
-   clobber an existing `roles.yaml`** — overwriting a configured project wipes its slot bindings and
-   restores the unresolved `<autonomous-coding-skill>` placeholder (a regression, not a re-install).
-   So: `mkdir -p <target>/.pipeline`, then `cp -n ~/workspace/pipeline/roles.yaml
-   <target>/.pipeline/roles.yaml` (`-n` = no-clobber: writes only if the target is missing).
-   - **Freshly created** ⇒ set the impl slot to the runtime's REAL installed skill name (e.g. the full
-     `goal-driven-*` name), NEVER the `<autonomous-coding-skill>` placeholder or a bare token — a phantom
-     slot name costs a real trial run.
-   - **Already present** (`cp -n` skipped it) ⇒ leave it as-is; report it and reconcile any new/missing
-     slots by hand or with explicit operator confirmation — never replace a configured file silently.
+   clobber an existing `roles.yaml`** (regular file OR symlink) — overwriting a configured project wipes
+   its slot bindings and restores the unresolved `<autonomous-coding-skill>` placeholder (a regression,
+   not a re-install). Guard the copy with an explicit existence test
+   (`[ -e "$roles" ] || [ -L "$roles" ]`), NOT `cp -n`: BSD/macOS `cp -n` returns a non-zero exit on an
+   existing target, which fail-fast execution would read as a failed install — contradicting "nothing
+   fresh is not a failure". Both outcomes are success (rc 0):
+   - **Absent** ⇒ `cp` the canonical file, then set the impl slot to the runtime's REAL installed skill
+     name (e.g. the full `goal-driven-*` name), NEVER the `<autonomous-coding-skill>` placeholder or a
+     bare token — a phantom slot name costs a real trial run.
+   - **Already present** ⇒ leave it as-is; report it and reconcile any new/missing slots by hand or with
+     explicit operator confirmation — never replace a configured file silently.
    This is the ONLY per-project artifact; everything else was the one-time machine install above. No
    target given ⇒ skip this step and say the machine is ready to bind projects.
 
@@ -74,9 +76,10 @@ runtime — do not paste a second copy of the steps here, so the two can never d
   duplicate or hand-reimplement the steps. A wrong step gets fixed there via `pipeline-improve`, not
   worked around here. (This is the install-side analogue of update's "mechanics live in the script".)
 - **Idempotent + additive.** Re-running never duplicates a skill or force-migrates an existing install.
-  A project's `roles.yaml` is created only when absent (`cp -n`); an existing one is never replaced
-  without explicit operator confirmation — bindings are preserved or reconciled, never silently clobbered.
-  Existing installs keep working.
+  A project's `roles.yaml` is created only when absent (guarded by an existence test, not `cp -n`); an
+  existing one — regular file or symlink — is never replaced without explicit operator confirmation:
+  bindings are preserved or reconciled, never silently clobbered. A configured-project rerun is a
+  success (rc 0), not a failure. Existing installs keep working.
 - **Tool-agnostic.** Concrete runtime / skill / LLM names are install EXAMPLES for shaping the current
   runtime only — never write a brand/runtime/tool name into `roles.yaml` or the onboarding snippet; both
   reach target projects and must stay generic.
