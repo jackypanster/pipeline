@@ -139,27 +139,32 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 
 # 3. Per target project, bind the slots. Create roles.yaml ONLY if absent; never clobber an existing one
 #    (regular file OR symlink) — overwriting a configured project wipes its bindings and restores the
-#    unresolved <autonomous-coding-skill> placeholder. A bare existence-test-then-cp has a TOCTOU hole: a
-#    file/symlink that appears in the gap gets overwritten or its referent truncated (the symlink race
-#    that sank the old installer). Use an ATOMIC no-clobber create instead — copy into a same-dir temp
-#    (so a real copy error fails BEFORE the destination is touched), then `ln` it into place: `ln` fails
-#    closed if the target exists and never follows a symlink, so the publish is atomic. NOT `cp -n`
-#    either — BSD/macOS `cp -n` returns non-zero on an existing target, which reads as a failed install.
+#    unresolved <autonomous-coding-skill> placeholder. The atomic no-clobber primitive is O_EXCL, via the
+#    POSIX shell `set -C` (noclobber) redirect: `> "$roles"` opens with O_CREAT|O_EXCL, which POSIX
+#    guarantees fails EEXIST on ANY pre-existing destination — regular file, symlink-to-file, even a
+#    symlink-to-DIRECTORY — WITHOUT dereferencing it. (Do NOT use the `ln` CLI: it treats a symlinked
+#    directory as a directory operand, links inside the referent, and falsely returns success. Do NOT use
+#    `cp -n`: BSD/macOS returns non-zero on an existing target, reading as a failed install.) No temp
+#    file — roles.yaml is the only artifact, and it is removed on any failure/interrupt, never half-written.
 mkdir -p <target-repo>/.pipeline
 roles=<target-repo>/.pipeline/roles.yaml
 src=~/workspace/pipeline/roles.yaml
 if [ -e "$roles" ] || [ -L "$roles" ]; then
   echo "roles.yaml already present — preserved; reconcile any new slots by hand"    # steady state, rc 0
-else
-  tmp=$(mktemp "$(dirname "$roles")/.roles.XXXXXX") || exit 1
-  cp "$src" "$tmp" || { rm -f "$tmp"; echo "ERROR: cannot read $src" >&2; exit 1; }  # real copy error fails
-  if ln "$tmp" "$roles" 2>/dev/null; then
-    rm -f "$tmp"; echo "roles.yaml created — now set the impl slot to your real skill name"
-  elif [ -e "$roles" ] || [ -L "$roles" ]; then
-    rm -f "$tmp"; echo "roles.yaml appeared concurrently — preserved, not overwritten"   # race-lost, rc 0
+elif ( set -C; : > "$roles" ) 2>/dev/null; then
+  # Won the atomic O_EXCL create: roles.yaml is now a NEW regular file we own (no symlink to follow).
+  trap 'rm -f "$roles"; exit 130' INT TERM HUP        # a caught signal leaves no partial file
+  if cat "$src" > "$roles"; then
+    trap - INT TERM HUP
+    echo "roles.yaml created — now set the impl slot to your real skill name"
   else
-    rm -f "$tmp"; echo "ERROR: atomic create of $roles failed" >&2; exit 1              # honest failure
+    trap - INT TERM HUP; rm -f "$roles"               # our own empty file only; no victim exists
+    echo "ERROR: cannot read $src" >&2; exit 1        # genuine copy failure still fails
   fi
+elif [ -e "$roles" ] || [ -L "$roles" ]; then
+  echo "roles.yaml appeared concurrently — preserved, not overwritten"             # race-lost (any type), rc 0
+else
+  echo "ERROR: could not create $roles" >&2; exit 1
 fi
 ```
 
