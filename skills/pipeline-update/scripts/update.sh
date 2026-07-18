@@ -13,6 +13,11 @@ REPO_URL="https://github.com/jackypanster/pipeline.git"
 REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
+TXN=""   # global (same reason): Mode 1's private same-filesystem transaction dir
+TXN_KEEP=""   # global: set when a Mode-1 rollback is INCOMPLETE, so the EXIT trap RETAINS $TXN's
+              # private backups (deleting them would destroy the only recovery copy) instead of dropping it
+M1_ROLLED=""  # global: a Mode-1 rollback sets this to 0 the moment any step is unproven; the caller
+              # then reports INCOMPLETE + retains backups instead of falsely claiming UNTOUCHED
 HELD_LOCKS=()                                # lock dirs THIS process acquired (EXIT-released);
                                              # an ARRAY: paths may contain spaces
 LOCK_TOKEN="$$.$(date +%s).$RANDOM$RANDOM"   # unique ownership token: pid alone is reusable
@@ -123,6 +128,51 @@ release_locks() {
   HELD_LOCKS=()
 }
 
+# _m1_rollback <done_list> — restore every completed Mode-1 swap from its PRIVATE backup
+# ($TXN/.bak.<name>): a replaced entry is put back, a newly-added entry is removed. Reads $TXN
+# (global) and main's $skills_dir via dynamic scoping. Every caller is an error path, so each step
+# is guarded (never trips set -e) AND VERIFIED: a step whose result cannot be proven sets M1_ROLLED=0
+# and names the retained artifact, so the caller reports INCOMPLETE instead of a false UNTOUCHED.
+_m1_rollback() {
+  local n
+  for n in ${1:-}; do
+    # ALWAYS clear the live slot first and PROVE it is empty — a failed rm would let the restore `mv`
+    # NEST the backup inside the leftover dir, and a plain [ -e ] check would then read as "restored"
+    # while the slot holds the wrong tree. If the slot cannot be cleared, fail closed + retain.
+    rm -rf "$skills_dir/$n" 2>/dev/null || true
+    if [ -e "$skills_dir/$n" ] || [ -L "$skills_dir/$n" ]; then
+      M1_ROLLED=0
+      if [ -e "$TXN/.bak.$n" ] || [ -L "$TXN/.bak.$n" ]; then
+        echo "ERROR: rollback for $n could not clear $skills_dir/$n — previous copy RETAINED at $TXN/.bak.$n (restore by hand)" >&2
+      else
+        echo "ERROR: rollback for $n could not remove the newly-added $skills_dir/$n — remove it by hand" >&2
+      fi
+      continue
+    fi
+    # Slot is proven empty. A replaced entry restores its backup into it; a newly-added entry is done.
+    if [ -e "$TXN/.bak.$n" ] || [ -L "$TXN/.bak.$n" ]; then
+      if ! mv "$TXN/.bak.$n" "$skills_dir/$n" 2>/dev/null \
+         || ! { [ -e "$skills_dir/$n" ] || [ -L "$skills_dir/$n" ]; }; then
+        M1_ROLLED=0
+        echo "ERROR: rollback failed for $n — previous copy RETAINED at $TXN/.bak.$n (restore by hand)" >&2
+      fi
+    fi
+  done
+}
+
+# _m1_finish_fail — after a rollback, print the HONEST verdict and exit 1. If every rollback step was
+# proven (M1_ROLLED=1) the install is UNTOUCHED and the EXIT trap drops $TXN; otherwise recovery is
+# INCOMPLETE, so RETAIN $TXN's private backups (TXN_KEEP) and say so — never claim UNTOUCHED on faith.
+_m1_finish_fail() {
+  if [ "${M1_ROLLED:-0}" = 1 ]; then
+    echo "      → all completed swaps rolled back; install in $skills_dir left UNTOUCHED." >&2
+  else
+    TXN_KEEP=1
+    echo "      → rollback INCOMPLETE; private backups RETAINED in $TXN (restore by hand). Do NOT assume UNTOUCHED." >&2
+  fi
+  exit 1
+}
+
 # Drop every staging artifact of the current refresh_list and NAME each one that
 # survives — the rc=1 contract promises the output names exactly what a failed
 # recovery step left behind, so `rm || true` alone is not enough. Returns 1 when
@@ -155,7 +205,7 @@ rollback_clone() {
 main() {
   local self_dir skills_dir probe top mode old new changed name src canon tgt
   local src_phys staging backup problems refresh_list done_list diff_err diff_rc n2
-  local sweep rolled leftover lock_path clone_lock
+  local sweep rolled leftover lock_path clone_lock attached skipped dst e ok
   self_dir="$(cd "$(dirname "$0")/.." && pwd)"   # …/skills/pipeline-update
   if [ $# -ge 1 ]; then
     skills_dir="$1"
@@ -379,24 +429,114 @@ main() {
       fi
     fi
   else
-    # Mode 1 (cp'd copies) — atomic: clone to a temp dir FIRST, copy only on success.
-    # A failed clone exits here (set -e) and leaves the installed shims untouched.
+    # Mode 1 (cp'd copies) — TRANSACTIONAL: stage every refresh, then swap all, rolling back on ANY
+    # failure so a nonzero exit leaves the install UNTOUCHED (SKILL.md hard rule: "Non-zero exit ⇒ the
+    # install is untouched"). Only the temp-clone precedes staging (clone FIRST; a failed clone exits
+    # here via set -e, install untouched). A SYMLINK entry is a canonical attachment (pi-style
+    # `~/.pi/agent/skills/<name> -> ~/.agents/skills/<name>`): LEFT UNTOUCHED + reported — cp-ing over
+    # it fails ("Not a directory") / clobbers the attachment; refresh its canonical target instead. In
+    # a symlink-attached dir an ABSENT skill is REPORTED, not materialized as a stray copy; a copy dir
+    # still materializes absent skills (how a new upstream skill reaches a copy runtime).
     TMP="$(mktemp -d)"
-    trap 'rm -rf "$TMP"' EXIT
+    # EXIT cleanup: clone temp always; the private transaction dir ONLY when recovery was complete
+    # (TXN_KEEP unset) — an INCOMPLETE rollback keeps $TXN so its private backups survive for manual
+    # recovery. Then release the single-flight lock. release_locks is self-guarded + token-checked.
+    trap 'rm -rf "$TMP" 2>/dev/null || true; [ -n "${TXN_KEEP:-}" ] || rm -rf ${TXN:+"$TXN"} 2>/dev/null || true; release_locks' EXIT
+    # Single-flight lock on THIS install dir (reuse the shared lock helpers) — one refresh at a time,
+    # so the swap below can never race a concurrent run; a dead holder is reclaimed automatically. This
+    # is also where a non-writable $skills_dir surfaces (the lock mkdir fails).
+    lock_path="$skills_dir/.pipeline-update.lock"
+    if ! acquire_lock "$lock_path"; then
+      echo "ERROR: could not acquire the single-flight lock $lock_path — another pipeline-update run is active on $skills_dir (holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)), or the dir is not writable. Nothing changed; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $lock_path.reap with a dead pid needs removing by hand." >&2
+      exit 1
+    fi
     git clone --quiet --depth 1 "$REPO_URL" "$TMP"
     new="$(git -C "$TMP" rev-parse HEAD)"
     echo "mode=1 (copies in $skills_dir)"
-    changed=0
+    # Attachment style: a dir holding ANY pipeline-* symlink is symlink-attached (don't materialize
+    # absent skills as copies there). A no-match glob is literal and fails the -L test → attached=0.
+    attached=0
+    for e in "$skills_dir"/pipeline-*; do
+      [ -L "$e" ] && { attached=1; break; }
+    done
+    # Classify — NO mutation. refresh_list = copies to (re)write; skipped counts attachments/absent.
+    refresh_list=""; skipped=0
     for src in "$TMP"/skills/pipeline-*/; do
       name="$(basename "$src")"
-      diff -rq "$src" "$skills_dir/$name" >/dev/null 2>&1 && continue
-      changed=1
-      echo "updated: $name"
+      dst="$skills_dir/$name"
+      if [ -L "$dst" ]; then
+        echo "skipped: $name (symlink attachment -> $(readlink "$dst"); refresh its canonical copy instead)"
+        skipped=$((skipped + 1)); continue
+      fi
+      if [ ! -e "$dst" ] && [ "$attached" = 1 ]; then
+        echo "skipped: $name (not installed in this symlink-attached dir — run pipeline-install to add it)"
+        skipped=$((skipped + 1)); continue
+      fi
+      diff -rq "$src" "$dst" >/dev/null 2>&1 && continue
+      refresh_list="$refresh_list $name"
     done
-    if [ "$changed" = 0 ]; then
-      echo "already latest ($new)"
+    if [ -z "$refresh_list" ]; then
+      # Only claim "already latest" when entries were actually COMPARED. If every entry was skipped
+      # (attachments / absent-in-attached-dir), nothing here was verified against $new — say that,
+      # never the blanket latest-success claim.
+      if [ "$skipped" -gt 0 ]; then
+        echo "nothing to refresh in $skills_dir ($skipped skipped: attachment/absent; not verified against $new)"
+      else
+        echo "already latest ($new)"
+      fi
     else
-      cp -r "$TMP"/skills/pipeline-* "$skills_dir/"
+      # PRIVATE, same-filesystem transaction dir. mktemp gives an unpredictable, 0700-mode name INSIDE
+      # $skills_dir, so the staging AND backup paths cannot be pre-created or symlinked by a racing
+      # process — the fixed .name.update-* paths were a check-then-mv TOCTOU (a planted backup symlink
+      # was followed by mv, moving a live skill out of $skills_dir). Same filesystem ⇒ mv is an atomic
+      # rename, not a cross-device copy. Sweep stale txn dirs from an interrupted run first (safe — we
+      # hold the lock, so no live txn of another run exists).
+      rm -rf "$skills_dir"/.pipeline-update.txn.* 2>/dev/null || true
+      TXN="$(mktemp -d "$skills_dir/.pipeline-update.txn.XXXXXXXX")" \
+        || { echo "ERROR: could not create a private transaction dir in $skills_dir — nothing changed." >&2; exit 1; }
+      # Phase A — stage every refresh into the private dir. ANY failure ⇒ exit nonzero; the EXIT trap
+      # drops the whole txn dir, so the LIVE copies are untouched.
+      for name in $refresh_list; do
+        if ! cp -r "$TMP/skills/$name" "$TXN/$name"; then
+          echo "ERROR: staging failed for $name — live copies in $skills_dir untouched. Fix the cause and re-run pipeline-update." >&2
+          exit 1
+        fi
+      done
+      # Phase B — swap all. Backups go INTO the private txn dir (unpredictable), so no swap step targets
+      # a predictable path a symlink could hijack, and the live slot is checked NON-symlink before the
+      # move. `mv` is NOT an atomic no-follow rename on macOS, so the publish is VERIFIED after the fact:
+      # if the destination is not the real staged directory (a symlink the non-atomic mv may have
+      # followed), the raced symlink is removed WITHOUT following it, this entry's backup is restored,
+      # and the run rolls back. RESIDUAL (documented, lock-mitigated): a non-cooperating writer that does
+      # not take this lock could still win the sub-millisecond publish window — such a writer already has
+      # write access to $skills_dir and could corrupt it directly; the post-verify guarantees this run
+      # never prints success or drops the backup on such a race. Every failure rolls back with a VERIFIED,
+      # honest UNTOUCHED-or-INCOMPLETE verdict (never a false UNTOUCHED); backups are retained if recovery
+      # cannot be proven.
+      done_list=""
+      for name in $refresh_list; do
+        dst="$skills_dir/$name"; backup="$TXN/.bak.$name"
+        if [ -L "$dst" ]; then                        # a symlink raced into a to-refresh slot after classify
+          echo "ERROR: $name became a symlink mid-run ($(readlink "$dst" 2>/dev/null)) — refused, not followed." >&2
+          M1_ROLLED=1; _m1_rollback "$done_list"; _m1_finish_fail
+        fi
+        if [ -e "$dst" ]; then
+          if ! mv "$dst" "$backup"; then
+            echo "ERROR: could not back up $name before its swap." >&2
+            M1_ROLLED=1; _m1_rollback "$done_list"; _m1_finish_fail
+          fi
+        fi
+        # Publish, then VERIFY: $dst must now be the real staged dir, not a raced symlink mv followed.
+        if ! mv "$TXN/$name" "$dst" || [ -L "$dst" ] || [ ! -d "$dst" ]; then
+          [ -L "$dst" ] && { rm -f "$dst" 2>/dev/null || true; }             # drop a raced symlink (no-follow)
+          [ -e "$backup" ] && { mv "$backup" "$dst" 2>/dev/null || true; }   # restore THIS entry's backup
+          echo "ERROR: could not safely install $name — destination was not the expected directory." >&2
+          M1_ROLLED=1; _m1_rollback "$done_list"; _m1_finish_fail
+        fi
+        done_list="$done_list $name"; echo "updated: $name"
+      done
+      # Success: the EXIT trap drops $TXN (which now holds only the .bak.* backups) — the install is
+      # already correct, so backup cleanup is a trap concern, never a step that can fail the run.
       echo "now at $new; latest upstream commits:"
       git -C "$TMP" log --oneline -10
     fi
