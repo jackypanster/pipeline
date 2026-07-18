@@ -13,6 +13,7 @@ REPO_URL="https://github.com/jackypanster/pipeline.git"
 REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'
 
 TMP=""   # global: the EXIT trap fires after main() returns, so it must not be a local
+TXN=""   # global (same reason): Mode 1's private same-filesystem transaction dir
 HELD_LOCKS=()                                # lock dirs THIS process acquired (EXIT-released);
                                              # an ARRAY: paths may contain spaces
 LOCK_TOKEN="$$.$(date +%s).$RANDOM$RANDOM"   # unique ownership token: pid alone is reusable
@@ -121,6 +122,23 @@ release_locks() {
     fi   # token mismatch: the lock changed hands (we were presumed dead) — NOT ours to remove
   done
   HELD_LOCKS=()
+}
+
+# _m1_rollback <done_list> — restore every completed Mode-1 swap from its PRIVATE backup
+# ($TXN/.bak.<name>): a replaced entry is put back, a newly-added entry is removed. Reads $TXN
+# (global) and main's $skills_dir via dynamic scoping. Every caller is an error path, so each step
+# is guarded — it must never itself trip set -e; a step that cannot recover names the artifact.
+_m1_rollback() {
+  local n
+  for n in ${1:-}; do
+    if [ -e "$TXN/.bak.$n" ] || [ -L "$TXN/.bak.$n" ]; then
+      rm -rf "$skills_dir/$n" 2>/dev/null || true
+      mv "$TXN/.bak.$n" "$skills_dir/$n" 2>/dev/null \
+        || echo "ERROR: rollback failed for $n — previous copy is at $TXN/.bak.$n (restore by hand)" >&2
+    else
+      rm -rf "$skills_dir/$n" 2>/dev/null || true   # newly-added entry — remove it
+    fi
+  done
 }
 
 # Drop every staging artifact of the current refresh_list and NAME each one that
@@ -388,7 +406,17 @@ main() {
     # a symlink-attached dir an ABSENT skill is REPORTED, not materialized as a stray copy; a copy dir
     # still materializes absent skills (how a new upstream skill reaches a copy runtime).
     TMP="$(mktemp -d)"
-    trap 'rm -rf "$TMP"' EXIT
+    # EXIT cleanup: private transaction dir + clone temp, THEN release the single-flight lock.
+    # ${TXN:+…} keeps an unset TXN from becoming `rm ""`; release_locks is self-guarded + token-checked.
+    trap 'rm -rf "$TMP" ${TXN:+"$TXN"} 2>/dev/null || true; release_locks' EXIT
+    # Single-flight lock on THIS install dir (reuse the shared lock helpers) — one refresh at a time,
+    # so the swap below can never race a concurrent run; a dead holder is reclaimed automatically. This
+    # is also where a non-writable $skills_dir surfaces (the lock mkdir fails).
+    lock_path="$skills_dir/.pipeline-update.lock"
+    if ! acquire_lock "$lock_path"; then
+      echo "ERROR: could not acquire the single-flight lock $lock_path — another pipeline-update run is active on $skills_dir (holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)), or the dir is not writable. Nothing changed; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $lock_path.reap with a dead pid needs removing by hand." >&2
+      exit 1
+    fi
     git clone --quiet --depth 1 "$REPO_URL" "$TMP"
     new="$(git -C "$TMP" rev-parse HEAD)"
     echo "mode=1 (copies in $skills_dir)"
@@ -424,70 +452,52 @@ main() {
         echo "already latest ($new)"
       fi
     else
-      # No Mode-1 janitor: drop any leftover staging so Phase A's proven-absent guard passes on a
-      # re-run (a leftover backup is handled by Phase B's rollback, which restores or removes it).
-      for name in $refresh_list; do rm -rf "$skills_dir/.$name.update-staging" 2>/dev/null || true; done
-      # Phase A — stage EVERYTHING before touching anything live. Staging must be PROVEN absent before
-      # cp (cp -r into an existing path nests the source). ANY failure ⇒ drop all staging, exit
-      # nonzero, live copies UNTOUCHED.
+      # PRIVATE, same-filesystem transaction dir. mktemp gives an unpredictable, 0700-mode name INSIDE
+      # $skills_dir, so the staging AND backup paths cannot be pre-created or symlinked by a racing
+      # process — the fixed .name.update-* paths were a check-then-mv TOCTOU (a planted backup symlink
+      # was followed by mv, moving a live skill out of $skills_dir). Same filesystem ⇒ mv is an atomic
+      # rename, not a cross-device copy. Sweep stale txn dirs from an interrupted run first (safe — we
+      # hold the lock, so no live txn of another run exists).
+      rm -rf "$skills_dir"/.pipeline-update.txn.* 2>/dev/null || true
+      TXN="$(mktemp -d "$skills_dir/.pipeline-update.txn.XXXXXXXX")" \
+        || { echo "ERROR: could not create a private transaction dir in $skills_dir — nothing changed." >&2; exit 1; }
+      # Phase A — stage every refresh into the private dir. ANY failure ⇒ exit nonzero; the EXIT trap
+      # drops the whole txn dir, so the LIVE copies are untouched.
       for name in $refresh_list; do
-        staging="$skills_dir/.$name.update-staging"
-        if [ -e "$staging" ] || [ -L "$staging" ] || ! cp -r "$TMP/skills/$name" "$staging"; then
-          for n2 in $refresh_list; do rm -rf "$skills_dir/.$n2.update-staging" 2>/dev/null || true; done
+        if ! cp -r "$TMP/skills/$name" "$TXN/$name"; then
           echo "ERROR: staging failed for $name — live copies in $skills_dir untouched. Fix the cause and re-run pipeline-update." >&2
           exit 1
         fi
       done
-      # Phase B — swap all; ANY failure (mv, or a pre-existing backup that would nest) restores every
-      # completed swap + this entry, drops staging, and exits nonzero with the install UNTOUCHED. Every
-      # rollback step is guarded (runs the REST of the recovery, never trips set -e) and verified; the
-      # closing message states only what was proven.
+      # Phase B — swap all. Backups go INTO the private txn dir (unpredictable), so no swap step can
+      # follow an attacker-planted symlink; and the live slot is re-checked NON-symlink immediately
+      # before the move (classify could be stale), so a raced attachment is refused, never followed out
+      # of $skills_dir. ANY failure restores every completed swap and exits with the install UNTOUCHED.
       done_list=""
       for name in $refresh_list; do
-        staging="$skills_dir/.$name.update-staging"; backup="$skills_dir/.$name.update-backup"; dst="$skills_dir/$name"
-        ok=0
-        if [ -e "$backup" ] || [ -L "$backup" ]; then
-          ok=0                                                        # leftover backup would nest — refuse
-        elif [ -e "$dst" ] || [ -L "$dst" ]; then
-          if mv "$dst" "$backup" && mv "$staging" "$dst"; then ok=1; fi   # replace: back up, then publish
-        else
-          if mv "$staging" "$dst"; then ok=1; fi                          # new skill: publish only
-        fi
-        if [ "$ok" = 1 ]; then
-          done_list="$done_list $name"; echo "updated: $name"
-        else
-          rolled=1
-          # This entry: if live is gone but its backup holds the old copy, put it straight back.
-          if ! { [ -e "$dst" ] || [ -L "$dst" ]; } && { [ -e "$backup" ] || [ -L "$backup" ]; }; then
-            if ! mv "$backup" "$dst" || ! { [ -e "$dst" ] || [ -L "$dst" ]; }; then
-              rolled=0; echo "ERROR: could not restore $name — previous copy is at $backup (restore by hand)" >&2
-            fi
-          fi
-          # Completed swaps: a replaced entry restores from its backup; a newly-added entry is removed.
-          for n2 in $done_list; do
-            if [ -e "$skills_dir/.$n2.update-backup" ] || [ -L "$skills_dir/.$n2.update-backup" ]; then
-              if ! rm -rf "$skills_dir/$n2" || ! mv "$skills_dir/.$n2.update-backup" "$skills_dir/$n2" \
-                 || ! { [ -e "$skills_dir/$n2" ] || [ -L "$skills_dir/$n2" ]; }; then
-                rolled=0; echo "ERROR: rollback failed for $n2 — previous copy preserved at $skills_dir/.$n2.update-backup (restore by hand)" >&2
-              fi
-            elif ! rm -rf "$skills_dir/$n2"; then
-              rolled=0; echo "ERROR: could not remove newly-added $n2 during rollback — remove $skills_dir/$n2 by hand" >&2
-            fi
-          done
-          for n2 in $refresh_list; do rm -rf "$skills_dir/.$n2.update-staging" 2>/dev/null || rolled=0; done
-          if [ "$rolled" = 1 ]; then
-            echo "ERROR: swap failed at $name — all copies rolled back; install in $skills_dir left UNTOUCHED." >&2
-          else
-            echo "ERROR: swap failed at $name — rollback INCOMPLETE (details above); re-run pipeline-update or fix the named .update-* artifacts by hand." >&2
-          fi
+        dst="$skills_dir/$name"; backup="$TXN/.bak.$name"
+        if [ -L "$dst" ]; then                        # a symlink raced into a to-refresh slot after classify
+          _m1_rollback "$done_list"
+          echo "ERROR: $name became a symlink mid-run ($(readlink "$dst" 2>/dev/null)) — refused and rolled back; install in $skills_dir left UNTOUCHED." >&2
           exit 1
         fi
+        if [ -e "$dst" ]; then
+          if ! mv "$dst" "$backup"; then
+            _m1_rollback "$done_list"
+            echo "ERROR: could not back up $name — rolled back; install in $skills_dir left UNTOUCHED." >&2
+            exit 1
+          fi
+        fi
+        if ! mv "$TXN/$name" "$dst"; then
+          [ -e "$backup" ] && { mv "$backup" "$dst" 2>/dev/null || true; }   # restore THIS entry's backup
+          _m1_rollback "$done_list"
+          echo "ERROR: could not install $name — rolled back; install in $skills_dir left UNTOUCHED." >&2
+          exit 1
+        fi
+        done_list="$done_list $name"; echo "updated: $name"
       done
-      # Phase C — drop backups. The install is already correct; a cleanup failure only WARNS (rc 0).
-      for name in $done_list; do
-        rm -rf "$skills_dir/.$name.update-backup" \
-          || echo "WARNING: could not drop the backup for $name in $skills_dir — install itself is correct; remove .$name.update-backup by hand" >&2
-      done
+      # Success: the EXIT trap drops $TXN (which now holds only the .bak.* backups) — the install is
+      # already correct, so backup cleanup is a trap concern, never a step that can fail the run.
       echo "now at $new; latest upstream commits:"
       git -C "$TMP" log --oneline -10
     fi
