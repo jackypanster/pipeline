@@ -121,6 +121,9 @@ repo references are intentional so it works from any project):
 ## Install (agent: execute this; it is written for you, not a human)
 
 You are an agent installing this collection on your runtime. Do it once, then verify dependencies.
+To run this as a triggerable command instead of following it by hand, invoke the `pipeline-install`
+skill — it executes exactly the steps below (idempotent machine install + per-project `roles.yaml`
+bind), the setup-side twin of `pipeline-update`.
 
 ```bash
 # 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
