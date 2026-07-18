@@ -379,24 +379,57 @@ main() {
       fi
     fi
   else
-    # Mode 1 (cp'd copies) — atomic: clone to a temp dir FIRST, copy only on success.
-    # A failed clone exits here (set -e) and leaves the installed shims untouched.
+    # Mode 1 (cp'd copies). Only the temp-clone is atomic (clone FIRST, copy only on success — a
+    # failed clone exits here via set -e, install untouched). The per-entry refresh below is NOT
+    # transactional; it is symlink-aware + fail-closed instead. An installed entry that is a SYMLINK
+    # is a canonical attachment (pi-style `~/.pi/agent/skills/<name> -> ~/.agents/skills/<name>`) and
+    # is LEFT UNTOUCHED — cp-ing over it fails ("Not a directory") or clobbers the attachment; refresh
+    # its canonical target instead (run update against that dir). In a symlink-attached dir an ABSENT
+    # upstream skill is REPORTED, never materialized as a stray copy (that would convert an attachment
+    # layout into scattered copies); a copy-based dir still materializes absent skills — that is how a
+    # new upstream skill reaches a copy runtime. Each copy is status-checked: the first failure names
+    # the entry + the partial state and exits nonzero. Mode 1 has NO rollback, so it fails CLOSED
+    # rather than print a "now at" success over a half-applied refresh (transactional rollback is
+    # Mode 2's; do not read this path as atomic).
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
     git clone --quiet --depth 1 "$REPO_URL" "$TMP"
     new="$(git -C "$TMP" rev-parse HEAD)"
     echo "mode=1 (copies in $skills_dir)"
+    # Attachment style: a dir holding ANY pipeline-* symlink is symlink-attached (don't materialize
+    # absent skills as copies there). A no-match glob is literal and fails the -L test → attached=0.
+    attached=0
+    for e in "$skills_dir"/pipeline-*; do
+      [ -L "$e" ] && { attached=1; break; }
+    done
     changed=0
     for src in "$TMP"/skills/pipeline-*/; do
       name="$(basename "$src")"
-      diff -rq "$src" "$skills_dir/$name" >/dev/null 2>&1 && continue
+      dst="$skills_dir/$name"
+      if [ -L "$dst" ]; then
+        echo "skipped: $name (symlink attachment -> $(readlink "$dst"); refresh its canonical copy instead)"
+        continue
+      fi
+      if [ ! -e "$dst" ] && [ "$attached" = 1 ]; then
+        echo "skipped: $name (not installed in this symlink-attached dir — run pipeline-install to add it)"
+        continue
+      fi
+      diff -rq "$src" "$dst" >/dev/null 2>&1 && continue
+      # Clean replace: remove any existing copy FIRST so `cp -r <src> <dir>/` cannot nest into (or
+      # merge stale files over) a same-named dir — BSD cp copies the source INTO an existing dir of
+      # the same name, leaving removed-upstream files behind. dst is guaranteed non-symlink here (a
+      # symlink continue'd above), so the rm never follows an attachment out of the dir.
+      if [ -e "$dst" ]; then rm -rf "$dst"; fi
+      if ! cp -r "$TMP/skills/$name" "$skills_dir/"; then
+        echo "ERROR: failed to copy $name into $skills_dir — refresh is PARTIAL (entries before $name were updated). Fix the cause and re-run pipeline-update." >&2
+        exit 1
+      fi
       changed=1
       echo "updated: $name"
     done
     if [ "$changed" = 0 ]; then
       echo "already latest ($new)"
     else
-      cp -r "$TMP"/skills/pipeline-* "$skills_dir/"
       echo "now at $new; latest upstream commits:"
       git -C "$TMP" log --oneline -10
     fi
