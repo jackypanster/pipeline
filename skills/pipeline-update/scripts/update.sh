@@ -155,7 +155,7 @@ rollback_clone() {
 main() {
   local self_dir skills_dir probe top mode old new changed name src canon tgt
   local src_phys staging backup problems refresh_list done_list diff_err diff_rc n2
-  local sweep rolled leftover lock_path clone_lock
+  local sweep rolled leftover lock_path clone_lock attached skipped dst e ok
   self_dir="$(cd "$(dirname "$0")/.." && pwd)"   # …/skills/pipeline-update
   if [ $# -ge 1 ]; then
     skills_dir="$1"
@@ -379,18 +379,14 @@ main() {
       fi
     fi
   else
-    # Mode 1 (cp'd copies). Only the temp-clone is atomic (clone FIRST, copy only on success — a
-    # failed clone exits here via set -e, install untouched). The per-entry refresh below is NOT
-    # transactional; it is symlink-aware + fail-closed instead. An installed entry that is a SYMLINK
-    # is a canonical attachment (pi-style `~/.pi/agent/skills/<name> -> ~/.agents/skills/<name>`) and
-    # is LEFT UNTOUCHED — cp-ing over it fails ("Not a directory") or clobbers the attachment; refresh
-    # its canonical target instead (run update against that dir). In a symlink-attached dir an ABSENT
-    # upstream skill is REPORTED, never materialized as a stray copy (that would convert an attachment
-    # layout into scattered copies); a copy-based dir still materializes absent skills — that is how a
-    # new upstream skill reaches a copy runtime. Each copy is status-checked: the first failure names
-    # the entry + the partial state and exits nonzero. Mode 1 has NO rollback, so it fails CLOSED
-    # rather than print a "now at" success over a half-applied refresh (transactional rollback is
-    # Mode 2's; do not read this path as atomic).
+    # Mode 1 (cp'd copies) — TRANSACTIONAL: stage every refresh, then swap all, rolling back on ANY
+    # failure so a nonzero exit leaves the install UNTOUCHED (SKILL.md hard rule: "Non-zero exit ⇒ the
+    # install is untouched"). Only the temp-clone precedes staging (clone FIRST; a failed clone exits
+    # here via set -e, install untouched). A SYMLINK entry is a canonical attachment (pi-style
+    # `~/.pi/agent/skills/<name> -> ~/.agents/skills/<name>`): LEFT UNTOUCHED + reported — cp-ing over
+    # it fails ("Not a directory") / clobbers the attachment; refresh its canonical target instead. In
+    # a symlink-attached dir an ABSENT skill is REPORTED, not materialized as a stray copy; a copy dir
+    # still materializes absent skills (how a new upstream skill reaches a copy runtime).
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
     git clone --quiet --depth 1 "$REPO_URL" "$TMP"
@@ -402,34 +398,96 @@ main() {
     for e in "$skills_dir"/pipeline-*; do
       [ -L "$e" ] && { attached=1; break; }
     done
-    changed=0
+    # Classify — NO mutation. refresh_list = copies to (re)write; skipped counts attachments/absent.
+    refresh_list=""; skipped=0
     for src in "$TMP"/skills/pipeline-*/; do
       name="$(basename "$src")"
       dst="$skills_dir/$name"
       if [ -L "$dst" ]; then
         echo "skipped: $name (symlink attachment -> $(readlink "$dst"); refresh its canonical copy instead)"
-        continue
+        skipped=$((skipped + 1)); continue
       fi
       if [ ! -e "$dst" ] && [ "$attached" = 1 ]; then
         echo "skipped: $name (not installed in this symlink-attached dir — run pipeline-install to add it)"
-        continue
+        skipped=$((skipped + 1)); continue
       fi
       diff -rq "$src" "$dst" >/dev/null 2>&1 && continue
-      # Clean replace: remove any existing copy FIRST so `cp -r <src> <dir>/` cannot nest into (or
-      # merge stale files over) a same-named dir — BSD cp copies the source INTO an existing dir of
-      # the same name, leaving removed-upstream files behind. dst is guaranteed non-symlink here (a
-      # symlink continue'd above), so the rm never follows an attachment out of the dir.
-      if [ -e "$dst" ]; then rm -rf "$dst"; fi
-      if ! cp -r "$TMP/skills/$name" "$skills_dir/"; then
-        echo "ERROR: failed to copy $name into $skills_dir — refresh is PARTIAL (entries before $name were updated). Fix the cause and re-run pipeline-update." >&2
-        exit 1
-      fi
-      changed=1
-      echo "updated: $name"
+      refresh_list="$refresh_list $name"
     done
-    if [ "$changed" = 0 ]; then
-      echo "already latest ($new)"
+    if [ -z "$refresh_list" ]; then
+      # Only claim "already latest" when entries were actually COMPARED. If every entry was skipped
+      # (attachments / absent-in-attached-dir), nothing here was verified against $new — say that,
+      # never the blanket latest-success claim.
+      if [ "$skipped" -gt 0 ]; then
+        echo "nothing to refresh in $skills_dir ($skipped skipped: attachment/absent; not verified against $new)"
+      else
+        echo "already latest ($new)"
+      fi
     else
+      # No Mode-1 janitor: drop any leftover staging so Phase A's proven-absent guard passes on a
+      # re-run (a leftover backup is handled by Phase B's rollback, which restores or removes it).
+      for name in $refresh_list; do rm -rf "$skills_dir/.$name.update-staging" 2>/dev/null || true; done
+      # Phase A — stage EVERYTHING before touching anything live. Staging must be PROVEN absent before
+      # cp (cp -r into an existing path nests the source). ANY failure ⇒ drop all staging, exit
+      # nonzero, live copies UNTOUCHED.
+      for name in $refresh_list; do
+        staging="$skills_dir/.$name.update-staging"
+        if [ -e "$staging" ] || [ -L "$staging" ] || ! cp -r "$TMP/skills/$name" "$staging"; then
+          for n2 in $refresh_list; do rm -rf "$skills_dir/.$n2.update-staging" 2>/dev/null || true; done
+          echo "ERROR: staging failed for $name — live copies in $skills_dir untouched. Fix the cause and re-run pipeline-update." >&2
+          exit 1
+        fi
+      done
+      # Phase B — swap all; ANY failure (mv, or a pre-existing backup that would nest) restores every
+      # completed swap + this entry, drops staging, and exits nonzero with the install UNTOUCHED. Every
+      # rollback step is guarded (runs the REST of the recovery, never trips set -e) and verified; the
+      # closing message states only what was proven.
+      done_list=""
+      for name in $refresh_list; do
+        staging="$skills_dir/.$name.update-staging"; backup="$skills_dir/.$name.update-backup"; dst="$skills_dir/$name"
+        ok=0
+        if [ -e "$backup" ] || [ -L "$backup" ]; then
+          ok=0                                                        # leftover backup would nest — refuse
+        elif [ -e "$dst" ] || [ -L "$dst" ]; then
+          if mv "$dst" "$backup" && mv "$staging" "$dst"; then ok=1; fi   # replace: back up, then publish
+        else
+          if mv "$staging" "$dst"; then ok=1; fi                          # new skill: publish only
+        fi
+        if [ "$ok" = 1 ]; then
+          done_list="$done_list $name"; echo "updated: $name"
+        else
+          rolled=1
+          # This entry: if live is gone but its backup holds the old copy, put it straight back.
+          if ! { [ -e "$dst" ] || [ -L "$dst" ]; } && { [ -e "$backup" ] || [ -L "$backup" ]; }; then
+            if ! mv "$backup" "$dst" || ! { [ -e "$dst" ] || [ -L "$dst" ]; }; then
+              rolled=0; echo "ERROR: could not restore $name — previous copy is at $backup (restore by hand)" >&2
+            fi
+          fi
+          # Completed swaps: a replaced entry restores from its backup; a newly-added entry is removed.
+          for n2 in $done_list; do
+            if [ -e "$skills_dir/.$n2.update-backup" ] || [ -L "$skills_dir/.$n2.update-backup" ]; then
+              if ! rm -rf "$skills_dir/$n2" || ! mv "$skills_dir/.$n2.update-backup" "$skills_dir/$n2" \
+                 || ! { [ -e "$skills_dir/$n2" ] || [ -L "$skills_dir/$n2" ]; }; then
+                rolled=0; echo "ERROR: rollback failed for $n2 — previous copy preserved at $skills_dir/.$n2.update-backup (restore by hand)" >&2
+              fi
+            elif ! rm -rf "$skills_dir/$n2"; then
+              rolled=0; echo "ERROR: could not remove newly-added $n2 during rollback — remove $skills_dir/$n2 by hand" >&2
+            fi
+          done
+          for n2 in $refresh_list; do rm -rf "$skills_dir/.$n2.update-staging" 2>/dev/null || rolled=0; done
+          if [ "$rolled" = 1 ]; then
+            echo "ERROR: swap failed at $name — all copies rolled back; install in $skills_dir left UNTOUCHED." >&2
+          else
+            echo "ERROR: swap failed at $name — rollback INCOMPLETE (details above); re-run pipeline-update or fix the named .update-* artifacts by hand." >&2
+          fi
+          exit 1
+        fi
+      done
+      # Phase C — drop backups. The install is already correct; a cleanup failure only WARNS (rc 0).
+      for name in $done_list; do
+        rm -rf "$skills_dir/.$name.update-backup" \
+          || echo "WARNING: could not drop the backup for $name in $skills_dir — install itself is correct; remove .$name.update-backup by hand" >&2
+      done
       echo "now at $new; latest upstream commits:"
       git -C "$TMP" log --oneline -10
     fi
