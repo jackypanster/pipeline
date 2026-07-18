@@ -50,19 +50,21 @@ runtime — do not paste a second copy of the steps here, so the two can never d
    the operator names one, execute README §Install step 3. **Create the binding only when absent; never
    clobber an existing `roles.yaml`** (regular file OR symlink) — overwriting a configured project wipes
    its slot bindings and restores the unresolved `<autonomous-coding-skill>` placeholder (a regression,
-   not a re-install). Create it with the **atomic O_EXCL no-clobber primitive** in README §Install step 3
-   (the POSIX `set -C`/noclobber redirect `( set -C; : > "$roles" )`), NOT `ln`, NOT a bare
-   existence-test-then-`cp`, NOT `cp -n`. O_EXCL fails closed (`EEXIST`) on ANY pre-existing destination —
-   regular file, symlink-to-file, even a symlink-to-DIRECTORY — without dereferencing it, so a file or
-   symlink racing in between the check and the create cannot be overwritten or have its referent touched
-   (the symlink race that sank the prior deterministic installer). The `ln` CLI is wrong here: it treats a
-   symlinked directory as a directory operand, links inside the referent, and falsely reports success;
-   `cp -n` returns non-zero on an existing target and reads as a failed install. There is NO temp file —
-   roles.yaml is the only per-project artifact, removed on any failure or caught signal, never half-written:
-   - **Absent** ⇒ we win the O_EXCL create and fill our own regular file, then set the impl slot to the
-     runtime's REAL installed skill name (e.g. the full `goal-driven-*` name), NEVER the
-     `<autonomous-coding-skill>` placeholder or a bare token — a phantom slot name costs a real trial run.
-   - **Already present** (steady, or raced in after the check, any type) ⇒ O_EXCL refuses; leave it as-is
+   not a re-install). Create it with the **atomic staged-publish primitive** in README §Install step 3:
+   stage complete content in a private temp dir (cleanup trap armed BEFORE the dir exists), then publish
+   with `link` (the direct link(2) utility). link(2) is ONE atomic no-clobber syscall that fails closed
+   (`EEXIST`) on ANY pre-existing destination — regular file, symlink-to-file, even a symlink-to-DIRECTORY
+   — WITHOUT dereferencing it, so a file or symlink racing in after the check cannot be overwritten or have
+   its referent touched. roles.yaml is never partial (absent until the link, complete after), never a
+   zero-byte stub. Do NOT use the `ln` CLI (it treats a symlinked directory as a directory operand and
+   links inside the referent, falsely reporting success), a bare existence-test-then-`cp` (TOCTOU), or
+   `cp -n` (non-zero on an existing target, reads as a failed install). All traps live inside the subshell
+   so the caller's own INT/TERM/HUP handlers survive intact, and the temp dir is the only auxiliary
+   artifact — removed on every exit path and every caught signal, leaving roles.yaml as the sole artifact:
+   - **Absent** ⇒ the staged temp is `link`ed into place, then set the impl slot to the runtime's REAL
+     installed skill name (e.g. the full `goal-driven-*` name), NEVER the `<autonomous-coding-skill>`
+     placeholder or a bare token — a phantom slot name costs a real trial run.
+   - **Already present** (steady, or raced in after the check, any type) ⇒ `link` refuses; leave it as-is
      (rc 0, not a failure), report it, and reconcile any new/missing slots by hand or with explicit
      operator confirmation — never replace a configured file silently. A genuine copy error still fails.
    This is the ONLY per-project artifact; everything else was the one-time machine install above. No
@@ -82,13 +84,14 @@ runtime — do not paste a second copy of the steps here, so the two can never d
   duplicate or hand-reimplement the steps. A wrong step gets fixed there via `pipeline-improve`, not
   worked around here. (This is the install-side analogue of update's "mechanics live in the script".)
 - **Idempotent + additive.** Re-running never duplicates a skill or force-migrates an existing install.
-  A project's `roles.yaml` is created only when absent, via an atomic O_EXCL no-clobber create (POSIX
-  `set -C` redirect — not `ln`, not `cp -n`, not a racy test-then-`cp`); an existing one — regular file
-  or symlink (even a symlink-to-directory, even one that raced in after the check) — is never replaced
-  without explicit operator confirmation: bindings are preserved or reconciled, never silently clobbered.
-  roles.yaml is the only per-project artifact (no temp file), removed on any failure or caught signal so
-  it is never left half-written. A configured-project rerun is a success (rc 0), not a failure; a genuine
-  copy error still fails. Existing installs keep working.
+  A project's `roles.yaml` is created only when absent, via an atomic staged publish — content staged in a
+  private temp dir, then `link`ed (link(2), not `ln`, not `cp -n`, not a racy test-then-`cp`) into place;
+  an existing one — regular file or symlink (even a symlink-to-directory, even one that raced in after the
+  check) — is never replaced without explicit operator confirmation: bindings are preserved or reconciled,
+  never silently clobbered. roles.yaml is never partial (absent or complete, never a zero-byte stub) and is
+  the sole per-project artifact — the temp dir is cleaned on every exit path and every caught signal, and
+  all trap handling stays inside the subshell so caller signal handlers survive. A configured-project rerun
+  is a success (rc 0), not a failure; a genuine copy error still fails. Existing installs keep working.
 - **Tool-agnostic.** Concrete runtime / skill / LLM names are install EXAMPLES for shaping the current
   runtime only — never write a brand/runtime/tool name into `roles.yaml` or the onboarding snippet; both
   reach target projects and must stay generic.

@@ -139,32 +139,37 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
 
 # 3. Per target project, bind the slots. Create roles.yaml ONLY if absent; never clobber an existing one
 #    (regular file OR symlink) — overwriting a configured project wipes its bindings and restores the
-#    unresolved <autonomous-coding-skill> placeholder. The atomic no-clobber primitive is O_EXCL, via the
-#    POSIX shell `set -C` (noclobber) redirect: `> "$roles"` opens with O_CREAT|O_EXCL, which POSIX
-#    guarantees fails EEXIST on ANY pre-existing destination — regular file, symlink-to-file, even a
-#    symlink-to-DIRECTORY — WITHOUT dereferencing it. (Do NOT use the `ln` CLI: it treats a symlinked
-#    directory as a directory operand, links inside the referent, and falsely returns success. Do NOT use
-#    `cp -n`: BSD/macOS returns non-zero on an existing target, reading as a failed install.) No temp
-#    file — roles.yaml is the only artifact, and it is removed on any failure/interrupt, never half-written.
+#    unresolved <autonomous-coding-skill> placeholder. Stage complete content in a private temp dir whose
+#    cleanup trap is armed BEFORE the dir exists (so no interval is unprotected and no stray temp can
+#    survive a caught signal), then publish with link(2) via the `link` utility: ONE atomic no-clobber
+#    syscall that fails EEXIST on ANY pre-existing destination — regular file, symlink-to-file, even a
+#    symlink-to-DIRECTORY — WITHOUT dereferencing it. roles.yaml is thus never partial (absent until the
+#    link, complete after it, never a zero-byte stub), and it is the only per-project artifact. (Do NOT use
+#    the `ln` CLI: it treats a symlinked directory as a directory operand, links inside the referent, and
+#    falsely returns success. Do NOT use `cp -n`: BSD/macOS returns non-zero on an existing target.) All
+#    trap handling is confined to the subshell, so the caller's own INT/TERM/HUP handlers are untouched.
 mkdir -p <target-repo>/.pipeline
 roles=<target-repo>/.pipeline/roles.yaml
 src=~/workspace/pipeline/roles.yaml
 if [ -e "$roles" ] || [ -L "$roles" ]; then
   echo "roles.yaml already present — preserved; reconcile any new slots by hand"    # steady state, rc 0
-elif ( set -C; : > "$roles" ) 2>/dev/null; then
-  # Won the atomic O_EXCL create: roles.yaml is now a NEW regular file we own (no symlink to follow).
-  trap 'rm -f "$roles"; exit 130' INT TERM HUP        # a caught signal leaves no partial file
-  if cat "$src" > "$roles"; then
-    trap - INT TERM HUP
-    echo "roles.yaml created — now set the impl slot to your real skill name"
-  else
-    trap - INT TERM HUP; rm -f "$roles"               # our own empty file only; no victim exists
-    echo "ERROR: cannot read $src" >&2; exit 1        # genuine copy failure still fails
-  fi
-elif [ -e "$roles" ] || [ -L "$roles" ]; then
-  echo "roles.yaml appeared concurrently — preserved, not overwritten"             # race-lost (any type), rc 0
 else
-  echo "ERROR: could not create $roles" >&2; exit 1
+  rc=0
+  (
+    td="$(dirname "$roles")/.roles.tmp.$$"
+    trap 'rm -rf "$td"' EXIT                              # any exit path clears the temp dir
+    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: clear temp, leave no artifact
+    mkdir "$td" || exit 1
+    cp "$src" "$td/roles" || exit 3                       # genuine copy error => nonzero, dest untouched
+    if link "$td/roles" "$roles" 2>/dev/null; then exit 0 # published complete content atomically
+    elif [ -e "$roles" ] || [ -L "$roles" ]; then exit 4  # race-lost: victim untouched (link never wrote)
+    else exit 5; fi
+  ) || rc=$?
+  case $rc in
+    0) echo "roles.yaml created — now set the impl slot to your real skill name" ;;
+    4) echo "roles.yaml appeared concurrently — preserved, not overwritten" ;;     # rc 0 overall
+    *) echo "ERROR: could not create $roles (rc=$rc)" >&2; exit 1 ;;               # genuine failure fails
+  esac
 fi
 ```
 
