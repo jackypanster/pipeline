@@ -64,6 +64,22 @@ direct operator token in the same reviewer session** — the coordinator has no 
 GO-gate rejects relayed tokens. (A deterministic `coordinate.sh` watcher in `pipeline-driver` remains
 a future option; its `doctor`/`status` preflight ships today and the playbook uses it.)
 
+### Choosing the mode — the agent recommends, the operator decides
+
+When a requirement settles (end of `pipeline-prd`; same table for a bugfix flow that skips prd), the
+agent consults this table, shows the current machine bindings (the `coordinate.sh status` bindings
+block, or drive.defaults, or "driver not installed"), and recommends ONE mode with a one-line
+rationale. The operator's reply decides. The decision is recorded only by the existing mechanisms —
+coordinated ⇒ `control.json` (pipeline-prd), drive ⇒ the YOLO grant + drive.config, human-relay ⇒
+nothing — a recommendation never becomes an authorization by itself.
+
+| situation | recommend |
+|---|---|
+| dangerous surface — write-path / trading / external side effects | human-relay (mandatory; drive and coordinated are forbidden here) |
+| new feature, unit-testable spec, multi-card impl | human-relayed pipeline; add `drive.sh` for the impl stretch when low-risk |
+| small feature / bugfix on an existing project, low-risk | drive mode (the driver runs the impl loop) |
+| operator present but wants zero relay typing | coordinated mode (`control.json`; visible panes; merge token still human-direct) |
+
 ## Onboard a target project (paste into its `AGENTS.md` / `CLAUDE.md`)
 
 So any agent touching a project knows it is pipeline-driven, paste this block verbatim into the
