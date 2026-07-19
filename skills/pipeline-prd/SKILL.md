@@ -46,8 +46,10 @@ files; YOU write the PRD.
    If you don't care: I'll proceed with <default>.
    ```
 
-   A question failing ANY gate is NOT asked: low-risk unknowns become a recommended default recorded
-   under the `⚠️ assumed` provenance tag (step 5) instead of an interruption.
+   A LOW-RISK gate-failing unknown is NOT asked: record a recommended default under the `⚠️ assumed`
+   provenance tag (step 5) instead of interrupting. A MATERIAL unknown that fails Grounded or
+   Answerable is NOT defaulted and NOT dropped — gather evidence / reframe it through the gate, or
+   hold it unresolved at the HITL wait.
 4. **Recommend a drive mode (the operator DECIDES).** The requirement is now settled — consult
    README §Operating modes → "Choosing the mode" decision table. Show the current machine bindings
    first: if a reachable `coordinate.sh status` run actually EMITS a machine-bindings block (newer
@@ -82,7 +84,7 @@ files; YOU write the PRD.
 
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
 - Tag every resolved decision with its provenance (step 5); never present an `⚠️ assumed` default as settled.
-- A question failing the step-3 quality gate (Material / Grounded / Answerable) is NOT asked — it becomes an `⚠️ assumed` default (step 5).
+- Only a LOW-RISK gate-failing question (step 3) becomes an `⚠️ assumed` default (step 5); a MATERIAL one is researched / reframed through the gate or held unresolved — never defaulted.
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata, + `control.json` on explicit
   coordinated-mode opt-in only). No code, no architecture yet.
 - `control.json` exists ONLY on an explicit operator request made in this session — never as a default,

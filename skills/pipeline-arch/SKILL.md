@@ -68,8 +68,10 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
    **Grounded** (points at code/docs behavior or a concrete uncertainty, not preference fishing),
    **Answerable** (pick an option, approve a default, or supply a reference) — asked via prd's
    five-field template (`Blocking question:` / `Why it matters:` / `Evidence:` / `Recommended answer:` /
-   `If you don't care:`). A gate-failing low-risk unknown is NOT asked: record it as a labeled assumption
-   in arch's OWN write-set (arch.md / an ADR) — NEVER by editing PRD.md.
+   `If you don't care:`). A LOW-RISK gate-failing unknown is NOT asked: record it as a labeled assumption
+   in arch's OWN write-set (arch.md / an ADR). A MATERIAL unknown failing Grounded or Answerable is NOT
+   defaulted and NOT dropped — gather evidence / reframe it through the gate, or hold it unresolved at
+   the HITL wait. NEVER edit PRD.md.
 4. Write `.pipeline/<feature>/arch.md` (the chosen shape + component boundaries) and let
    grill-with-docs land `CONTEXT.md` + `docs/adr/*.md`. Set `current.json.stage: arch` (most-recently-
    completed = arch). **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` those
@@ -87,4 +89,4 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
   `pipeline-task` the gate — no red test for that behavior is frozen until the reference is tabled.
   Purely additive to the freeze gate; it changes nothing in the spec-rev protocol, state machine, merge,
   or force-push rules.
-- Gate-failing questions (step 3) become labeled assumptions in arch's OWN write-set (arch.md / an ADR) — arch NEVER edits PRD.md.
+- Only LOW-RISK gate-failing questions (step 3) become labeled assumptions in arch's OWN write-set (arch.md / an ADR); MATERIAL ones are researched / reframed through the gate or held unresolved — arch NEVER edits PRD.md.
