@@ -183,15 +183,27 @@ fi
 
 # 4. (optional, usually wanted) The companion driver — a SIBLING of the pipeline clone. It runs in
 #    place, no install step; one-time config + when-to-use live in ITS README §Setup. Idempotent:
-#    absent ⇒ clone; already a clone of the driver (any URL form) ⇒ kept as-is; anything else at the
-#    path ⇒ STOP with remediation — never delete it, never clone into it.
+#    absent ⇒ clone; a USABLE driver clone (exact intended-repo origin AND a non-bare checkout whose
+#    HEAD resolves) ⇒ kept as-is; anything else at the path ⇒ STOP with remediation — never delete
+#    it, never clone into it.
 drv=~/workspace/pipeline-driver
+drv_usable() {
+  case "$(git -C "$drv" remote get-url origin 2>/dev/null)" in
+    https://github.com/jackypanster/pipeline-driver.git|\
+    https://github.com/jackypanster/pipeline-driver|\
+    git@github.com:jackypanster/pipeline-driver.git|\
+    git@github.com:jackypanster/pipeline-driver) ;;
+    *) return 1 ;;
+  esac
+  [ "$(git -C "$drv" rev-parse --is-bare-repository 2>/dev/null)" = false ] \
+    && git -C "$drv" rev-parse -q --verify HEAD >/dev/null
+}
 if [ ! -e "$drv" ] && [ ! -L "$drv" ]; then
   git clone https://github.com/jackypanster/pipeline-driver.git "$drv"
-elif git -C "$drv" remote get-url origin 2>/dev/null | grep -q 'jackypanster/pipeline-driver'; then
+elif drv_usable; then
   echo "driver already cloned at $drv — kept as-is"
 else
-  echo "ERROR: $drv exists but is not the driver clone (not a git repo, or foreign origin) — move it aside or fix its origin, then re-run step 4" >&2
+  echo "ERROR: $drv exists but is not a usable driver clone (foreign/missing origin, bare, or no checked-out HEAD) — move it aside or repair it, then re-run step 4" >&2
   exit 1
 fi
 ```
