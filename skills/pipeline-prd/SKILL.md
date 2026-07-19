@@ -28,10 +28,11 @@ files; YOU write the PRD.
    decision-complete plan.
 4. **Recommend a drive mode (the operator DECIDES).** The requirement is now settled — consult
    README §Operating modes → "Choosing the mode" decision table. Show the current machine bindings
-   first: run `coordinate.sh status` against a reachable pipeline-driver install/config when one
-   exists, else read `${XDG_CONFIG_HOME:-~/.config}/pipeline-driver/drive.defaults` and show its
-   binding fields, else state "pipeline-driver not installed — human-relay and coordinated are the
-   available modes". Then recommend ONE mode with a one-line risk-tier rationale and wait for the
+   first: if a reachable `coordinate.sh status` run actually EMITS a machine-bindings block (newer
+   driver versions), show that block; else read
+   `${XDG_CONFIG_HOME:-$HOME/.config}/pipeline-driver/drive.defaults` and show its binding fields;
+   if neither yields bindings, state "machine bindings unavailable (pipeline-driver is optional) —
+   human-relay and coordinated remain available". Then recommend ONE mode with a one-line risk-tier rationale and wait for the
    operator's choice. The choice is recorded ONLY by the existing mechanisms (coordinated ⇒
    control.json in step 5; drive ⇒ the operator's YOLO grant + drive.config, outside this stage;
    human-relay ⇒ nothing). An operator reply choosing coordinated mode IS the explicit in-session
@@ -58,7 +59,7 @@ files; YOU write the PRD.
 ## Hard rules
 
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
-- Tag every resolved decision with its provenance (step 4); never present an `⚠️ assumed` default as settled.
+- Tag every resolved decision with its provenance (step 5); never present an `⚠️ assumed` default as settled.
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata, + `control.json` on explicit
   coordinated-mode opt-in only). No code, no architecture yet.
 - `control.json` exists ONLY on an explicit operator request made in this session — never as a default,

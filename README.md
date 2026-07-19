@@ -68,7 +68,8 @@ a future option; its `doctor`/`status` preflight ships today and the playbook us
 
 When a requirement settles (end of `pipeline-prd`; same table for a bugfix flow that skips prd), the
 agent consults this table, shows the current machine bindings (the `coordinate.sh status` bindings
-block, or drive.defaults, or "driver not installed"), and recommends ONE mode with a one-line
+block where the installed version emits one, else drive.defaults, else "bindings unavailable —
+pipeline-driver is optional"), and recommends ONE mode with a one-line
 rationale. The operator's reply decides. The decision is recorded only by the existing mechanisms —
 coordinated ⇒ `control.json` (pipeline-prd), drive ⇒ the YOLO grant + drive.config, human-relay ⇒
 nothing — a recommendation never becomes an authorization by itself.
