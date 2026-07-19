@@ -26,7 +26,19 @@ files; YOU write the PRD.
      genuine ambiguity / preference. Target ~5 code-verified per 1 human-asked.
    Then **grill-me** — one question at a time, recommend answers — and **think** to harden it into a
    decision-complete plan.
-4. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, the
+4. **Recommend a drive mode (the operator DECIDES).** The requirement is now settled — consult
+   README §Operating modes → "Choosing the mode" decision table. Show the current machine bindings
+   first: if a reachable `coordinate.sh status` run actually EMITS a machine-bindings block (newer
+   driver versions), show that block; else read
+   `${XDG_CONFIG_HOME:-$HOME/.config}/pipeline-driver/drive.defaults` and show its binding fields;
+   if neither yields bindings, state "machine bindings unavailable (pipeline-driver is optional) —
+   human-relay and coordinated remain available". Then recommend ONE mode with a one-line risk-tier rationale and wait for the
+   operator's choice. The choice is recorded ONLY by the existing mechanisms (coordinated ⇒
+   control.json in step 5; drive ⇒ the operator's YOLO grant + drive.config, outside this stage;
+   human-relay ⇒ nothing). An operator reply choosing coordinated mode IS the explicit in-session
+   request the control.json hard rule demands — silence or ambiguity is NOT (fail closed to
+   human-relay).
+5. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, the
    resolved decisions — **each decision tagged with its provenance**: `✅ human-confirmed` (the human
    answered or approved it) / `📖 code-verified` (settled by reading the repo — name the file) /
    `⚠️ assumed` (neither — an unconfirmed default you chose). The tag is what lets the COLD arch node
@@ -41,13 +53,13 @@ files; YOU write the PRD.
    into the same commit; that commit IS the authorization audit. Never create it by default, never
    infer the request. **Append your handoff to `journal.md`** (CONTRACT §Run journal). `git add` `PRD.md`
    **+ `current.json` + `journal.md`** (this stage created/seeded them), commit **once** (the shim loop pushes).
-5. **Print the handoff** to **pipeline-arch** (already journaled in step 4; per CONTRACT.md §handoff):
+6. **Print the handoff** to **pipeline-arch** (already journaled in step 5; per CONTRACT.md §handoff):
    repo, branch, artifact path, `do: read PRD.md, grill the architecture against the codebase`.
 
 ## Hard rules
 
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
-- Tag every resolved decision with its provenance (step 4); never present an `⚠️ assumed` default as settled.
+- Tag every resolved decision with its provenance (step 5); never present an `⚠️ assumed` default as settled.
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata, + `control.json` on explicit
   coordinated-mode opt-in only). No code, no architecture yet.
 - `control.json` exists ONLY on an explicit operator request made in this session — never as a default,
