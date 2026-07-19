@@ -180,6 +180,10 @@ else
     fi
   ) || exit $?
 fi
+
+# 4. (optional, usually wanted) The companion driver — clone as a SIBLING of the pipeline clone.
+#    It runs in place, no install step; one-time config + when-to-use live in ITS README §Setup.
+git clone https://github.com/jackypanster/pipeline-driver.git ~/workspace/pipeline-driver
 ```
 
 ### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)
@@ -266,7 +270,14 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/    # legacy stand
 
 Runtime-shared skills only. A project's `.pipeline/roles.yaml` (your slot bindings) is never touched —
 if a new version adds a slot, reconcile it by hand. Sibling repos (`pipeline-dashboard`,
-`pipeline-driver`) update themselves.
+`pipeline-driver`) update themselves — for the usually co-installed driver (§Install step 4) that is
+one command. Refresh the whole toolchain:
+
+```bash
+# 1. skills: run the pipeline-update command (above)
+# 2. driver: plain fast-forward pull; non-ff or dirty tree ⇒ STOP and inspect, never reset
+git -C ~/workspace/pipeline-driver pull --ff-only
+```
 
 ## State
 

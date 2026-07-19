@@ -38,6 +38,9 @@ runtime — do not paste a second copy of the steps here, so the two can never d
    copy, by runtime style). Idempotent: an already-present, correctly-bound skill is left as-is — report
    it, do not duplicate or force-migrate (README: "Existing installs keep working"). Nothing to install
    fresh ⇒ say so and continue; this is not a failure.
+   Include §Install step 4 (the companion `pipeline-driver` clone — optional, usually wanted): clone
+   only when the sibling dir is absent; an existing clone is left as-is and reported; skip it on an
+   explicit skills-only request.
 
 2. **Verify + supplement delegated deps.** Execute README §"Verify + supplement dependencies": for each
    `roles.yaml` slot skill (`think`, `check`, `hunt`, `grill-me`, `grill-with-docs`, and the impl-slot
