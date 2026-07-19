@@ -180,6 +180,32 @@ else
     fi
   ) || exit $?
 fi
+
+# 4. (optional, usually wanted) The companion driver — a SIBLING of the pipeline clone. It runs in
+#    place, no install step; one-time config + when-to-use live in ITS README §Setup. Idempotent:
+#    absent ⇒ clone; a USABLE driver clone (exact intended-repo origin AND a non-bare checkout whose
+#    HEAD resolves) ⇒ kept as-is; anything else at the path ⇒ STOP with remediation — never delete
+#    it, never clone into it.
+drv=~/workspace/pipeline-driver
+drv_usable() {
+  case "$(git -C "$drv" remote get-url origin 2>/dev/null)" in
+    https://github.com/jackypanster/pipeline-driver.git|\
+    https://github.com/jackypanster/pipeline-driver|\
+    git@github.com:jackypanster/pipeline-driver.git|\
+    git@github.com:jackypanster/pipeline-driver) ;;
+    *) return 1 ;;
+  esac
+  [ "$(git -C "$drv" rev-parse --is-bare-repository 2>/dev/null)" = false ] \
+    && git -C "$drv" rev-parse -q --verify HEAD >/dev/null
+}
+if [ ! -e "$drv" ] && [ ! -L "$drv" ]; then
+  git clone https://github.com/jackypanster/pipeline-driver.git "$drv"
+elif drv_usable; then
+  echo "driver already cloned at $drv — kept as-is"
+else
+  echo "ERROR: $drv exists but is not a usable driver clone (foreign/missing origin, bare, or no checked-out HEAD) — move it aside or repair it, then re-run step 4" >&2
+  exit 1
+fi
 ```
 
 ### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)
@@ -266,7 +292,21 @@ cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/    # legacy stand
 
 Runtime-shared skills only. A project's `.pipeline/roles.yaml` (your slot bindings) is never touched —
 if a new version adds a slot, reconcile it by hand. Sibling repos (`pipeline-dashboard`,
-`pipeline-driver`) update themselves.
+`pipeline-driver`) update themselves — for the usually co-installed driver (§Install step 4) that is
+one guarded pull. Refresh the whole toolchain:
+
+```bash
+# 1. skills: run the pipeline-update command (above)
+# 2. driver: deterministic preflight — a read-only consumer clone must have NO local edits to
+#    tracked files (untracked files, e.g. drive.config, are normal and allowed); then fast-forward
+#    only (--ff-only refuses diverged history). On any refusal: inspect by hand — never reset,
+#    never stash blindly.
+if git -C ~/workspace/pipeline-driver status --porcelain --untracked-files=no | grep -q .; then
+  echo "ERROR: driver clone has local edits to tracked files — inspect before updating" >&2
+  exit 1
+fi
+git -C ~/workspace/pipeline-driver pull --ff-only
+```
 
 ## State
 

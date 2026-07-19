@@ -32,12 +32,15 @@ section on the pipeline repo (`~/workspace/pipeline/README.md`) and execute it a
 runtime — do not paste a second copy of the steps here, so the two can never drift.
 
 1. **Per-machine install (idempotent — do once per machine; safe to re-run).** Execute README §Install
-   steps 1–2 + §"Canonical multi-runtime layout": read-only consumer clone/refresh of
+   steps 1–2 plus optional step 4 (the companion `pipeline-driver` clone) + §"Canonical multi-runtime
+   layout": read-only consumer clone/refresh of
    `github.com/jackypanster/pipeline`; install `skills/pipeline-*` into the ONE canonical physical dir
    (`~/.agents/skills`); attach THIS runtime to it per the layout table (nothing / per-skill symlink /
    copy, by runtime style). Idempotent: an already-present, correctly-bound skill is left as-is — report
    it, do not duplicate or force-migrate (README: "Existing installs keep working"). Nothing to install
    fresh ⇒ say so and continue; this is not a failure.
+   Step 4's absent / valid-clone / obstruction handling is mechanics in the README block itself —
+   execute it as written; skip step 4 only on an explicit skills-only request.
 
 2. **Verify + supplement delegated deps.** Execute README §"Verify + supplement dependencies": for each
    `roles.yaml` slot skill (`think`, `check`, `hunt`, `grill-me`, `grill-with-docs`, and the impl-slot
