@@ -25,7 +25,13 @@ toolchain repo** (`pipeline-driver` / `pipeline-dashboard` / `pipeline-dispatch`
 in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final full-suite gate** (none of
 that exists here). Do ONLY: (a) `check` the diff — is it a **real improvement, not a weakening**?
 does it **preserve every existing hard rule + the frozen invariants** (for a sibling repo: its own
-documented hard rules and guarantees)? (b) write the verdict as a PR
+documented hard rules and guarantees)? **Size-budget axis** — for each `skills/*/SKILL.md` where
+`git diff <base>..<head> --numstat` shows net growth (added − deleted) > 0 AND the file's post-merge
+`wc -l` > 120, the PR description MUST carry an explicit size-budget justification (why this growth
+can't be net-neutral; why it can't live in CONTRACT.md / a reference file); triggered + no
+justification ⇒ changes requested — the axis judges presence and plausibility, never forbids growth.
+Net ≤ 0 or ≤ 120 lines never triggers (shrinking and net-0 rewrites are free; a file already over 120
+flags only on further growth). (b) write the verdict as a PR
 comment; (c) on the human's explicit confirm via the same self-terminating exact-token GO-gate (step 6 —
 direct operator, same reviewer session), **squash-merge**. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a

@@ -26,7 +26,10 @@ review steps.
 4. Create branch `improve/<slug>`. Apply the edit `think` specified to the relevant `skills/*/SKILL.md`
    or `CONTRACT.md`: **minimal, additive, preserve every existing rule.** Agent-first (dense, no filler).
    One proposal = one focused change.
-5. Commit + push the branch. Open a PR to the pipeline repo's `main` via the forge adapter. **Do NOT merge.**
+5. Commit + push the branch. Open a PR to the pipeline repo's `main` via the forge adapter. **If the
+   edit trips the size-budget axis** (a `skills/*/SKILL.md` whose net growth > 0 AND post-merge length
+   > 120 lines), **lead the PR description with the size-budget justification** — why not net-neutral,
+   why not in CONTRACT.md / a reference file — so review doesn't have to ask (CONTRACT §Self-improvement). **Do NOT merge.**
 6. Hand off to **pipeline-review in meta-PR mode** (CONTRACT §Self-improvement — NOT the feature review
    steps: no cards, no `spec-rev`, no freeze gate, no full-suite gate on this repo): semantic-review the
    skill diff — is it a real improvement (not a weakening/破坏)? does it preserve every hard rule + frozen
