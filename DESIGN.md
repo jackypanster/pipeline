@@ -148,8 +148,9 @@ end at a human read; they are never chained to each other or to anything
 else. (3) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
 a coordinator MAY type every NORMAL stage handoff — v1 is a CC session running the
-`pipeline-coordinate` playbook (the deterministic `coordinate.sh` watcher remains a future option;
-design history in `pipeline-driver` `coordinator-design.md` §25). It observes remote Git only, routes
+`pipeline-coordinate` playbook (the deterministic `coordinate.sh` dispatcher was evaluated and rejected — pipeline-driver PR #14 closed;
+design history pinned at https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md;
+`coordinate.sh` ships read-only `doctor`/`status` only). It observes remote Git only, routes
 on the journal tail's transition forms, performs no stage work belonging to another role, halts
 fail-closed on anything outside the known forms, and can neither merge nor confirm a merge (the review
 GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
