@@ -303,10 +303,10 @@ Rules:
 
 **Default remains human-relayed.** A feature MAY opt in to an external coordinator that replaces the
 human's TYPING between stages — never a judgment that belongs to a stage or to the human. **v1 is a
-CC session running the `pipeline-coordinate` playbook skill** (this repo); a deterministic watcher
-(`pipeline-driver`'s `coordinate.sh` — design history: `coordinator-design.md` §25 in
-[`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver)) remains a future
-option. EITHER coordinator observes remote Git as the only business truth, routes on the journal
+CC session running the `pipeline-coordinate` playbook skill** (this repo); a deterministic dispatcher was evaluated and REJECTED (pipeline-driver PR #14 closed unmerged;
+pivot recorded in coordinator-design.md v1.3 §25, pinned:
+https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md —
+`coordinate.sh` ships only the read-only `doctor`/`status` preflight). EITHER coordinator observes remote Git as the only business truth, routes on the journal
 tail's transition forms below, and types the next `pipeline-*` command into the right agent pane. As
 COORDINATOR it writes no target artifacts and no journal entries and performs no stage work belonging
 to another role; the CC-playbook session may separately execute the CC-role stages (arch/task/hunt)

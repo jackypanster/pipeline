@@ -55,14 +55,13 @@ The human is the fourth, final gate.
    `cp coordinate.config.example coordinate.config`, fill EVERY non-optional field per the example's
    comments — `OBSERVER_WORKDIR` = a clone this session may fetch in,
    `CC_WORKDIR`/`PI_WORKDIR`/`CODEX_WORKDIR` = the three role clones matching the panes from step 1,
-   `BRANCH`, the five command-prefix fields, and the three timeout fields (pane pins / `STATE_DIR` /
-   `ON_HALT_EXEC` are optional). **Run `bash coordinate.sh doctor --config coordinate.config` from a
+   `BRANCH`, and the five command-prefix fields (pane pins are optional). **Run `bash coordinate.sh doctor --config coordinate.config` from a
    NON-ROLE shell** — a plain terminal or a fourth utility pane, never from the CC/Pi/Codex panes:
    the shipped tool captures its own `HERDR_PANE_ID` as "self" and excludes that pane from role
    resolution (a dispatcher must never type into itself), so under this playbook's same-session
    topology a doctor run inside the CC pane can never resolve the CC role and fails
    `PANE_NOT_FOUND` by design. Any MISS blocks the run; `coordinate.sh status --config …` shows the
-   last observed state at any time.
+   machine bindings and the active feature at any time.
 
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
@@ -112,7 +111,7 @@ The human is the fourth, final gate.
 
 **Redelivery is NOT generally safe.** With no delivery ledger, an unconsumed dispatch cannot be
 distinguished among "never delivered", "delivered, not yet started", and "ran and ended without
-delivering" (the load-bearing PR #12 lesson recorded in coordinator-design v1.2/§25). An ambiguous
+delivering" (the load-bearing PR #12 lesson recorded in coordinator-design v1.2/§25 — pinned: https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md). An ambiguous
 send, or unchanged Git after a send, always STOPS for human inspection of the pane transcript. Only
 a dispatch whose effect is OBSERVED (journal advanced / commits landed / verdict posted) is
 replay-safe to move past.
