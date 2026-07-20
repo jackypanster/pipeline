@@ -22,10 +22,34 @@ files; YOU write the PRD.
      implementation simplicity). Present a SINGLE recommendation with rationale.
    - If a scoped feature: read the relevant source files, learn the existing patterns, identify
      what's missing. Summarize findings before grilling.
+   - If the idea is taste/UX/direction-shaped — the human will recognize good/bad on sight but cannot
+     verbalize the criterion upfront — do NOT interrogate. Show 2-3 cheap contrasting references
+     (similar in-repo modules, at most one external reference, or throwaway single-file mocks with
+     fake data) with MEANINGFUL contrast, collect the human's reactions, and fix those reactions into
+     explicit acceptance criteria written into PRD.md. Normal scoped features skip this branch.
    - **Code-first**: answer as many questions as possible by reading code; ask the human only for
      genuine ambiguity / preference. Target ~5 code-verified per 1 human-asked.
    Then **grill-me** — one question at a time, recommend answers — and **think** to harden it into a
    decision-complete plan.
+
+   **Question quality gate** — every question directed at the human must pass ALL THREE gates:
+   **Material** (the answer could change scope, UX, data model, permissions, or acceptance criteria),
+   **Grounded** (points at code/docs behavior or a concrete uncertainty, not preference fishing),
+   **Answerable** (the human can pick an option, approve a default, or supply a reference). Ask with
+   exactly this template:
+
+   ```md
+   Blocking question: <question>
+   Why it matters: <what changes if answer A vs B>
+   Evidence: <code/docs/test citation>
+   Recommended answer: <default + rationale>
+   If you don't care: I'll proceed with <default>.
+   ```
+
+   A LOW-RISK gate-failing unknown is NOT asked: record a recommended default under the `⚠️ assumed`
+   provenance tag (step 5) instead of interrupting. A MATERIAL unknown that fails Grounded or
+   Answerable is NOT defaulted and NOT dropped — gather evidence / reframe it through the gate, or
+   hold it unresolved at the HITL wait.
 4. **Recommend a drive mode (the operator DECIDES).** The requirement is now settled — consult
    README §Operating modes → "Choosing the mode" decision table. Show the current machine bindings
    first: if a reachable `coordinate.sh status` run actually EMITS a machine-bindings block (newer
@@ -60,6 +84,7 @@ files; YOU write the PRD.
 
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
 - Tag every resolved decision with its provenance (step 5); never present an `⚠️ assumed` default as settled.
+- Only a LOW-RISK gate-failing question (step 3) becomes an `⚠️ assumed` default (step 5); a MATERIAL one is researched / reframed through the gate or held unresolved — never defaulted.
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata, + `control.json` on explicit
   coordinated-mode opt-in only). No code, no architecture yet.
 - `control.json` exists ONLY on an explicit operator request made in this session — never as a default,
