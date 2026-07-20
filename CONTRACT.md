@@ -441,7 +441,10 @@ cards, `spec-rev`), so `pipeline-improve` does NOT run the feature shim loop, an
 its feature steps (cards / freeze gate / full-suite gate) and does **semantic review only** — real
 improvement + every hard rule and frozen invariant preserved — then human-confirm + squash-merge. The
 feature freeze-gate machinery does not apply to a skill diff; only-reviewer-merges and human-confirm
-still do.
+still do. The meta-PR semantic review also runs a **size-budget axis**: any `skills/*/SKILL.md` whose
+net growth > 0 AND whose post-merge length exceeds 120 lines requires an explicit size-budget
+justification in the PR description, else review requests changes (exact numstat/wc trigger in
+`pipeline-review`'s Meta-PR mode).
 
 The same meta-PR gate covers, **additively**: proposals to **any other file of this repo** (a
 `DESIGN.md`/`README` diff is reviewed exactly like a skill diff), and PRs against the **sibling
