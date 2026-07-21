@@ -72,6 +72,15 @@ committed straight there. Metadata is the orchestration audit log, not reviewed 
 never gated through PR review. `current.json` MUST be on trunk: it is the cold-node bootstrap pointer,
 read before the node knows any branch name.
 
+**Authoritative-state precedence (arbitration order).** When state sources disagree, decision authority
+descends: **pushed trunk (remote git) > local clone/working tree > running process state > model summary**
+(chat context, handoff prose, an agent's own "done" claim). This ranks cross-node authority, NOT temporal
+freshness: a stage trusts its own working tree while working, but nothing exists for any other node until
+pushed (step 6), and no claim outranks the artifact it describes — "done" is exactly as authoritative as
+the pushed commit + test output behind it. The journal-tail-over-`current.json` rule, step 1's
+rebuild-from-git, paths-never-bodies handoffs, and coordinated mode's remote-Git-only truth are instances
+of this order. (Ref: arXiv:2605.18747 "Code as Agent Harness" — fix state precedence before conflicts occur.)
+
 **A feature branch carries ONLY the reviewable code diff.** Name it `feat/<feature>`. `pipeline-impl`
 cuts it from trunk, writes `src` + white-box tests there, opens the PR. `pipeline-review` squash-merges
 it (the only merge). One branch convention, one merge style — no `task/*` names, no local non-PR merges.
