@@ -16,6 +16,7 @@ behind each command is a swappable `roles.yaml` slot.
 - `skills/pipeline-*/SKILL.md` — the 7 command shims.
 - `skills/pipeline-install/SKILL.md` — maintenance command (**not** a stage): stand up the shims on a runtime + bind a target project's `roles.yaml`, by executing README §Install. The setup-side twin of `pipeline-update`. See [§Install](#install-agent-execute-this-it-is-written-for-you-not-a-human).
 - `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update).
+- `skills/pipeline-adhoc/SKILL.md` — coordinator playbook (NOT a stage): three-role ad-hoc task dispatch through herdr panes; the ad-hoc twin of pipeline-coordinate.
 
 | command | slot → skill | in → out |
 |---|---|---|
