@@ -8,8 +8,9 @@ Read it before changing anything under `skills/`. [DESIGN.md](DESIGN.md) carries
 
 ## Agent skills
 
-Config consumed by the `mattpocock/skills` engineering commands (`/wayfinder`, `/to-tickets`,
-`/to-spec`, `/triage`, `/implement`). These are user-invoked only — none of them fire automatically.
+Config consumed by the `mattpocock/skills` engineering commands that read the issue tracker:
+`/wayfinder`, `/to-tickets`, `/to-spec`, `/triage`. These are user-invoked only — none of them fire
+automatically.
 
 ### Issue tracker
 
@@ -17,7 +18,8 @@ GitHub issues on `jackypanster/pipeline`, driven by the `gh` CLI. See
 [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md) for the operation vocabulary, including
 the wayfinding map/ticket/blocking conventions.
 
-Triage labels are **not** configured — that file records why and what a skill must do instead.
+Triage labels and the `wayfinder:*` labels are **not** created on the repo. No skill creates them, so
+the tracker doc carries the `gh label create` commands to run before first use.
 
 ### Domain docs
 

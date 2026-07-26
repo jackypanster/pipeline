@@ -3,7 +3,8 @@
 Issues and PRDs for this repo live as GitHub issues (`jackypanster/pipeline`). Use the `gh` CLI for all operations.
 
 > **Scope.** This file configures the *issue tracker* only, for the `mattpocock/skills` engineering
-> commands (`/wayfinder`, `/to-tickets`, `/to-spec`, `/triage`, `/implement`).
+> commands that read it: `/wayfinder`, `/to-tickets`, `/to-spec`, `/triage`.
+> (`/implement` does not — it takes a spec or tickets already in hand and never touches the tracker.)
 > It does **not** govern domain docs: `CONTEXT.md` and `docs/adr/*` are frozen by
 > [CONTRACT.md](../../CONTRACT.md) to live under `.pipeline/<feature>/` in the **target** repo, and the
 > `arch` stage write-set is scoped to exactly those paths. Do not infer a repo-root
@@ -22,11 +23,15 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 
 ## Triage labels
 
-**Not configured.** The canonical triage roles (`needs-triage`, `needs-info`, `ready-for-agent`,
-`ready-for-human`, `wontfix`) have **not** been created on this repo — only the stock GitHub label set
-plus a pre-existing `wontfix` exists. `/triage`, and any skill that wants to apply `ready-for-agent`,
-must create the labels it needs first (`gh label create <name>`) or run without labels. Delete this
-section and add `docs/agents/triage-labels.md` if the vocabulary is ever adopted.
+**Not configured.** This repo carries only GitHub's nine stock labels (`bug`, `documentation`,
+`duplicate`, `enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`).
+Of the five canonical triage roles only `wontfix` exists, and only because it is a stock label;
+`needs-triage`, `needs-info`, `ready-for-agent` and `ready-for-human` do not exist.
+
+No skill creates them. `/triage` reads a mapping it expects to have been provided and otherwise tells
+you to run `/setup-matt-pocock-skills`; `/to-tickets` and `/to-spec` apply `ready-for-agent` directly,
+which fails while the label is missing. Create the four with `gh label create <name>` before using
+those commands, then record the mapping in `docs/agents/triage-labels.md` and delete this section.
 
 ## Pull requests as a triage surface
 
@@ -59,4 +64,11 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
 - **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
 
-The `wayfinder:map` and `wayfinder:<type>` labels do not exist on this repo yet; `/wayfinder` creates them on first use (`gh label create`).
+**The `wayfinder:map` and `wayfinder:<type>` labels do not exist on this repo.** `/wayfinder` only ever
+*applies* them (`gh issue create --label wayfinder:map`) — it carries no label-creation step — and `gh`
+fails when a named label is missing. Create them before the first run:
+
+```sh
+gh label create wayfinder:map --description "Wayfinder map issue"
+for t in research prototype grilling task; do gh label create "wayfinder:$t"; done
+```
