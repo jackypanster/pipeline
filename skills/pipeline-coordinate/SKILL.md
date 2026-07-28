@@ -118,11 +118,11 @@ replay-safe to move past.
 
 ## Profile A — meta-PR flow (toolchain, docs, small changes; quality via adversarial review)
 
-For changes with no `.pipeline` feature state (CONTRACT §Self-improvement lane). No envelope needed:
-review pins the head sha, which is the staleness guard. **Coordinated Profile A requires a forge
-with a PR thread** (github via `gh`, gitee via `gitee-cli`) — the relay loop below depends on a PR
-URL, durable verdict comments, and observable PR state. No forge ⇒ the change goes by the normal
-human-relayed plain-diff review (CONTRACT §Forge adapter), not by this profile.
+For no-`.pipeline`-state changes only (CONTRACT §Self-improvement lane: this repo + the sibling
+toolchain repos `pipeline-driver`/`-dashboard`/`-dispatch`, nothing else). No envelope needed —
+review pins the head sha (the staleness guard). **Profile A admits ONLY a forge PR thread on a
+SAME-REPO PR in that set** (github via `gh`, gitee via `gitee-cli`); a fork / cross-repository PR, a
+repo outside the set, or no forge ⇒ STOP for the human and fall back to plain-diff review (CONTRACT §Forge adapter).
 
 1. **Handoff.** Write ONE disposable markdown file: context, constraints (files it may touch, files
    it must NOT touch), deliverables, done-when, "commit locally, do NOT push". Create a git worktree
@@ -170,7 +170,7 @@ human-relayed plain-diff review (CONTRACT §Forge adapter), not by this profile.
      <old>..<new>. <finding→fix→evidence mapping>. Verdict as PR comment ONLY (no pane
      write-back); GO-gate; direct human token only.` Re-arm your verdict watcher after every
      re-dispatch.
-   - Three rounds without convergence → stop, hand the human the verdict trail (hard rule 4).
+   - Three rounds without convergence → stop for the human with the verdict trail (hard rule 4); the cap is PR-thread-bound and counts verdict rounds already on this PR thread, so a resumed session inherits the spent budget, not a fresh three.
 6. **Merge gate.** Verdict = approved → tell the human: reply `go`/`merge`/`confirm` as the ENTIRE
    message in the Codex pane. **From the moment a GO-gate is armed until the PR merges (or the human
    says otherwise), the coordinator MUST NOT send ANYTHING to the reviewer pane** — no re-review, no
