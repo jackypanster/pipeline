@@ -134,16 +134,19 @@ not a built-in mechanism).
 
 ## Constraints
 
-No cron, no scheduler in the contract (human relays) — an OPTIONAL external driver (`pipeline-driver`,
-the write-side twin of the read-only `pipeline-dashboard`) MAY auto-advance exactly TWO bounded,
-human-bracketed spans plus ONE feature-authorized coordinated mode, and nothing else: (1) the `impl`
-multi-card loop on a cheap model, STOPPING
+No cron, no scheduler in the contract (human relays) — TWO bounded, human-bracketed spans MAY be
+auto-advanced, plus ONE feature-authorized coordinated mode, and nothing else: (1) the `impl`
+multi-card loop on a cheap model, driven by the OPTIONAL external `pipeline-driver` (the write-side
+twin of the read-only `pipeline-dashboard`), STOPPING
 before the review/merge gate, which stays human-run (the merge itself is a human step; trunk may
 additionally be protected against force-push/deletion server-side where the plan allows); (2) the
 review↔fix RELAY of a toolchain-repo meta-PR (the CONTRACT §Self-improvement lane): the review is
 still `pipeline-review` in meta-PR mode, the verdict still lands on the PR, and the human-confirm +
 reviewer-only squash-merge gate is untouched — the relay automates the TYPING between verdicts under
-capped rounds and fail-closed halts, never a review judgment and never a merge. Both spans begin and
+capped rounds and fail-closed halts, never a review judgment and never a merge. Span 2 is carried by
+the `pipeline-coordinate` playbook (Profile A) — an attended CC session dispatching the fixer and
+reviewer panes and reading verdicts off the PR — NOT by a driver script: the driver's `review-drive.sh`
+implementation was retired with its orca transport (one span, one implementation). Both spans begin and
 end at a human read; they are never chained to each other or to anything
 else. (3) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
