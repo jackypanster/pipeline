@@ -289,7 +289,7 @@ before the first run that needs them, or the install reports green and the comma
 
 | tool | needed by | when | source |
 |---|---|---|---|
-| `gh` / `gitee-cli` | review, coordinate | only when the target repo has a forge | the forge's own CLI; CONTRACT §Forge adapter degrades to a plain `git diff` without one |
+| `gh` / `gitee-cli` | impl, improve, review, coordinate | only when the target repo has a forge | the forge's own CLI. Review degrades to a plain `git diff` without one (CONTRACT §Forge adapter); opening a PR does not — `pipeline-impl` step 4 falls back only on a missing **token**, and `pipeline-improve` step 5 has no CLI-less path |
 | `herdr` | pipeline-coordinate | only for coordinated runs (pane transport) | `https://herdr.dev` |
 | `python3` ≥3.9 | pipeline-coordinate | only for coordinated runs (`scripts/watch-pane.py`, stdlib only) | base system package on macOS/Linux |
 
