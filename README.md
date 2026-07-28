@@ -14,6 +14,7 @@ behind each command is a swappable `roles.yaml` slot.
 - `CONTRACT.md` — frozen protocol every command follows: shim loop · state machine · anti-cheat · handoff · forge adapter.
 - `roles.yaml` — per-target-repo slot→skill bindings (copy into the target repo's `.pipeline/`).
 - `skills/pipeline-*/SKILL.md` — the 7 command shims.
+- `skills/pipeline-coordinate/SKILL.md` — playbook (**not** a stage, no `roles.yaml` slot): a CC session coordinates Pi/Codex panes through a feature or meta-PR (see §Operating modes). Needs `herdr` + `python3` ≥3.9 — see §Verify + supplement dependencies.
 - `skills/pipeline-install/SKILL.md` — maintenance command (**not** a stage): stand up the shims on a runtime + bind a target project's `roles.yaml`, by executing README §Install. The setup-side twin of `pipeline-update`. See [§Install](#install-agent-execute-this-it-is-written-for-you-not-a-human).
 - `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update).
 
@@ -282,6 +283,15 @@ install it where the command actually runs. Each command verifies its OWN slot o
 slot is missing — so verify all slots up front to avoid a mid-run stop. Names matter: set each slot to the
 skill's real installed name on your runtime (for `impl`, the full `goal-driven-*` name your runtime
 ships), never a bare/abstract token like `goal` or the `<autonomous-coding-skill>` placeholder.
+
+**Non-skill runtime tools (NOT `roles.yaml` slots — no command self-checks them).** Verify these
+before the first run that needs them, or the install reports green and the command dies at first use:
+
+| tool | needed by | when | source |
+|---|---|---|---|
+| `gh` / `gitee-cli` | impl, improve, review, coordinate | only when the target repo has a forge | the forge's own CLI. Review degrades to a plain `git diff` without one (CONTRACT §Forge adapter); opening a PR does not — `pipeline-impl` step 4 falls back only on a missing **token**, and `pipeline-improve` step 5 has no CLI-less path |
+| `herdr` | pipeline-coordinate | only for coordinated runs (pane transport) | `https://herdr.dev` |
+| `python3` ≥3.9 | pipeline-coordinate | only for coordinated runs (`scripts/watch-pane.py`, stdlib only) | base system package on macOS/Linux |
 
 **Brand names are install examples only.** The concrete agent/runtime/skill names in this Install
 section (skill dirs, `goal-driven-*`) illustrate how to set up YOUR runtime — they are not part of the
