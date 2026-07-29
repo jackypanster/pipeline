@@ -300,21 +300,41 @@ contract. Never copy a specific tool/framework/agent/LLM name into the onboardin
 
 ## Update
 
-Refresh the installed shims to the latest `main` **without re-reading the Install steps**: run the
-`pipeline-update` command on the runtime that runs them. It is a **maintenance command, NOT one of the
-stages** — it runs no shim loop and touches no project `.pipeline/` state. It self-locates the install,
-pulls `github.com/jackypanster/pipeline` main, re-applies the `pipeline-*` shims, re-verifies the
-delegated deps below, and reports what moved. The equivalent by hand (what the command wraps):
+Refresh the installed shims to the latest `main` **without re-reading the Install steps**: run
+`pipeline-update` against the **canonical skills dir** — the one holding the real copies. It is a
+**maintenance command, NOT one of the stages** — it runs no shim loop and touches no project
+`.pipeline/` state. It self-locates from its own path, pulls `github.com/jackypanster/pipeline` main,
+re-applies the `pipeline-*` shims, re-verifies the delegated deps below, and reports what moved.
+
+**Target the canonical dir, not whichever runtime you are in.** Under the canonical layout
+(§Install → *Canonical multi-runtime layout*) exactly one dir holds real copies and every runtime
+attaches by symlink, so one run refreshes them all:
 
 ```bash
-# Mode A — skills were cp'd as copies: re-copy from a freshly reset clone into EACH physical
-# install — ONE run per PHYSICAL copy. Canonical layout = the single shared dir (runtimes
-# attached by symlink/direct-read pick the refresh up for free); any legacy standalone copy
-# (e.g. a claude-style own dir) needs its own re-copy.
-git -C ~/workspace/pipeline fetch && git -C ~/workspace/pipeline reset --hard origin/main
-cp -r ~/workspace/pipeline/skills/pipeline-* ~/.agents/skills/    # canonical shared copy
-cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/    # legacy standalone copy, if kept
-# Mode B — runtime loads skills straight from the clone (external_dirs): the reset alone suffices.
+bash <canonical-skills-dir>/pipeline-update/scripts/update.sh        # self-locates; e.g. ~/.agents/skills/…
+bash <any-pipeline-update>/scripts/update.sh <canonical-skills-dir>  # or point any copy at it
+```
+
+The script only ever touches the dir you point it at — it does not follow symlinks into other
+locations. Pointed at a symlink-attached runtime dir it skips each attached entry
+(`skipped: <name> (symlink attachment -> <target>)`) and each absent one (`… (not installed …)`); a
+mixed dir (some links, some real copies) still refreshes its own real copies. The line
+`nothing to refresh in <dir> (N skipped: attachment/absent; not verified against <sha>)` is the certain
+signal that NO entry in that dir was compared against the new `main` — it is honest (never claims
+"latest") but is not an update. When you see it, re-run with the **absolute** path of the canonical
+skills dir as `$1` (`$1` is consumed verbatim and a `readlink` target is printed raw, so a relative
+attachment is only valid from one cwd — do not derive the path from it).
+
+Legacy layout (more than one dir of real copies): **ONE run per physical copy**, each with its own
+explicit dir argument.
+
+```bash
+# Mode B — the runtime loads skills straight from a clone (external_dirs). Run the script FROM that
+# clone with NO argument: it self-locates to <clone>/skills, detects Mode 2, fetches + resets the
+# clone, then sweeps the canonical dir.
+bash <pipeline-clone>/skills/pipeline-update/scripts/update.sh
+# Mode 2 runs `git reset --hard origin/main` on that clone — never point it at a clone you develop in;
+# it will discard in-flight work.
 ```
 
 Runtime-shared skills only. A project's `.pipeline/roles.yaml` (your slot bindings) is never touched —

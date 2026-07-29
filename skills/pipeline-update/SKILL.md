@@ -61,6 +61,13 @@ table, from `roles.yaml`, and from the onboarding snippet.
    old→new shas, which `pipeline-*` moved, or "already latest"). Non-zero exit ⇒ the install is
    untouched — report the error and STOP.
 
+   **Attachment no-op.** If the output is `nothing to refresh in <dir> (N skipped: attachment/absent;
+   not verified against <sha>)`, no entry in this dir was compared against the new `main` — this dir is
+   not the canonical install and the run updated NOTHING. Do NOT derive a target from the skipped lines
+   (`readlink` targets are raw and may be relative). STOP and ask the operator for the **absolute** path
+   of the canonical skills dir, re-run the script with that dir as `$1`, and relay THAT output. Never
+   report an attachment no-op as a successful update.
+
 2. **Re-verify delegated deps.** Re-run README §"Verify + supplement dependencies": for each
    `roles.yaml` slot skill (`think`, `check`, `hunt`, `grill-me`, `grill-with-docs`, the impl slot),
    confirm it still resolves on THIS runtime. A newly-missing or newly-added slot ⇒ **report it; do
