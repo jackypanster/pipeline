@@ -357,5 +357,5 @@ git -C ~/workspace/pipeline-driver pull --ff-only
 
 ## State
 
-Contract + 7 command shims (prd/arch/task/impl/review/hunt/improve). Proven end-to-end once on a real
-project (a GET endpoint shipped via prd→arch→task→impl→review→merge). Rationale: [DESIGN.md](DESIGN.md).
+Contract + 7 command shims (prd/arch/task/impl/review/hunt/improve). Proven end-to-end on real
+multi-repo, multi-runtime projects since 2026-06. Rationale: [DESIGN.md](DESIGN.md).

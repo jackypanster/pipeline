@@ -25,7 +25,8 @@ review steps.
    steps, not the resolve-and-invoke).
 4. Create branch `improve/<slug>`. Apply the edit `think` specified to the relevant `skills/*/SKILL.md`
    or `CONTRACT.md`: **minimal, additive, preserve every existing rule.** Agent-first (dense, no filler).
-   One proposal = one focused change.
+   One proposal = one focused change. If the edit changes behavior that `README.md`/`DESIGN.md`
+   describe, sync them in the SAME PR — doc-code drift is review-rejectable.
 5. Commit + push the branch. Open a PR to the pipeline repo's `main` via the forge adapter. **If the
    edit trips the size-budget axis** (a `skills/*/SKILL.md` whose net growth > 0 AND post-merge length
    > 120 lines), **lead the PR description with the size-budget justification** — why not net-neutral,

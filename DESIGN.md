@@ -28,6 +28,7 @@ write your stage's write-set + append handoff to journal.md → commit (one) →
 | pipeline-impl | the bound `<autonomous-coding-skill>` (think → design tests → code → check loop; white-box tests in `impl-paths:`) | shim freezes `spec-paths:`; opens PR/branch; status → review |
 | pipeline-review | `check` (semantic review of the diff/PR) | shim adds the `spec-paths` freeze gate + drives merge after human confirm |
 | pipeline-hunt | `hunt` (root-cause) | **entry for `blocked` cards** — root-cause before re-queue, never blind retry |
+| pipeline-improve | `think` (validate + draft the minimal edit) | branch + PR against THIS repo; meta-PR review gates; never merges its own proposal |
 
 ```yaml
 # .pipeline/roles.yaml  (one per target repo; any line independently swappable to a best-of-breed skill)
@@ -37,6 +38,7 @@ task:   think
 impl:   <autonomous-coding-skill>   # autonomous think→design-tests→code→check loop; set to your runtime's real installed skill name
 review: check
 hunt:   hunt
+improve: think              # meta: draft a reviewed skill-improvement PR against the pipeline repo (never self-edit, never auto-merge)
 ```
 
 `roles.yaml` names the skill only; which agent/bot you paste into selects the runtime. On init, each
