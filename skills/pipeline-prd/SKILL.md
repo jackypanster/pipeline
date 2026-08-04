@@ -50,6 +50,18 @@ files; YOU write the PRD.
    provenance tag (step 5) instead of interrupting. A MATERIAL unknown that fails Grounded or
    Answerable is NOT defaulted and NOT dropped — gather evidence / reframe it through the gate, or
    hold it unresolved at the HITL wait.
+
+   **Subtraction pass — run once the requirement settles, BEFORE step 4.** Scope is the primary
+   review-cost lever (recorded runs: review non-convergence = scope wrong, not "revise once more");
+   cut to the minimal freezable core and let every cut land on paper:
+   - A **load-bearing `⚠️ assumed` decision** does not stay in scope: the scope slice resting on it
+     moves to `## Deferred (future PRDs)` (step 5), unless a human answer or code evidence settles
+     it first. (LOW-RISK assumed defaults stay — this targets scope that RESTS on an unconfirmed bet.)
+   - **Freeze-coverage preflight** (pipeline-task's CONTRACT §Freeze coverage check, pulled to the
+     cheapest stage): every required behaviour kept in scope must have a PLAUSIBLE hermetic test seam
+     (PTY harness / temp dir + injected failure / symlinked destination / stubbed executables). No
+     plausible seam ⇒ Deferred, or hold it at the HITL wait as a design question — never hand an
+     un-freezable required behaviour to arch/task, where it fails closed late or burns review rounds.
 4. **Recommend a drive mode (the operator DECIDES).** The requirement is now settled — consult
    README §Operating modes → "Choosing the mode" decision table. Show the current machine bindings
    first: if a reachable `coordinate.sh status` run actually EMITS a machine-bindings block (newer
@@ -62,7 +74,9 @@ files; YOU write the PRD.
    human-relay ⇒ nothing). An operator reply choosing coordinated mode IS the explicit in-session
    request the control.json hard rule demands — silence or ambiguity is NOT (fail closed to
    human-relay).
-5. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, the
+5. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, a
+   **`## Deferred (future PRDs)` section** (everything the step-3 subtraction pass cut, each with a
+   one-line reason; write `none` only when nothing was cut), the
    resolved decisions — **each decision tagged with its provenance**: `✅ human-confirmed` (the human
    answered or approved it) / `📖 code-verified` (settled by reading the repo — name the file) /
    `⚠️ assumed` (neither — an unconfirmed default you chose). The tag is what lets the COLD arch node
@@ -85,6 +99,8 @@ files; YOU write the PRD.
 - You may ask the human questions (this is the HITL stage). Wait for answers; do not guess.
 - Tag every resolved decision with its provenance (step 5); never present an `⚠️ assumed` default as settled.
 - Only a LOW-RISK gate-failing question (step 3) becomes an `⚠️ assumed` default (step 5); a MATERIAL one is researched / reframed through the gate or held unresolved — never defaulted.
+- The subtraction pass is not optional: load-bearing `⚠️ assumed` scope and required behaviours with
+  no plausible test seam go to `## Deferred (future PRDs)`, never into scope (step 3).
 - One feature at a time. Write only `PRD.md` (+ `current.json` metadata, + `control.json` on explicit
   coordinated-mode opt-in only). No code, no architecture yet.
 - `control.json` exists ONLY on an explicit operator request made in this session — never as a default,
