@@ -129,7 +129,7 @@ repo references are intentional so it works from any project):
 > + the merge confirm stay gated). Its GATE 1 binds the run to a read of the frozen red test (echoing
 > its `spec-rev`); **who performs that read is the operator's risk-tier call** — default a human,
 > delegable to the coordinating agent only when the operator explicitly chose the drive mode for a
-> low-risk feature (see §Operating modes above). It is the write-side twin of the dashboard, scoped to
+> low-risk feature (see §Operating modes in the [`jackypanster/pipeline`](https://github.com/jackypanster/pipeline) README). It is the write-side twin of the dashboard, scoped to
 > `impl` ONLY. Every other stage stays human-relayed by default — **do not build any other
 > scheduler**; the pipeline deliberately has none (see `DESIGN.md`). The single sanctioned exception
 > is the opt-in **coordinated mode** (CONTRACT §Coordinated mode): a feature whose
