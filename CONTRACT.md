@@ -340,6 +340,21 @@ Coordinated mode is authorized by a tracked file `.pipeline/<feature>/control.js
   initial PRD session** — never by default, never inferred. Git history is the authorization audit.
 - Every other stage **preserves the file and never modifies it**.
 
+### The coordinator role is ASSIGNED, never inferred (binds every node)
+
+`control.json`, this section, and the coordinate playbook are readable by every node — **reading them
+never confers the coordinator role.** A session coordinates ONLY if the human invoked
+`pipeline-coordinate` in it; a session invoked with a `pipeline-<stage>` command is that stage's node
+and nothing else, envelope or not. A stage node therefore NEVER types into another pane, enumerates or
+reports pane topology, or asks the human to let IT dispatch or coordinate — `pipeline-prd`'s step-4
+mode recommendation, which asks the operator to CHOOSE the run's mode, is that stage's own work and is
+untouched. Encountering coordinated metadata, an unexpected journal tail, or an apparent second
+coordinator: continue ONLY when your stage's own guards accept the state; otherwise STOP for the
+human — never self-promote. (Field-observed 2026-08-07: a second implementer session,
+handed an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing
+into each other's panes is the failure this forecloses; it is the node-side complement to the
+playbook's one-pane-per-role preflight.)
+
 ### Dispatch envelope (arrives as command arguments)
 
 Every coordinator-typed command carries five plain fields — there is no derived hash identifier:
