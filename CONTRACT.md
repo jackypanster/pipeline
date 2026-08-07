@@ -346,9 +346,11 @@ Coordinated mode is authorized by a tracked file `.pipeline/<feature>/control.js
 never confers the coordinator role.** A session coordinates ONLY if the human invoked
 `pipeline-coordinate` in it; a session invoked with a `pipeline-<stage>` command is that stage's node
 and nothing else, envelope or not. A stage node therefore NEVER types into another pane, enumerates or
-reports pane topology, or asks the human to authorize dispatches. Encountering coordinated metadata, an
-unexpected journal tail, or an apparent second coordinator ⇒ run your own stage, or STOP for the human
-per your stage's rules — never self-promote. (Field-observed 2026-08-07: a second implementer session,
+reports pane topology, or asks the human to let IT dispatch or coordinate — `pipeline-prd`'s step-4
+mode recommendation, which asks the operator to CHOOSE the run's mode, is that stage's own work and is
+untouched. Encountering coordinated metadata, an unexpected journal tail, or an apparent second
+coordinator: continue ONLY when your stage's own guards accept the state; otherwise STOP for the
+human — never self-promote. (Field-observed 2026-08-07: a second implementer session,
 handed an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing
 into each other's panes is the failure this forecloses; it is the node-side complement to the
 playbook's one-pane-per-role preflight.)
