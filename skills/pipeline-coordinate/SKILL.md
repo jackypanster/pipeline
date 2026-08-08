@@ -63,32 +63,6 @@ The human is the fourth, final gate.
    `PANE_NOT_FOUND` by design. Any MISS blocks the run; `coordinate.sh status --config …` shows the
    machine bindings and the active feature at any time.
 
-   **Shared-clone waiver (operator-gated, clone-INDEPENDENCE findings ONLY).** On a machine where
-   the roles deliberately share ONE clone, doctor's pairwise clone-independence checks — the
-   same-realpath / shared-git-common-dir findings between role workdirs — can never pass. The
-   operator MAY waive exactly those pairwise findings, explicitly and in-session (silence is not a
-   waiver). Every other `WORKDIR_INVALID` cause (nonexistent/relative path, non-Git dir,
-   non-top-level subdir, missing `remote.origin.url`) and every other MISS still blocks — the
-   compensation below cannot repair those. The waiver binds the coordinator to this protocol
-   (field-derived 2026-08-08, hardened in review): (i) dispatch strictly sequentially — one role
-   active at a time, ever; (ii) the coordinator performs NO git operation of ANY kind in the shared
-   clone — observation runs against the remote (`git ls-remote`, forge API) and verification runs
-   in a separate observer clone or a temporary worktree of it (the `OBSERVER_WORKDIR` independence
-   rule already mandates that clone); (iii) under the waiver, every `git pull` this playbook's
-   routing prescribes is performed as fetch+read in the observer clone — NEVER the shared clone —
-   and pane idle only triggers a REMOTE check (it can false-transition; it is a wake-up hint, not
-   a mutual-exclusion boundary); (iv) the NEXT dispatch requires the quiescence fence, whose proof
-   legs are independent of any pane sample: (a) the prior stage's journal entry at the expected
-   seq observed on REMOTE trunk (durable-output proof — and by CONTRACT the push is a stage's
-   FINAL git operation; after it the shim only prints), AND (b) a read-only filesystem probe of
-   the shared clone's `.git` finding no live lock file (`index.lock`, `HEAD.lock`,
-   `packed-refs.lock`, `refs/**/*.lock` — catches the push process's local teardown, e.g. the
-   remote-tracking-ref update that can outlive remote visibility), re-probed until clear, plus a
-   ≥30s debounce after (a). A fresh authoritative-idle sample may ADD delay on top, never
-   substitute for (a)+(b). Any leg unevaluable ⇒ the fence fails closed: no dispatch, stop for
-   the human. Idle with NO remote advancement is re-checked on a bounded window before it may
-   count as a broken promise.
-
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
 - **send** — `herdr pane run <pane> '<single line>'` (atomic text+Enter); never into your own pane.
@@ -243,20 +217,15 @@ CONTRACT.md binds; this profile only adds who types what.
   expected_commit=`) built from ONE fresh journal observation, so the stage's mandatory pre-write
   stale-dispatch guard and control-tuple check run rather than the human-relay path. Cannot
   construct the tuple (unreadable tail, missing control) → stop; never invoke bare.
-- **Routing.** After every stage: `git pull --rebase` (under an active shared-clone waiver:
-  fetch+read in the OBSERVER clone — the preflight waiver protocol overrides every shared-clone
-  pull in this profile), read the journal tail's header and its
+- **Routing.** After every stage: `git pull --rebase`, read the journal tail's header and its
   `>>> NEXT` line, and follow CONTRACT §Coordinated mode's transition forms. The tail is the ONLY
   authority. A tail that matches no known form → stop and show the human (never force a route).
 - **Dispatching a stage to a pane.** Compose the stage command + the envelope, e.g. send Pi:
   `<PI_IMPL_CMD> repo=<pi-clone> branch=<b> feature=<f> expected_seq=<N> expected_commit=<full sha>`
   — the stage's pre-write stale guard (CONTRACT §Coordinated mode) verifies it; the guard refuses
   CONSUMED seqs, which protects observed-complete dispatches — it does NOT make blind redelivery
-  safe (see the redelivery rule above). Watch the pane; when it idles, pull and read the tail
-  (waived shared-clone runs: observer-clone fetch, then the waiver's quiescence fence before any
-  next dispatch). An idle pane with NO new journal entry = the stage broke its promise → stop,
-  surface it (hard rule 4) — under a waiver, only after the bounded remote re-check window
-  confirms no advancement (a false idle must not read as a broken promise).
+  safe (see the redelivery rule above). Watch the pane; when it idles, pull and read the tail. An
+  idle pane with NO new journal entry = the stage broke its promise → stop, surface it (hard rule 4).
 - **Retries and hunt** follow the CONTRACT state machine as written (attempts, `>=3 ⇒ blocked ⇒
   hunt`); you validate the card evidence by READING it, and stop on any disagreement between journal
   and cards.
