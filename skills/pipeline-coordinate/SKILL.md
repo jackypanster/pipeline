@@ -63,6 +63,17 @@ The human is the fourth, final gate.
    `PANE_NOT_FOUND` by design. Any MISS blocks the run; `coordinate.sh status --config …` shows the
    machine bindings and the active feature at any time.
 
+   **Shared-clone waiver (operator-gated, `WORKDIR_INVALID` family ONLY).** On a machine where the
+   roles deliberately share ONE clone, doctor's clone-independence checks can never pass. The
+   operator MAY waive that MISS family — explicitly, in-session; silence is not a waiver — and the
+   waiver binds the coordinator to this compensation protocol (field-validated 2026-08-08, 4-model
+   shared-clone feature run, merged): dispatch strictly sequentially (one role active at a time,
+   ever); verify each stage's output in an ISOLATED `git worktree`, never a checkout dance inside
+   the shared clone; and while ANY role pane is non-idle, run NO local git write operation in the
+   shared clone — observe via `git ls-remote` / the forge API only, and pull only after the role
+   idles AND its push is observed remotely (a coordinator pull during a role's push window is a
+   real race, observed in that run). Every other MISS still blocks.
+
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
 - **send** — `herdr pane run <pane> '<single line>'` (atomic text+Enter); never into your own pane.
@@ -177,7 +188,11 @@ repo outside the set, or no forge ⇒ STOP for the human and fall back to plain-
    status ping, nothing: while the gate is armed, every keystroke into that pane is
    indistinguishable from the human token, so the only safe coordinator behavior is silence toward
    that pane (dispatching a NEW review round after a changes-requested verdict is fine — the gate is
-   not armed then). Watch the PR state via the forge; on merge, clean up the worktree and report.
+   not armed then). While the gate is armed, do not arm a pane watcher on the reviewer pane either:
+   pane-state detection can flap (false working→idle wakes, observed in the field), the wait is
+   human-paced and unbounded, and every false wake invites acting on pane noise — the forge's PR
+   state is the ONLY wait instrument at an armed gate. Watch the PR state via the forge; on merge,
+   clean up the worktree and report.
 
    *Accepted limitation (known, deliberate):* transport-level enforcement of human-only token
    provenance does not exist in the current Herdr — a malicious coordinator could type the token.
@@ -199,6 +214,12 @@ CONTRACT.md binds; this profile only adds who types what.
   obeying each stage's write-set. Implementation is dispatched to the Pi pane; review to the Codex
   pane. Coordinating and executing the CC-role stages in one session is the sanctioned
   simplification of the old design's separate CC pane — the model separation is what matters.
+  The operator MAY instead assign a reasoning stage to an ADDITIONAL distinct-model frontier pane
+  (a 4th model strengthens, never weakens, the separation invariant); the coordinator then
+  dispatches that stage exactly like impl/review — five-field envelope, per-send readiness, watch,
+  Git-evidence verification (field-validated: `task` on a 4th-model pane, 2026-08-08). For a
+  non-Claude TUI a slashless plain-text line (`Run pipeline-task repo=… …`) is the safe delivery
+  form — zero slash-popup risk.
   **In-session stages carry the envelope too:** invoke every coordinated stage — including your own
   `arch`/`task`/`hunt` — with all five fields (`repo= branch= feature= expected_seq=
   expected_commit=`) built from ONE fresh journal observation, so the stage's mandatory pre-write
