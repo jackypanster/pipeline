@@ -63,16 +63,21 @@ The human is the fourth, final gate.
    `PANE_NOT_FOUND` by design. Any MISS blocks the run; `coordinate.sh status --config …` shows the
    machine bindings and the active feature at any time.
 
-   **Shared-clone waiver (operator-gated, `WORKDIR_INVALID` family ONLY).** On a machine where the
-   roles deliberately share ONE clone, doctor's clone-independence checks can never pass. The
-   operator MAY waive that MISS family — explicitly, in-session; silence is not a waiver — and the
-   waiver binds the coordinator to this compensation protocol (field-validated 2026-08-08, 4-model
-   shared-clone feature run, merged): dispatch strictly sequentially (one role active at a time,
-   ever); verify each stage's output in an ISOLATED `git worktree`, never a checkout dance inside
-   the shared clone; and while ANY role pane is non-idle, run NO local git write operation in the
-   shared clone — observe via `git ls-remote` / the forge API only, and pull only after the role
-   idles AND its push is observed remotely (a coordinator pull during a role's push window is a
-   real race, observed in that run). Every other MISS still blocks.
+   **Shared-clone waiver (operator-gated, clone-INDEPENDENCE findings ONLY).** On a machine where
+   the roles deliberately share ONE clone, doctor's pairwise clone-independence checks — the
+   same-realpath / shared-git-common-dir findings between role workdirs — can never pass. The
+   operator MAY waive exactly those pairwise findings, explicitly and in-session (silence is not a
+   waiver). Every other `WORKDIR_INVALID` cause (nonexistent/relative path, non-Git dir,
+   non-top-level subdir, missing `remote.origin.url`) and every other MISS still blocks — the
+   compensation below cannot repair those. The waiver binds the coordinator to this protocol
+   (field-derived 2026-08-08, hardened in review): (i) dispatch strictly sequentially — one role
+   active at a time, ever; (ii) the coordinator performs NO git operation of ANY kind in the shared
+   clone — observation runs against the remote (`git ls-remote`, forge API) and verification runs
+   in a separate observer clone or a temporary worktree of it (the `OBSERVER_WORKDIR` independence
+   rule already mandates that clone); (iii) the NEXT dispatch is gated on stable terminal
+   evidence — the prior stage's journal entry at the expected seq observed on REMOTE trunk
+   (pushed-trunk authority) — never on pane idle, which can false-transition and is a wake-up hint
+   only, not a mutual-exclusion boundary.
 
 ## Transport verbs (Herdr today; the two verbs are the swappable seam)
 
@@ -217,9 +222,12 @@ CONTRACT.md binds; this profile only adds who types what.
   The operator MAY instead assign a reasoning stage to an ADDITIONAL distinct-model frontier pane
   (a 4th model strengthens, never weakens, the separation invariant); the coordinator then
   dispatches that stage exactly like impl/review — five-field envelope, per-send readiness, watch,
-  Git-evidence verification (field-validated: `task` on a 4th-model pane, 2026-08-08). For a
-  non-Claude TUI a slashless plain-text line (`Run pipeline-task repo=… …`) is the safe delivery
-  form — zero slash-popup risk.
+  Git-evidence verification (field-validated: `task` on a 4th-model pane, 2026-08-08). Before the
+  FIRST dispatch to such a pane, extend preflight step 3 to it: read its visible footer/title and
+  require its underlying model DISTINCT from all three role models — unknown or duplicate ⇒ stop
+  and ask the human to attest; per-send readiness proves authority and idle, never model identity.
+  For a non-Claude TUI a slashless plain-text line (`Run pipeline-task repo=… …`) is the safe
+  delivery form — zero slash-popup risk.
   **In-session stages carry the envelope too:** invoke every coordinated stage — including your own
   `arch`/`task`/`hunt` — with all five fields (`repo= branch= feature= expected_seq=
   expected_commit=`) built from ONE fresh journal observation, so the stage's mandatory pre-write

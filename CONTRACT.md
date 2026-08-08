@@ -335,14 +335,9 @@ Coordinated mode is authorized by a tracked file `.pipeline/<feature>/control.js
 - `schema_version` MUST be `1`; `mode` MUST be `human` or `coordinated`; `merge_gate` MUST be
   `human-direct` — no other merge policy exists.
 - **Absence = human mode** (the coordinator observes but never dispatches). No migration ever adds
-  this file to an existing feature — "migration" means any addition from OUTSIDE the initial PRD
-  session (a later session, another run); it does not forbid the same-session follow-up below.
+  this file to an existing feature.
 - **`pipeline-prd` creates it, ONLY when the operator explicitly requested coordinated mode in the
   initial PRD session** — never by default, never inferred. Git history is the authorization audit.
-  The authorization window is the initial PRD **session**, not the prd commit itself: an explicit
-  request arriving in that session after the prd commit is honored by a follow-up commit whose
-  message quotes the operator's request verbatim — that commit is the audit (field-validated
-  2026-08-08).
 - Every other stage **preserves the file and never modifies it**.
 
 ### The coordinator role is ASSIGNED, never inferred (binds every node)
