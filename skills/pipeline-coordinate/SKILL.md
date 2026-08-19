@@ -250,7 +250,9 @@ CONTRACT.md binds; this profile only adds who types what.
 No daemon, no ledger, no state files beyond disposable handoffs, no unattended operation (sole
 exception: duty mode — README §Operating modes, fourth track — where the operator's standing
 `/loop … /pipeline-coordinate … duty tick` invocation re-enters the post-freeze half of Profile B
-over the target repo's `.pipeline/queue.md`, human-bracketed per feature), no
+over the target repo's `.pipeline/queue.md`, human-bracketed per feature; `queue.md` is target-repo
+`.pipeline/` state on the journal bus, like `journal.md` itself — not coordinator-side state, so the
+no-ledger/no-state-files clauses are untouched), no
 parallel features, no merges by anyone but Codex-with-a-human-token. If the loop needs something
 this file does not describe, that is a signal to stop and talk to the human — or to propose a
 change to THIS file via the normal meta-PR lane (never edit the installed copy mid-run).

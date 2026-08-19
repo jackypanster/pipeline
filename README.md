@@ -29,7 +29,7 @@ behind each command is a swappable `roles.yaml` slot.
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
 | pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR — see §Operating modes |
 
-## Operating modes — the two-track SOP (operator decision, 2026-07-08)
+## Operating modes — the four-track SOP (base decision 2026-07-08; duty track added 2026-08-19)
 
 **Default = the normal human-relayed mode** for every feature: the human reads each handoff
 and relays each stage; use it for anything important or write-path (e.g. trading behavior).
@@ -67,7 +67,9 @@ dispatch half was evaluated and rejected — driver PR #14 closed, design v1.3 �
 
 **Fourth track — duty mode (值守: queued timed re-entry of coordinated mode; pilot 2026-08-19,
 target repo `oh-my-wiki`).** Coordinated mode with the operator AWAY: the operator opens a dedicated
-CC session and types one standing invocation — `/loop 1h /pipeline-coordinate <repo> duty tick` —
+CC session **in its own duty/observer clone — never a role pane's checkout** (the playbook's
+per-role-clone discipline; the duty tick's `git switch`/`pull` must not move HEAD under an in-flight
+impl) and types one standing invocation — `/loop 1h /pipeline-coordinate <repo> duty tick` —
 whose every timed re-entry re-presents that invocation, keeping the coordinator role ASSIGNED, never
 inferred. Each tick executes the target repo's `.pipeline/duty-tick.md`: `git pull --ff-only` → read
 the human-ordered `.pipeline/queue.md` → advance AT MOST the queue head, and ONLY through the
@@ -93,7 +95,7 @@ nothing — a recommendation never becomes an authorization by itself.
 
 | situation | recommend |
 |---|---|
-| dangerous surface — write-path / trading / external side effects | human-relay (mandatory; drive and coordinated are forbidden here) |
+| dangerous surface — write-path / trading / external side effects | human-relay (mandatory; drive, coordinated, and duty are forbidden here) |
 | new feature, unit-testable spec, multi-card impl | human-relayed pipeline; add `drive.sh` for the impl stretch when low-risk |
 | small feature / bugfix on an existing project, low-risk | drive mode (the driver runs the impl loop) |
 | operator present but wants zero relay typing | coordinated mode (`control.json`; visible panes; merge token still human-direct) |
