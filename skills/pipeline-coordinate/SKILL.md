@@ -248,6 +248,11 @@ CONTRACT.md binds; this profile only adds who types what.
 ## What this playbook is not
 
 No daemon, no ledger, no state files beyond disposable handoffs, no unattended operation, no
-parallel features, no merges by anyone but Codex-with-a-human-token. If the loop needs something
+parallel features, no merges by anyone but Codex-with-a-human-token. Sole carve-out: duty mode
+(README §Operating modes, fourth track) — normative bounds live in the target repo's
+`.pipeline/duty-tick.md`, which a duty session MUST read IN FULL before acting. It excepts exactly
+two clauses: unattended re-entry between the per-feature human brackets, and one local, disposable
+notification ledger (loss at worst repeats a notification); toward the target repo a duty session
+stays READ-ONLY, so nothing else above moves. If the loop needs something
 this file does not describe, that is a signal to stop and talk to the human — or to propose a
 change to THIS file via the normal meta-PR lane (never edit the installed copy mid-run).
