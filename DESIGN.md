@@ -169,9 +169,14 @@ stays assigned, never inferred), and each tick advances at most the head of a hu
 verdict). The per-feature human bracket is unchanged: GATE 1 spec-rev read at enqueue before,
 human-direct merge token in the reviewer pane after (armed gate: forge state is the only wait
 instrument). Gates notify out-of-band (Telegram) with a guaranteed daily dead-man digest, and a
-blocked/held item halts the whole queue. This IS unattended operation past the freeze gate — Open
-item 3's trigger condition — so the pilot carries an interim coarse bound (`max-features-per-day` in
-`queue.md`) pending the specified impl-budget clause. The
+blocked, spec-drift, or over-budget head halts the whole queue. The duty coordinator stays
+READ-ONLY toward the target repo (the §Coordinated-mode write ban holds: `queue.md` is human-owned,
+run state is derived per tick from journal + cards + forge; its only session-side state is a local,
+disposable notification ledger). This IS unattended operation past the freeze gate — Open item 3's
+trigger condition — so duty carries the specified halt clause NOW: cumulative impl `attempts`
+(journal/card evidence, never estimate) crossing `impl-budget-per-feature` in the target repo's
+`queue.md` Config halts to human (route=human, not hunt), alongside the coarser
+`max-features-per-day`. The
 contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
 any machine · LLM-agnostic (reasoning commands want a
 frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new
@@ -199,6 +204,9 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
    *(Data point 2026-07-08: the driver's first real run crossed 2 cards past one freeze gate with
    no per-card checkpoint — bounded fine by `CARD_TIMEOUT` + the consecutive-failure breaker + the
    impl model's own quota ceiling; no overrun, so still deferred pending a real cost signal.)*
+   *(2026-08-19: duty mode crossed the trigger — Constraint (4) now carries the halt clause for
+   duty runs, reading `impl-budget-per-feature` from the target repo's `queue.md` Config; the
+   driver-side `current.json.impl-budget` variant stays deferred pending a driver signal.)*
 
 ## Rejected
 

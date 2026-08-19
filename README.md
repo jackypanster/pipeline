@@ -76,12 +76,17 @@ the human-ordered `.pipeline/queue.md` → advance AT MOST the queue head, and O
 post-freeze half of Profile B (impl multi-card loop → review dispatch → verdict). Everything upstream
 of the freeze — prd/arch/task, the GATE 1 spec-rev read, queue order — stays in attended day
 sessions, so every feature remains human-bracketed: frozen and read BEFORE it may start; ended by the
-human-direct merge token in the reviewer pane (armed-gate rules unchanged — the forge PR state is the
-only wait instrument, so the duty session needs no reviewer-pane contact at all). Gates notify the
+human-direct merge token in the reviewer pane (armed-gate rules unchanged — once the GO-gate is
+armed the duty session sends NOTHING to the reviewer pane and the forge PR state is the only wait
+instrument). Gates notify the
 operator out-of-band (`hermes send` → Telegram), once per condition, plus ONE guaranteed daily digest
 as a dead-man switch: a silent day means the duty session is down, never that nothing happened. A
-`blocked`/`held` item halts the WHOLE queue (linear by design); `max-features-per-day` in `queue.md`
-caps spend.
+blocked, spec-drift, or over-budget head halts the WHOLE queue (linear by design);
+`max-features-per-day` plus a per-feature `impl-budget` (cumulative-attempts halt, DESIGN
+Constraint (4)) cap spend. The duty session stays READ-ONLY toward the target repo — CONTRACT's
+coordinator write ban holds: `queue.md` is human-owned, run state is derived each tick from
+journal + cards + forge, and the session's only private state is a local, disposable notification
+ledger whose loss at worst repeats a notification.
 
 ### Choosing the mode — the agent recommends, the operator decides
 
