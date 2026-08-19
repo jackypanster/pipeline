@@ -65,6 +65,22 @@ direct operator token in the same reviewer session** — the coordinator has no 
 GO-gate rejects relayed tokens. (`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; its
 dispatch half was evaluated and rejected — driver PR #14 closed, design v1.3 §25.)
 
+**Fourth track — duty mode (值守: queued timed re-entry of coordinated mode; pilot 2026-08-19,
+target repo `oh-my-wiki`).** Coordinated mode with the operator AWAY: the operator opens a dedicated
+CC session and types one standing invocation — `/loop 1h /pipeline-coordinate <repo> duty tick` —
+whose every timed re-entry re-presents that invocation, keeping the coordinator role ASSIGNED, never
+inferred. Each tick executes the target repo's `.pipeline/duty-tick.md`: `git pull --ff-only` → read
+the human-ordered `.pipeline/queue.md` → advance AT MOST the queue head, and ONLY through the
+post-freeze half of Profile B (impl multi-card loop → review dispatch → verdict). Everything upstream
+of the freeze — prd/arch/task, the GATE 1 spec-rev read, queue order — stays in attended day
+sessions, so every feature remains human-bracketed: frozen and read BEFORE it may start; ended by the
+human-direct merge token in the reviewer pane (armed-gate rules unchanged — the forge PR state is the
+only wait instrument, so the duty session needs no reviewer-pane contact at all). Gates notify the
+operator out-of-band (`hermes send` → Telegram), once per condition, plus ONE guaranteed daily digest
+as a dead-man switch: a silent day means the duty session is down, never that nothing happened. A
+`blocked`/`held` item halts the WHOLE queue (linear by design); `max-features-per-day` in `queue.md`
+caps spend.
+
 ### Choosing the mode — the agent recommends, the operator decides
 
 When a requirement settles (end of `pipeline-prd`; same table for a bugfix flow that skips prd), the
@@ -81,6 +97,7 @@ nothing — a recommendation never becomes an authorization by itself.
 | new feature, unit-testable spec, multi-card impl | human-relayed pipeline; add `drive.sh` for the impl stretch when low-risk |
 | small feature / bugfix on an existing project, low-risk | drive mode (the driver runs the impl loop) |
 | operator present but wants zero relay typing | coordinated mode (`control.json`; visible panes; merge token still human-direct) |
+| operator away for hours; frozen, low-risk features queued up | duty mode (`/loop` + `queue.md` + `duty-tick.md`; day sessions freeze, read GATE 1, and enqueue) |
 
 ## Onboard a target project (paste into its `AGENTS.md` / `CLAUDE.md`)
 

@@ -247,7 +247,10 @@ CONTRACT.md binds; this profile only adds who types what.
 
 ## What this playbook is not
 
-No daemon, no ledger, no state files beyond disposable handoffs, no unattended operation, no
+No daemon, no ledger, no state files beyond disposable handoffs, no unattended operation (sole
+exception: duty mode — README §Operating modes, fourth track — where the operator's standing
+`/loop … /pipeline-coordinate … duty tick` invocation re-enters the post-freeze half of Profile B
+over the target repo's `.pipeline/queue.md`, human-bracketed per feature), no
 parallel features, no merges by anyone but Codex-with-a-human-token. If the loop needs something
 this file does not describe, that is a signal to stop and talk to the human — or to propose a
 change to THIS file via the normal meta-PR lane (never edit the installed copy mid-run).

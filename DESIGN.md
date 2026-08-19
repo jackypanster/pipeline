@@ -137,7 +137,8 @@ not a built-in mechanism).
 ## Constraints
 
 No cron, no scheduler in the contract (human relays) — TWO bounded, human-bracketed spans MAY be
-auto-advanced, plus ONE feature-authorized coordinated mode, and nothing else: (1) the `impl`
+auto-advanced, plus ONE feature-authorized coordinated mode and its queued duty re-entry (4), and
+nothing else: (1) the `impl`
 multi-card loop on a cheap model, driven by the OPTIONAL external `pipeline-driver` (the write-side
 twin of the read-only `pipeline-dashboard`), STOPPING
 before the review/merge gate, which stays human-run (the merge itself is a human step; trunk may
@@ -160,7 +161,17 @@ on the journal tail's transition forms, performs no stage work belonging to anot
 fail-closed on anything outside the known forms, and can neither merge nor confirm a merge (the review
 GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
 prohibition stays the DEFAULT — coordinated mode is its one explicit, opt-in, journal-audited
-exception. The
+exception. (4) **Duty mode** (pilot 2026-08-19, one target repo — README §Operating modes, fourth
+track): coordinated mode re-entered on a timer while the operator is away. The operator's standing
+`/loop 1h /pipeline-coordinate … duty tick` line re-presents the invocation at each re-entry (role
+stays assigned, never inferred), and each tick advances at most the head of a human-ordered
+`.pipeline/queue.md`, only through the post-freeze half of Profile B (impl loop → review dispatch →
+verdict). The per-feature human bracket is unchanged: GATE 1 spec-rev read at enqueue before,
+human-direct merge token in the reviewer pane after (armed gate: forge state is the only wait
+instrument). Gates notify out-of-band (Telegram) with a guaranteed daily dead-man digest, and a
+blocked/held item halts the whole queue. This IS unattended operation past the freeze gate — Open
+item 3's trigger condition — so the pilot carries an interim coarse bound (`max-features-per-day` in
+`queue.md`) pending the specified impl-budget clause. The
 contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
 any machine · LLM-agnostic (reasoning commands want a
 frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new
