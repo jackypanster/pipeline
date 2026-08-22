@@ -252,7 +252,7 @@ mandatory, so a missing section is distinguishable from an honest empty. It is w
 delivered implementation to interpret. The card is the authoritative home: when a forge PR exists,
 impl MAY mirror the list into the PR body, but review reads the card copy (the no-forge path loses
 nothing). This is a deliberate, narrowly-scoped extension of impl's card write-set (§State authority
-table); the `## Assumptions` section is the ONLY card-body content impl may author.
+table); this grant covers exactly the `## Assumptions` section and nothing more.
 
 **`pipeline-review` reads it.** A card in `status: review` whose `## Assumptions` section is missing
 ⇒ changes requested (mechanical check). An assumption that CONTRADICTS the card/spec/PRD ⇒ reject —
