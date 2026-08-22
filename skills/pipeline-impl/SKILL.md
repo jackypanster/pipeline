@@ -116,8 +116,7 @@ rewrite or amend — CONTRACT append-only), then re-verify.
 ## Hard rules
 
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
-- Record impl assumptions in the card's `## Assumptions` section per CONTRACT §Impl assumptions —
-  never in `arch.md`/ADRs; `none` is mandatory when empty.
+- Write the card's `## Assumptions` section per CONTRACT §Impl assumptions.
 - Journal entries go at the file END and are self-verified as the new tail (§Journal discipline) —
   a misplaced or malformed entry means the run does not count as completed.
 - Code (`impl-paths`/`src`) lives on `feat/<feature>`; card `status` flips commit to `main` (trunk

@@ -142,7 +142,7 @@ write-sets are:
 | prd | `PRD.md` | src, tests |
 | arch | `arch.md`, `CONTEXT.md`, `docs/adr/*` | src, tests |
 | task | spec-paths (the red test), `tasks/*` | src implementation |
-| impl | impl-paths, `src/**`, the card's `status` field | **spec-paths** (the freeze gate) |
+| impl | impl-paths, `src/**`, the card's `status` field, its `## Assumptions` section (§Impl assumptions) | **spec-paths** (the freeze gate) |
 | review | `reviews/*`, card `status`→done | any product code (it merges, never authors) |
 | hunt | the routed **target** only — the blocked card (its body / `status` / `attempts`) OR the `reviews/integration-NN.md` report (append findings) | product code, unrelated cards, unrelated reviews |
 
@@ -251,14 +251,13 @@ mandatory, so a missing section is distinguishable from an honest empty. It is w
 `status: review` (impl step 4); the failed/blocked dispositions do NOT write it — there is no
 delivered implementation to interpret. The card is the authoritative home: when a forge PR exists,
 impl MAY mirror the list into the PR body, but review reads the card copy (the no-forge path loses
-nothing).
+nothing). This is a deliberate, narrowly-scoped extension of impl's card write-set (§State authority
+table); the `## Assumptions` section is the ONLY card-body content impl may author.
 
 **`pipeline-review` reads it.** A card in `status: review` whose `## Assumptions` section is missing
 ⇒ changes requested (mechanical check). An assumption that CONTRADICTS the card/spec/PRD ⇒ reject —
 that is the agent authoring product intent, the exact failure this slot exists to expose. A `none`
 while the diff visibly contains un-pinned decisions ⇒ a review finding (semantic judgment).
-One-time migration allowance: cards already at `status: review` before this section landed in the
-target repo's toolchain read as `none` plus a review note, never rejected for the missing section.
 
 ## Handoff block — a self-contained briefing for a COLD next node
 

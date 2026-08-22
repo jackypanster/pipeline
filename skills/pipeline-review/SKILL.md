@@ -58,9 +58,8 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    card/journal commit without its review artifact.
 4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
    `git diff base..branch`). Run **check** for correctness/design issues CI can't see. Read each
-   card's `## Assumptions` section (CONTRACT §Impl assumptions — the card copy, never a PR-body
-   mirror): missing ⇒ changes requested; contradicts the card/spec/PRD ⇒ reject; a vacuous `none`
-   against a diff with visible un-pinned decisions ⇒ finding (the migration allowance is CONTRACT's).
+   card's `## Assumptions` section (the card copy, never a PR-body mirror) and enforce CONTRACT
+   §Impl assumptions.
 5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings) **and append a `journal.md`
    entry** (CONTRACT §Run journal — transition `…→review`, status **`completed`** [the run-status enum
    `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
