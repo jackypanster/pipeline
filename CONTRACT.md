@@ -231,6 +231,35 @@ metadata pre-6a). The resumed task records the resolved `## Freeze coverage` on 
 6b record commit. The flag is a hard stop, not a silent note. This STRENGTHENS coverage; it changes nothing in the freeze gate, spec-rev protocol, state
 machine, or merge rules.
 
+## Impl assumptions (recorded on the card, read by review)
+
+The frozen test pins what it asserts; it does NOT pin the implementer's interpretation around it.
+An **impl assumption** is any decision the implementer made that the card's spec text and its frozen
+test do NOT pin down — user-facing wording, edge-case behavior outside the frozen assertions,
+data-shape/format choices, dependency or API selection. These un-pinned decisions are where the
+implementing agent silently authors product intent.
+
+**This is NOT arch's labeled assumptions** — those are design-time unknowns recorded in
+`arch.md`/ADRs by the arch stage. Impl assumptions are implementation-time interpretation only;
+`pipeline-impl` NEVER writes `arch.md` or ADRs.
+
+They live in a **`## Assumptions` section on the CARD file** (trunk-authoritative, same home as
+`## Freeze coverage`), one bullet per assumption; every card gets its own section (multi-card
+features included). When there are none, the section body is exactly `none` — the sentinel is
+mandatory, so a missing section is distinguishable from an honest empty. It is written on the
+**GREEN path only**, in the SAME single metadata commit on `main` that flips the card
+`status: review` (impl step 4); the failed/blocked dispositions do NOT write it — there is no
+delivered implementation to interpret. The card is the authoritative home: when a forge PR exists,
+impl MAY mirror the list into the PR body, but review reads the card copy (the no-forge path loses
+nothing).
+
+**`pipeline-review` reads it.** A card in `status: review` whose `## Assumptions` section is missing
+⇒ changes requested (mechanical check). An assumption that CONTRADICTS the card/spec/PRD ⇒ reject —
+that is the agent authoring product intent, the exact failure this slot exists to expose. A `none`
+while the diff visibly contains un-pinned decisions ⇒ a review finding (semantic judgment).
+One-time migration allowance: cards already at `status: review` before this section landed in the
+target repo's toolchain read as `none` plus a review note, never rejected for the missing section.
+
 ## Handoff block — a self-contained briefing for a COLD next node
 
 **The next node is a FRESH session — possibly a different agent on a different frontier LLM — with ZERO
