@@ -45,13 +45,13 @@ sub-instruction is the cheap seam if your skill supports one).
    red on trunk; do NOT run the full suite to judge this card (that is review's final gate). Loop
    think→code→check within the turn budget. Only code lives on the branch; never touch `spec-paths:`.
 4. **Green** ⇒ push `feat/<feature>`, open/update a PR via the forge adapter, then on `main` flip the
-   card `status: review`, advance `current.json.stage` to `impl`, and **append your handoff to
-   `journal.md`** (per §Journal discipline below — file END, exact header, self-verified) — these
-   three metadata writes are **one commit on `main`** (this card completed —
-   stage = most-recently-completed). Opening the PR needs the repo's forge token (loaded per CONTRACT
+   card `status: review`, record its `## Assumptions` section (CONTRACT §Impl assumptions), advance
+   `current.json.stage` to `impl`, and **append your handoff to `journal.md`** (per §Journal
+   discipline below — file END, exact header, self-verified) — these four metadata writes are
+   **one commit on `main`** (this card completed — stage = most-recently-completed). Opening the PR needs the repo's forge token (loaded per CONTRACT
    step 2 from `.env` etc.). If the token is absent, **do NOT fail** — push the branch + make that same
-   `main` commit (`status: review` + `stage: impl` + journal entry) anyway, and say in the handoff that
-   the PR must be opened manually (branch + base named). **Next-card routing:** if the feature still has
+   `main` commit (`status: review` + `## Assumptions` + `stage: impl` + journal entry) anyway, and say
+   in the handoff that the PR must be opened manually (branch + base named). **Next-card routing:** if the feature still has
    any `status: todo` card,
    hand off to **pipeline-impl** for the next card (the same `feat/<feature>` branch/PR accumulates all
    cards) — this continuation's journal header is **`impl→impl · completed`** (CONTRACT §Coordinated
@@ -116,6 +116,8 @@ rewrite or amend — CONTRACT append-only), then re-verify.
 ## Hard rules
 
 - Never touch `spec-paths:` (the frozen spec). Never merge. Only this card's files.
+- Record impl assumptions in the card's `## Assumptions` section per CONTRACT §Impl assumptions —
+  never in `arch.md`/ADRs; `none` is mandatory when empty.
 - Journal entries go at the file END and are self-verified as the new tail (§Journal discipline) —
   a misplaced or malformed entry means the run does not count as completed.
 - Code (`impl-paths`/`src`) lives on `feat/<feature>`; card `status` flips commit to `main` (trunk
