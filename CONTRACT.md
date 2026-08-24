@@ -142,8 +142,8 @@ write-sets are:
 | prd | `PRD.md` | src, tests |
 | arch | `arch.md`, `CONTEXT.md`, `docs/adr/*` | src, tests |
 | task | spec-paths (the red test), `tasks/*` | src implementation |
-| impl | impl-paths, `src/**`, the card's `status` field, its `## Assumptions` section (§Impl assumptions) | **spec-paths** (the freeze gate) |
-| review | `reviews/*`, card `status`→done | any product code (it merges, never authors) |
+| impl | impl-paths, `src/**`, the card's `status` field, its `## Assumptions` section (§Impl assumptions), the card's `attempts` field + `## Attempt N` note (fail path, state machine / impl step 5) | **spec-paths** (the freeze gate) |
+| review | `reviews/*`, card `status`→done, card `status`→`todo`/`blocked` (on reject), the card's `attempts` field + appended rejection reason / required fixes on the offending card (state machine / review steps 3/5/6) | any product code (it merges, never authors) |
 | hunt | the routed **target** only — the blocked card (its body / `status` / `attempts`) OR the `reviews/integration-NN.md` report (append findings) | product code, unrelated cards, unrelated reviews |
 
 The freeze gate is just the impl row enforced. Enforcement is a documented invariant + the
