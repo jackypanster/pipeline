@@ -22,11 +22,15 @@ The five `k=v` envelope fields are all-or-nothing — pass them exactly as the c
 
 The exit-3 checks: **`install-check`** — verify the slot skill is installed on this runtime, STOP if not; **`remote-identity`** — confirm the repo's remote really is the one `current.json.repo` names.
 
+**Remote identity is an ENDPOINT, compared exactly.** Normalised to `host[:port]/owner/name` (the port is kept whenever the URL carries one — `:2222` and the default port are different servers; `https` vs `ssh` vs scp for the same endpoint are the same identity) or, for a local-path / `file://` remote, `path:<absolute physical path>`. A `current.json.repo` that pins no endpoint — a **bare `owner/name`**, free text — is never a match: it prints `REMOTE unverified` and joins the exit-3 `remote-identity` set, because `owner/name` would otherwise "match" any host on earth. The observed side is the DECLARED `remote.<name>.url`, not `git remote get-url` (which expands this machine's `insteadOf` rewrites).
+
+**Journal handoff markers are whole lines** (CONTRACT §Run journal): inside the tail entry, the first line that IS `--- handoff ---`, whose next non-empty line must BE `>>> NEXT`; the command is the next non-empty line after that. Anything else ⇒ `STALE_DISPATCH next observed=<absent-handoff-in-tail>`. Prose that merely mentions `>>> NEXT` is prose. **Slot names are directory names**, `^[A-Za-z0-9][A-Za-z0-9._-]*$` — a path such as `../outside` is `PREFLIGHT STOP slot-invalid-name`, never an install found outside the declared dirs.
+
 Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` · `ENV file=<n> keys=<N>` / `ENV none` ·
 `CURRENT ok repo=… branch=… feature=… stage=…[ pr=…]` / `CURRENT absent (prd creates it)` · `SLOT <stage>=<n1>[,<n2>]` ·
 `INSTALLED <n> path=<dir>/<n>` (verified) / `INSTALLED <n> found=<dir>/<n> UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…` ·
 `FETCH fail <remote>/<branch>` · `REMOTE unverified observed=… current.json.repo=…` ·
-`GUARD ok seq=<n> commit=<sha>[ remote=<host/owner/name>]` / `GUARD n/a (human-relay)`.
+`GUARD ok seq=<n> commit=<sha>[ remote=<identity>]` / `GUARD n/a (human-relay)`.
 
 **`PIPELINE_SKILL_DIRS`** (colon-separated, per runtime) declares which dirs THIS runtime actually loads skills from. A hit there is a **verified** install (`path=`). Without it the script still searches the default dirs, but a hit is evidence only (`found=… UNVERIFIED`) — a readable `SKILL.md` on disk never proves the running agent loads it — so the exit is 3 and the stage verifies the slot itself.
 
@@ -34,4 +38,4 @@ Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` 
 written; exit 3 ⇒ execute the named check(s) that way. The prose IS the spec; this script is only its
 deterministic executor, and rollback = delete this dir.
 
-**Guarantees:** zero file writes anywhere — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (26 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).
+**Guarantees:** zero file writes anywhere — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (30 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).

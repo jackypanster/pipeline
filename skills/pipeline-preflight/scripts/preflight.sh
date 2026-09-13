@@ -45,7 +45,7 @@
 #   INSTALLED <name> UNVERIFIED searched=<d1>:<d2>:…    # nothing anywhere
 #   FETCH fail <remote>/<branch>           (+ git's stderr)
 #   REMOTE unverified observed=<v> current.json.repo=<v>
-#   GUARD ok seq=<n> commit=<sha>[ remote=<host/owner/name>] | GUARD n/a (human-relay)
+#   GUARD ok seq=<n> commit=<sha>[ remote=<identity>] | GUARD n/a (human-relay)
 #   STALE_DISPATCH <field> observed=<v> expected=<v>
 #   PREFLIGHT OK stage=<s> | PREFLIGHT STOP <reason> | PREFLIGHT UNVERIFIED <checks>
 #   PREFLIGHT SKIPPED <reason>
@@ -266,6 +266,10 @@ while IFS= read -r p; do
   case "$n" in
     \<*\>) stop "slot-placeholder $stage=$n" ;;
   esac
+  # A slot value is a skill DIRECTORY NAME, never a path. `../outside` would reach a SKILL.md
+  # outside every declared PIPELINE_SKILL_DIRS and be reported as a verified install. The
+  # charset also excludes `.` and `..` (both fail the leading [A-Za-z0-9]).
+  printf '%s' "$n" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || stop "slot-invalid-name $stage=$n"
   names="${names:+$names
 }$n"
 done <<SLOT_EOF
@@ -330,35 +334,93 @@ NAMES_EOF
 
 # ---------------------------- 5. CONTRACT §Pre-write stale-dispatch guard (envelope only)
 
-# host/owner/name, best effort: strip scheme, userinfo (`git@`), an ssh port, scp-form `:`,
-# trailing `/`, trailing `.git`. A local path keeps its leading `/` and is therefore NOT an
-# identity (see remote_kind).
-norm_remote() {
-  [ -n "${1:-}" ] || { printf ''; return 0; }
-  printf '%s' "$1" | sed -E \
-    -e 's#^[A-Za-z][A-Za-z0-9+.-]*://##' \
-    -e 's#^[^/@]*@##' \
-    -e 's#^([^/:]+):([0-9]+)/#\1/#' \
-    -e 's#^([^/:]+):#\1/#' \
-    -e 's#/+$##' \
-    -e 's#\.git$##' \
-    -e 's#//+#/#g'
+# A remote identity is an ENDPOINT, not a name. Two clones point at the same repo only when the
+# host, the PORT and the path all agree — `host:2222` and `host` are different servers, and
+# `owner/name` alone names no server at all. Normalised forms:
+#
+#   host[:port]/owner/name…        a network remote; the port is kept whenever the URL carries one
+#   path:<absolute physical path>  a local-path or `file://` remote
+#   (empty)                        NOT an identity — a bare `owner/name`, free text, anything that
+#                                  cannot pin an endpoint ⇒ UNVERIFIED, never a match.
+norm_path() {  # $1 = local path → path:<absolute physical path>
+  local p r
+  p="${1:-}"
+  case "$p" in
+    "~"|"~/"*) p="$HOME$(printf '%s' "$p" | sed -e 's#^~##')" ;;
+  esac
+  # relative remote URLs are resolved by git against the repo, so resolve them the same way
+  r="$(cd "$repo" 2>/dev/null && cd "$p" 2>/dev/null && pwd -P || true)"
+  if [ -z "$r" ]; then
+    # absent on THIS machine: fall back to a lexical absolute form so two spellings of the same
+    # missing path still compare equal (it is still an exact compare, just not a resolved one).
+    case "$p" in
+      /*) r="$p" ;;
+      *)  r="$repo/$p" ;;
+    esac
+    r="$(printf '%s' "$r" | sed -e 's#//*#/#g' -e 's#\(.\)/$#\1#')"
+  fi
+  printf 'path:%s' "$r"
 }
 
-remote_kind() {  # $1 = raw, $2 = normalized → full (host/owner/name) | short (owner/name) | ""
-  case "$1" in
-    ""|/*|./*|../*|~*) printf ''; return 0 ;;
+norm_remote() {  # $1 = raw remote value → the normalised identity, or nothing
+  local raw rest hostport path port
+  raw="${1:-}"
+  hostport=""; path=""
+  [ -n "$raw" ] || { printf ''; return 0; }
+  case "$raw" in
+    file://*)
+      path="${raw#file://}"
+      case "$path" in localhost/*) path="/${path#localhost/}" ;; esac
+      case "$path" in /*) norm_path "$path"; return 0 ;; esac
+      printf ''; return 0 ;;
+    /*|./*|../*|"~"|"~/"*) norm_path "$raw"; return 0 ;;
+    *[[:space:]]*)         printf ''; return 0 ;;
   esac
-  case "$2" in
-    ""|*[[:space:]]*) printf ''; return 0 ;;
+  case "$raw" in
+    [A-Za-z][A-Za-z0-9+.-]*://*)
+      rest="${raw#*://}"
+      rest="$(printf '%s' "$rest" | sed -e 's#^[^/]*@##')"      # userinfo
+      hostport="${rest%%/*}"
+      case "$rest" in */*) path="${rest#*/}" ;; *) path="" ;; esac
+      case "$hostport" in
+        *:*) case "${hostport##*:}" in ''|*[!0-9]*) printf ''; return 0 ;; esac ;;
+      esac
+      ;;
+    *)
+      rest="$raw"
+      case "$rest" in
+        *@*) case "${rest%%@*}" in *[/:]*) : ;; *) rest="${rest#*@}" ;; esac ;;
+      esac
+      case "$rest" in
+        *:*)
+          hostport="${rest%%:*}"
+          path="${rest#*:}"
+          case "$hostport" in ""|*/*) printf ''; return 0 ;; esac
+          # `host:2222/owner/name` is the form THIS script prints, so a numeric run followed by a
+          # path keeps the port. Git's scp syntax (`host:owner/name`) has no port, so any other
+          # shape means the `:` is just its path separator.
+          port="${path%%/*}"
+          case "$path" in
+            */*) case "$port" in
+                   ''|*[!0-9]*) ;;
+                   *) hostport="$hostport:$port"; path="${path#*/}" ;;
+                 esac ;;
+          esac
+          ;;
+        */*)
+          hostport="${rest%%/*}"
+          path="${rest#*/}"
+          # one slash only ⇒ a bare `owner/name`: it names no endpoint and matches nothing.
+          case "$path" in */*) ;; *) printf ''; return 0 ;; esac
+          ;;
+        *) printf ''; return 0 ;;
+      esac
+      ;;
   esac
-  local slashes
-  slashes="$(printf '%s' "$2" | tr -cd '/' | wc -c | tr -d ' ')"
-  case "$slashes" in
-    2) printf 'full' ;;
-    1) printf 'short' ;;
-    *) printf '' ;;
-  esac
+  [ -n "$hostport" ] || { printf ''; return 0; }
+  path="$(printf '%s' "$path" | sed -e 's#//*#/#g' -e 's#^/##' -e 's#/*$##' -e 's#\.git$##')"
+  [ -n "$path" ] || { printf ''; return 0; }
+  printf '%s/%s' "$hostport" "$path"
 }
 
 if [ "$envelope" = 0 ]; then
@@ -374,27 +436,26 @@ else
   [ -n "$remote" ] || remote="origin"
 
   # remote identity — CONTRACT guard step 2's first field. `current.json.repo` is the expected
-  # identity. It is only COMPARABLE when it actually is one (a URL, host/owner/name, or
-  # owner/name); a local path or free text is not a wrong identity, it is an unverifiable one —
-  # so it degrades to UNVERIFIED, never to a STOP.
+  # identity and the comparison is EXACT, endpoint against endpoint. A value that pins no
+  # endpoint (a bare `owner/name`, free text) is not a wrong identity, it is an unverifiable
+  # one — so it degrades to UNVERIFIED, never to a match and never to a STOP.
+  #
+  # `git config --get remote.X.url`, not `git remote get-url`: get-url EXPANDS this machine's
+  # `insteadOf` rewrites, so a local transport shortcut would be compared against the
+  # coordinator's declared identity and fail closed on a repo that is in fact the right one.
   guard_remote=""
-  obs_remote="$(norm_remote "$(git -C "$repo" remote get-url "$remote" 2>/dev/null || true)")"
+  raw_remote="$(git -C "$repo" config --get "remote.$remote.url" 2>/dev/null || true)"
+  obs_remote="$(norm_remote "$raw_remote")"
   exp_remote="$(norm_remote "$cur_repo")"
-  exp_kind="$(remote_kind "$cur_repo" "$exp_remote")"
   if [ -z "$obs_remote" ]; then
-    echo "REMOTE unverified observed=<absent> current.json.repo=${cur_repo:-<absent>}"
+    if [ -n "$raw_remote" ]; then obs_show="<unparseable>"; else obs_show="<absent>"; fi
+    echo "REMOTE unverified observed=$obs_show current.json.repo=${cur_repo:-<absent>}"
     mark_unverified remote-identity
-  elif [ -z "$exp_kind" ]; then
+  elif [ -z "$exp_remote" ]; then
     echo "REMOTE unverified observed=$obs_remote current.json.repo=${cur_repo:-<absent>}"
     mark_unverified remote-identity
   else
-    if [ "$exp_kind" = short ]; then
-      # owner/name given ⇒ compare only the last two segments of the observed identity.
-      obs_cmp="$(printf '%s' "$obs_remote" | sed -E 's#.*/([^/]+/[^/]+)$#\1#')"
-    else
-      obs_cmp="$obs_remote"
-    fi
-    [ "$obs_cmp" = "$exp_remote" ] || stale "remote" "$obs_remote" "$exp_remote"
+    [ "$obs_remote" = "$exp_remote" ] || stale "remote" "$obs_remote" "$exp_remote"
     guard_remote=" remote=$obs_remote"
   fi
 
@@ -412,16 +473,21 @@ else
   if ! printf '%s' "$env_commit" | grep -Eq '^[0-9a-f]{40}$'; then
     stale "expected_commit" "<short-sha-rejected>" "$env_commit"
   fi
-  # The fetch is the guard's only source of remote truth. If it fails we STOP: the
-  # remote-tracking ref still on disk is a CACHE from some earlier run, and comparing it would
-  # turn "could not observe the remote" into a false GUARD ok on an already-stale dispatch.
+  # The fetch is the guard's only source of remote truth. If it fails we STOP: every ref still on
+  # disk — the remote-tracking ref AND the FETCH_HEAD left by step 1's pull — is a CACHE from an
+  # earlier command, and comparing one would turn "could not observe the remote" into a false
+  # GUARD ok on an already-stale dispatch.
   fetch_err=""
   if ! fetch_err="$(git -C "$repo" fetch --quiet "$remote" "$env_branch" 2>&1 >/dev/null)"; then
     echo "FETCH fail $remote/$env_branch"
     if [ -n "$fetch_err" ]; then printf '%s\n' "$fetch_err"; fi
     stop "fetch-failed"
   fi
-  remote_sha="$(git -C "$repo" rev-parse "$remote/$env_branch" 2>/dev/null || true)"
+  # FETCH_HEAD, not `refs/remotes/<remote>/<branch>`: the fetch above is not guaranteed to have
+  # updated that ref (a narrowed `remote.<r>.fetch` refspec, or a local branch tracking a
+  # DIFFERENTLY NAMED remote branch, leaves it at whatever an older run cached — which is
+  # exactly the stale value the guard exists to refuse). FETCH_HEAD is written BY that fetch.
+  remote_sha="$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null || true)"
   [ -n "$remote_sha" ] || remote_sha="<absent>"
   [ "$remote_sha" = "$env_commit" ] || stale "expected_commit" "$remote_sha" "$env_commit"
   head_sha="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
@@ -442,25 +508,36 @@ else
   fi
   [ "$obs_seq" = "$env_seq" ] || stale "expected_seq" "$obs_seq" "$env_seq"
 
-  # next — the TAIL ENTRY's own `>>> NEXT` must name THIS stage's command. Scoped to the last
-  # `## seq=` header on purpose: the last `>>> NEXT` in the whole file may belong to an OLDER
-  # entry, and an append-only journal always has several. A tail entry with no handoff is a
-  # mismatch, not a licence to reuse the previous entry's.
-  obs_next="<absent-in-tail>"
+  # next — the TAIL ENTRY's own handoff must name THIS stage's command. Scoped to the last
+  # `## seq=` header on purpose: the last handoff in the whole file may belong to an OLDER entry,
+  # and an append-only journal always has several. A tail entry with no handoff is a mismatch,
+  # not a licence to reuse the previous entry's.
+  #
+  # The markers are matched as WHOLE LINES (CONTRACT §Run journal's grammar), never as
+  # substrings: the first line that IS `--- handoff ---`, whose next non-empty line must BE
+  # `>>> NEXT`, and the command is the next non-empty line after that. A body line that merely
+  # MENTIONS `>>> NEXT` is prose — reading it as the marker let a decoy command line underneath
+  # it satisfy a stage the real handoff hands off to somebody else.
+  obs_next="<absent-handoff-in-tail>"
   next_tok=""
   if [ -n "$tail_line" ]; then
-    nrel="$(tail -n +"$tail_line" "$journal" | grep -n '>>> NEXT' | head -1 | cut -d: -f1 || true)"
-    if [ -n "$nrel" ]; then
-      cand="$(tail -n +"$((tail_line + nrel))" "$journal" | grep -m1 -v '^[[:space:]]*$' || true)"
-      if [ -n "$cand" ]; then
-        obs_next="$cand"
-        # Exact FIRST-TOKEN match after stripping the shapes a command legitimately arrives in:
-        # leading whitespace, a slash-command `/`, a `$` prompt, and CONTRACT's `Run ` prefix.
-        # Substring matching is what let `Run pipeline-review after pipeline-task finishes`
-        # satisfy stage `task`.
-        next_tok="$(printf '%s' "$cand" | sed -E \
-          -e 's#^[[:space:]]+##' -e 's#^[/$]##' -e 's#^Run[[:space:]]+##' -e 's#[[:space:]].*$##')"
-      fi
+    cand="$(tail -n +"$tail_line" "$journal" | awk '
+      { line = $0; sub(/[ \t\r]+$/, "", line) }
+      state == 0 { if (line == "--- handoff ---") state = 1; next }
+      state == 1 { if (line == "") next
+                   if (line != ">>> NEXT") exit
+                   state = 2; next }
+      state == 2 { if (line == "") next
+                   print line; exit }
+    ')"
+    if [ -n "$cand" ]; then
+      obs_next="$cand"
+      # Exact FIRST-TOKEN match after stripping the shapes a command legitimately arrives in:
+      # leading whitespace, a slash-command `/`, a `$` prompt, and CONTRACT's `Run ` prefix.
+      # Substring matching is what let `Run pipeline-review after pipeline-task finishes`
+      # satisfy stage `task`.
+      next_tok="$(printf '%s' "$cand" | sed -E \
+        -e 's#^[[:space:]]+##' -e 's#^[/$]##' -e 's#^Run[[:space:]]+##' -e 's#[[:space:]].*$##')"
     fi
   fi
   if [ "$next_tok" != "pipeline-$stage" ]; then
