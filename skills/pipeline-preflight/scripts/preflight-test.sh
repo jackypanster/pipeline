@@ -28,7 +28,7 @@ BASH_BIN="${BASH:-$(command -v bash)}"
 FEATURE="demo-feature"
 ZERO_SHA="0000000000000000000000000000000000000000"
 
-# -P: the remote-identity cases compare PHYSICAL paths, and $TMPDIR is a symlink on macOS.
+# -P: the guard's `repo` field compares PHYSICAL paths, and $TMPDIR is a symlink on macOS.
 ROOT="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/preflight-test.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
 
@@ -67,9 +67,8 @@ DEFAULT_CONTROL='{ "schema_version": 1, "mode": "coordinated", "merge_gate": "hu
 #   FX_CURRENT=no          — omit current.json entirely
 #   FX_CURRENT_JSON=<json> — write this current.json verbatim
 #   FX_CUR_REPO=<v>        — current.json's `repo` value. Default = the fixture's own bare repo
-#                            path, so the remote-identity check MATCHES: a hermetic remote can
-#                            only ever be a local path, and a local path's identity is
-#                            `path:<physical path>`, compared EXACTLY.
+#                            path, which is BYTE-IDENTICAL to what `git clone` stored in
+#                            remote.origin.url, so the remote-identity check matches.
 #   FX_ROLES=<yaml> · FX_NEXT=<stage> · FX_NEXT_LINE=<line> · FX_JOURNAL=<md> · FX_CONTROL=none|<json>
 # Sets globals: WORK (the clone) and COMMIT (its pushed trunk sha).
 WORK=""
@@ -127,9 +126,9 @@ MD
   unset FX_CURRENT FX_CURRENT_JSON FX_CUR_REPO FX_ROLES FX_NEXT FX_NEXT_LINE FX_JOURNAL FX_CONTROL
 }
 
-# Give a fixture a NETWORK-shaped origin URL without a network: git stores the declared URL
-# verbatim in `remote.origin.url` (that IS the repo's declared identity) and rewrites it to the
-# fixture's own bare repo only when it actually talks to it, so pull/fetch stay hermetic.
+# Point origin at an arbitrary URL and add the `insteadOf` that rewrites it to the fixture's own
+# bare repo, so pull/fetch stay hermetic. `remote.origin.url` then holds the RAW url while
+# `ls-remote --get-url origin` reports the REWRITTEN one — the two sides case 20 compares.
 declare_remote_url() {  # declare_remote_url <workdir> <url> — $WORK's bare repo is the transport
   git -C "$1" config "url.${WORK%/work}/remote.git.insteadOf" "$2"
   git -C "$1" remote set-url origin "$2"
@@ -377,31 +376,56 @@ run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
 [ "$RC" = 0 ] || ok=0
 report "17-next-command-forms" "$ok"
 
-# --- 18. remote identity mismatch is a STALE_DISPATCH, checked BEFORE any fetch -------
-FX_CUR_REPO="https://github.com/acme/demo.git"; build 18
+# --- 18. remote identity: BYTE EQUAL to `git ls-remote --get-url <remote>` ⇒ verified --
+build 18
+URL="$(git -C "$WORK" ls-remote --get-url origin)"
 run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
-expect "18-remote-mismatch" 2 "STALE_DISPATCH remote" "expected=github.com/acme/demo"
+expect "18-remote-byte-equal" 0 "GUARD ok seq=1 commit=$COMMIT remote=$URL" \
+  "PREFLIGHT OK stage=task"
 
-# --- 19. a current.json.repo that pins no ENDPOINT is unverifiable, not wrong ----------
-FX_CUR_REPO="acme demo (internal mirror)"; build 19
+# --- 19. ANY other string ⇒ UNVERIFIED, never a match and never a STOP ----------------
+# `file://<path>` is the very same repo, spelled as a URL. The deleted normaliser called that
+# a match; nothing but Git knows for sure, so the stage is told to check it instead.
+FX_CUR_REPO="file://$ROOT/fx-19/remote.git"; build 19
 run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
 ok=1
 [ "$RC" = 3 ] || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- "REMOTE unverified observed=" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- \
+  "REMOTE unverified observed=$ROOT/fx-19/remote.git current.json.repo=file://$ROOT/fx-19/remote.git" || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT UNVERIFIED remote-identity" || ok=0
 refute "STALE_DISPATCH"  # unverifiable is not wrong: it degrades, it never STOPs
-report "19-remote-unparseable" "$ok"
+report "19-remote-differs" "$ok"
 
-# --- 20. a failed fetch STOPs; no ref left on disk is compared in its place -----------
+# --- 20. `insteadOf`: observed is what GIT resolves the remote to, not the raw config --
+# (a) current.json.repo written as the REWRITTEN url ⇒ match (this is `--get-url` semantics).
+build 20a
+declare_remote_url "$WORK" "forge:acme/demo"
+run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
+  expected_seq=1 "expected_commit=$COMMIT"
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "remote=$ROOT/fx-20a/remote.git" || ok=0
+# (b) the same remote, current.json.repo written as the RAW config url ⇒ UNVERIFIED.
+FX_CUR_REPO="forge:acme/demo"; build 20b
+declare_remote_url "$WORK" "forge:acme/demo"
+run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
+  expected_seq=1 "expected_commit=$COMMIT"
+[ "$RC" = 3 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- \
+  "REMOTE unverified observed=$ROOT/fx-20b/remote.git current.json.repo=forge:acme/demo" || ok=0
+refute "STALE_DISPATCH"
+report "20-remote-insteadof" "$ok"
+
+# --- 21. a failed fetch STOPs; no ref left on disk is compared in its place -----------
 # The clone's local `main` tracks the remote's `trunk`, so CONTRACT step 1's pull succeeds and
 # the guard's `git fetch origin main` cannot: the remote has no `main`. Both cached refs are
 # left pointing at the RIGHT commit — refs/remotes/origin/main, and the FETCH_HEAD step 1's own
 # pull just wrote — so swallowing the fetch failure would print a false GUARD ok either way.
-build 20
+build 21
 git -C "$WORK" push --quiet origin main:trunk
-git -C "$ROOT/fx-20/remote.git" symbolic-ref HEAD refs/heads/trunk
+git -C "$ROOT/fx-21/remote.git" symbolic-ref HEAD refs/heads/trunk
 git -C "$WORK" push --quiet origin :main
 git -C "$WORK" update-ref refs/remotes/origin/main "$COMMIT"
 git -C "$WORK" config branch.main.merge refs/heads/trunk
@@ -412,33 +436,33 @@ ok=1
 printf '%s\n' "$OUT" | grep -Fq -- "FETCH fail origin/main" || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP fetch-failed" || ok=0
 refute "GUARD ok"
-report "20-fetch-failed" "$ok"
+report "21-fetch-failed" "$ok"
 
-# --- 21. a broken remote URL fails at step 1, before the guard is even reached --------
-build 21
+# --- 22. a broken remote URL fails at step 1, before the guard is even reached --------
+build 22
 git -C "$WORK" remote set-url origin "$ROOT/does-not-exist.git"
 run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
-expect "21-pull-failed" 2 "PULL fail" "PREFLIGHT STOP pull-failed"
+expect "22-pull-failed" 2 "PULL fail" "PREFLIGHT STOP pull-failed"
 
-# --- 22. control.json must carry the COMPLETE authorization tuple ---------------------
-FX_CONTROL='{ "schema_version": 1, "mode": "human", "merge_gate": "human-direct" }'; build 22a
+# --- 23. control.json must carry the COMPLETE authorization tuple ---------------------
+FX_CONTROL='{ "schema_version": 1, "mode": "human", "merge_gate": "human-direct" }'; build 23a
 run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
 ok=1
 [ "$RC" = 2 ] || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "STALE_DISPATCH control.mode observed=human expected=coordinated" || ok=0
-FX_CONTROL=none; build 22b
+FX_CONTROL=none; build 23b
 run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
 [ "$RC" = 2 ] || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "STALE_DISPATCH control.json observed=<absent> expected=present" || ok=0
-report "22-control-tuple" "$ok"
+report "23-control-tuple" "$ok"
 
-# --- 23. the remote moved after the coordinator observed it ---------------------------
-build 23
-SECOND="$ROOT/fx-23/second"
-git clone --quiet "$ROOT/fx-23/remote.git" "$SECOND"
+# --- 24. the remote moved after the coordinator observed it ---------------------------
+build 24
+SECOND="$ROOT/fx-24/second"
+git clone --quiet "$ROOT/fx-24/remote.git" "$SECOND"
 echo "later" > "$SECOND/advanced.txt"
 git -C "$SECOND" add -A
 git -C "$SECOND" commit --quiet -m "remote advanced past the dispatch"
@@ -446,9 +470,9 @@ git -C "$SECOND" push --quiet origin main
 ZW_EXPECT_HEAD="$(git -C "$SECOND" rev-parse HEAD)"   # step 1's pull legitimately lands here
 run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
-expect "23-remote-advanced" 2 "STALE_DISPATCH expected_commit" "PREFLIGHT STOP stale-dispatch"
+expect "24-remote-advanced" 2 "STALE_DISPATCH expected_commit" "PREFLIGHT STOP stale-dispatch"
 
-# --- 24. python3 missing ⇒ exit 4 SKIPPED: nothing ran, the caller does steps 1–4 -----
+# --- 25. python3 missing ⇒ exit 4 SKIPPED: nothing ran, the caller does steps 1–4 -----
 NOPY="$ROOT/nopy-bin"
 mkdir -p "$NOPY"
 nopy_ok=1
@@ -462,66 +486,29 @@ for t in git sed grep tail head cut paste tr wc cat find xcrun; do
 done
 if [ -e "$NOPY/python3" ]; then nopy_ok=0; fi
 if [ "$nopy_ok" != 1 ]; then
-  skip "24-python3-missing" "a PATH without python3 but with git/coreutils is not constructible here"
+  skip "25-python3-missing" "a PATH without python3 but with git/coreutils is not constructible here"
 else
-  build 24
+  build 25
   RUN_PATH="$NOPY"
   run "$WORK" --stage task
   if [ "$RC" = 4 ]; then
-    expect "24-python3-missing" 4 "PREFLIGHT SKIPPED python3-missing"
+    expect "25-python3-missing" 4 "PREFLIGHT SKIPPED python3-missing"
   elif printf '%s\n' "$OUT" | grep -q 'git:.*not found\|command not found'; then
-    skip "24-python3-missing" "the stripped PATH cannot run git on this machine: $OUT"
+    skip "25-python3-missing" "the stripped PATH cannot run git on this machine: $OUT"
   else
-    expect "24-python3-missing" 4 "PREFLIGHT SKIPPED python3-missing"
+    expect "25-python3-missing" 4 "PREFLIGHT SKIPPED python3-missing"
   fi
 fi
 
-# --- 25. a stage skill attached by SYMLINK still resolves its preflight sibling -------
+# --- 26. a stage skill attached by SYMLINK still resolves its preflight sibling -------
 # `<symlink>/../pipeline-preflight/…` is resolved by the kernel against the symlink's TARGET,
 # so a runtime that attaches skills by symlink reaches the real script next to the real skill.
 mkdir -p "$HOME/.claude/skills"
 ln -sfn "$SKILLS_REPO/pipeline-task" "$HOME/.claude/skills/pipeline-task"
-build 25
+build 26
 RUN_SCRIPT="$HOME/.claude/skills/pipeline-task/../pipeline-preflight/scripts/preflight.sh"
 run "$WORK" --stage task
-expect "25-symlinked-install-layout" 0 "PREFLIGHT OK stage=task"
-
-# --- 26. remote identity is an ENDPOINT: host, PORT and path, compared exactly ---------
-# (a) same host, same owner/name, DIFFERENT port ⇒ a different server ⇒ stale.
-FX_CUR_REPO="https://example.com/acme/demo.git"; build 26a
-declare_remote_url "$WORK" "ssh://git@example.com:2222/acme/demo.git"
-run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
-  expected_seq=1 "expected_commit=$COMMIT"
-ok=1
-[ "$RC" = 2 ] || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- \
-  "STALE_DISPATCH remote observed=example.com:2222/acme/demo expected=example.com/acme/demo" || ok=0
-# (b) https vs ssh vs scp for the SAME endpoint is the same identity ⇒ match.
-FX_CUR_REPO="https://example.com/acme/demo"; build 26b
-declare_remote_url "$WORK" "git@example.com:acme/demo.git"
-run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
-  expected_seq=1 "expected_commit=$COMMIT"
-[ "$RC" = 0 ] || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- "remote=example.com/acme/demo" || ok=0
-# (c) a bare `owner/name` pins no server: it is UNVERIFIED even when the tail segments match —
-#     it would otherwise "match" any host on earth, and a local path just as happily.
-FX_CUR_REPO="acme/demo"; build 26c
-declare_remote_url "$WORK" "https://example.com/acme/demo.git"
-run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
-  expected_seq=1 "expected_commit=$COMMIT"
-[ "$RC" = 3 ] || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- "REMOTE unverified observed=example.com/acme/demo" || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT UNVERIFIED remote-identity" || ok=0
-refute "STALE_DISPATCH"
-# (d) a local path IS comparable — as `path:<physical path>`, exactly. Here current.json names
-#     the clone, the remote is the bare repo beside it: same last two segments, different repo.
-FX_CUR_REPO="$ROOT/fx-26d/work"; build 26d
-run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
-  expected_seq=1 "expected_commit=$COMMIT"
-[ "$RC" = 2 ] || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- \
-  "STALE_DISPATCH remote observed=path:$ROOT/fx-26d/remote.git expected=path:$ROOT/fx-26d/work" || ok=0
-report "26-remote-identity-endpoint-exact" "$ok"
+expect "26-symlinked-install-layout" 0 "PREFLIGHT OK stage=task"
 
 # --- 27. the handoff markers are WHOLE LINES, never substrings ------------------------
 # (a) a body line that MENTIONS `>>> NEXT`, with a decoy command under it. The real handoff
@@ -600,9 +587,36 @@ printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP slot-invalid-name task=../out
 refute "INSTALLED"
 report "29-slot-invalid-name" "$ok"
 
-# --- 30. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
+# --- 30. a handoff body far larger than the pipe buffer still parses ------------------
+# The reader stops at the command line and never reads the rest. Fed through `tail … | awk`
+# that closed the pipe under a still-writing tail: SIGPIPE, and `set -o pipefail` turned it
+# into a bare exit 141. ~100 KiB of trailing body is comfortably past the 64 KiB buffer.
+FILLER="$(awk 'BEGIN { for (i = 0; i < 900; i++)
+  print "pad " i " — trailing handoff body the reader never reaches, past the 64 KiB pipe buffer" }')"
+FX_JOURNAL="# Run journal — $FEATURE
+
+## seq=1 · 2026-09-13T00:00:00Z · arch→task · completed · by=fixture
+done:   arch landed
+--- handoff ---
+>>> NEXT
+
+Run pipeline-task on a FRESH session (rebuild from the repo + CONTRACT.md).
+<<< END
+
+$FILLER"
+build 30
+run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
+  expected_seq=1 "expected_commit=$COMMIT"
+ok=1
+[ "$RC" = 0 ] || ok=0
+[ "$(wc -c < "$WORK/.pipeline/$FEATURE/journal.md")" -gt 65536 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "GUARD ok seq=1 commit=$COMMIT" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=task" || ok=0
+report "30-large-handoff-no-sigpipe" "$ok"
+
+# --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
 OUT="$ZW"; RC=0
-if [ -z "$ZW" ]; then report "30-zero-writes" 1; else report "30-zero-writes" 0; fi
+if [ -z "$ZW" ]; then report "31-zero-writes" 1; else report "31-zero-writes" 0; fi
 
 echo "---"
 echo "$PASSED/$TOTAL cases passed${SKIPPED:+ ($SKIPPED skipped)}"
