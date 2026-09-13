@@ -58,8 +58,14 @@ table, from `roles.yaml`, and from the onboarding snippet.
    If the runtime does not expose this skill's base dir, locate the installed `pipeline-update/`
    directory (it contains this file) and run the script from there; cannot locate it ⇒ STOP and ask
    the operator for the runtime skill dir — never guess. **Relay the script's output verbatim** (mode,
-   old→new shas, which `pipeline-*` moved, or "already latest"). Non-zero exit ⇒ the install is
-   untouched — report the error and STOP.
+   old→new shas, which `pipeline-*` moved, or "already latest"). Non-zero exit ⇒ report the error and
+   STOP; distinguish no changes this run, completed rollback, and INCOMPLETE recovery exactly as the
+   script reports them. A non-zero exit alone never proves the existing install is intact.
+
+   **Pending recovery.** Both update modes refuse a destination containing `.pipeline-update.txn.*`
+   before updating it, even if its live copies look current or are missing. The script preserves and
+   names every pending path; inspect/recover its contents before moving the resolved transaction out
+   of that namespace and retrying. Never delete these backups just to make an update proceed.
 
    **Attachment no-op.** If the output is `nothing to refresh in <dir> (N skipped: attachment/absent;
    not verified against <sha>)`, no entry in this dir was compared against the new `main` — this dir is
