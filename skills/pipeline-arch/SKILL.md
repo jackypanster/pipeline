@@ -11,6 +11,7 @@ Stage 2. Follow the **shim loop in CONTRACT.md** with slot = `arch`.
 (`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
 stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+`preflight.sh` run with those envelope fields executes this guard.
 
 **Skill:** `arch` slot resolves to `grill-with-docs` — it walks each branch of the design tree,
 challenges the plan against the repo's existing domain model, sharpens terminology, and updates
@@ -18,6 +19,10 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 
 ## Steps
 
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage arch` (+ the five envelope fields
+   verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines (`PRD.md`
+   stays yours); `3` ⇒ verify the slot skill installed yourself; other non-zero ⇒ STOP with its printed reason; script absent ⇒ run the
+   steps as written (CONTRACT §shim loop).
 1. `git pull --rebase`. Read `.pipeline/current.json` (STOP if missing) and `<feature>/PRD.md`.
 2. Resolve `arch` slot from `roles.yaml`; verify installed (else STOP).
 3. **grill-with-docs** against the PRD + codebase: resolve cross-decision dependencies one at a

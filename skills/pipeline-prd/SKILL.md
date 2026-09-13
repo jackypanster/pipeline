@@ -13,6 +13,10 @@ files; YOU write the PRD.
 
 ## Steps
 
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage prd`. `0` ⇒ step 1's pull +
+   `current.json` read and all of step 2 are DONE — use its printed lines (SEEDING a missing `current.json` stays yours); `3` ⇒ verify the
+   slot skills installed yourself; other non-zero ⇒ STOP with its printed reason; script absent ⇒ run the steps as written (CONTRACT §shim
+   loop).
 1. `git pull --rebase`. Read/seed `.pipeline/current.json`; this command may CREATE it (set
    `feature` from the idea's slug, `stage: prd`).
 2. Resolve `prd` slot from `.pipeline/roles.yaml`; verify those skills are installed (else STOP).

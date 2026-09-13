@@ -15,6 +15,15 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    `pipeline-prd` ⇒ create it. Missing + any other command ⇒ STOP, ask the operator.
 4. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot. Verify the named skill is
    installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
+
+   **Deterministic executor (steps 1, 3, 4 + the coordinated pre-write guard):** run
+   `bash <your skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage <stage>` first, adding
+   the five envelope fields verbatim when your invocation carries a dispatch envelope. Exit `0` ⇒ steps 1,
+   3, 4 — and, with an envelope, the stale-dispatch guard — are DONE: take their values from its printed
+   lines. Exit `3` ⇒ everything passed except the install check: do step 4's verification yourself and STOP
+   if the skill is not installed. Any other non-zero ⇒ STOP and report the reason it printed. Script absent
+   on this install ⇒ execute steps 1–4 as written. Step 2 stays yours: the script only REPORTS the dotenv
+   file and its key names, never a value, and exports nothing.
 5. **Invoke that skill** — it does the REASONING/interview; as a rule it does NOT write files (the shim
    owns I/O). **Sanctioned exception:** `grill-with-docs` (arch) lands `CONTEXT.md`/ADRs **inline** by
    design — even then the shim owns staging/commit/journal/write-set enforcement; only those files'
