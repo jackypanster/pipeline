@@ -170,7 +170,7 @@ bind), the setup-side twin of `pipeline-update`.
 
 ```bash
 # 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
-git clone https://github.com/jackypanster/pipeline.git ~/workspace/pipeline   # or: git -C ~/workspace/pipeline fetch && git reset --hard origin/main
+git clone https://github.com/jackypanster/pipeline.git ~/workspace/pipeline   # or: git -C ~/workspace/pipeline fetch && git -C ~/workspace/pipeline reset --hard origin/main
 
 # 2. Install the command shims into the runtime that will RUN them (any capable agent — the pipeline
 #    is framework-agnostic). Install where THAT runtime loads skills; two concrete examples follow —
