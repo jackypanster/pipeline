@@ -202,6 +202,22 @@ rollback_clone() {
   [ "$(git -C "$top" rev-parse HEAD 2>/dev/null)" = "$old" ]
 }
 
+# Call under the destination's update lock. A previous Mode-1 transaction can hold
+# the only recovery copy; an inactive updater is not proof that its backups are disposable.
+refuse_pending_transactions() {
+  local pending found=0
+  if [ ! -r "$1" ] || [ ! -x "$1" ]; then
+    echo "ERROR: cannot inspect recovery transactions in $1 — no install changes made this run; restore directory access before retrying." >&2
+    return 1
+  fi
+  for pending in "$1"/.pipeline-update.txn.*; do
+    [ -e "$pending" ] || [ -L "$pending" ] || continue
+    echo "ERROR: unresolved recovery transaction $pending — preserved; no install changes made this run. Inspect and recover its contents, then move the resolved transaction out of this namespace before retrying." >&2
+    found=1
+  done
+  [ "$found" = 0 ]
+}
+
 main() {
   local self_dir skills_dir probe top mode old new changed name src canon tgt
   local src_phys staging backup problems refresh_list done_list diff_err diff_rc n2
@@ -243,7 +259,7 @@ main() {
     # missing; the janitor must still be reachable to restore it). Pure reads only.
     sweep=0
     if [ "$(cd "$canon" 2>/dev/null && pwd -P || echo __NO__)" != "$(cd "$top/skills" && pwd -P)" ]; then
-      for leftover in "$canon"/pipeline-* "$canon"/.pipeline-*.update-backup "$canon"/.pipeline-*.update-staging; do
+      for leftover in "$canon"/pipeline-* "$canon"/.pipeline-*.update-backup "$canon"/.pipeline-*.update-staging "$canon"/.pipeline-update.txn.*; do
         if [ -e "$leftover" ] || [ -L "$leftover" ]; then sweep=1; break; fi
       done
     fi
@@ -263,12 +279,14 @@ main() {
       echo "ERROR: another pipeline-update run is active on this clone (lock: $clone_lock, holder pid: $(cat "$clone_lock/pid" 2>/dev/null || echo unknown)) — nothing changed this run; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $clone_lock.reap with a dead pid needs removing by hand." >&2
       exit 1
     fi
+    refuse_pending_transactions "$top/skills" || exit 1
     if [ "$sweep" = 1 ]; then
       lock_path="$canon/.pipeline-update.lock"
       if ! acquire_lock "$lock_path"; then
         echo "ERROR: another pipeline-update run is active on $canon (lock: $lock_path, holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)) — nothing changed this run; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $lock_path.reap with a dead pid needs removing by hand." >&2
         exit 1
       fi
+      refuse_pending_transactions "$canon" || exit 1
     fi
     # `old` is read UNDER the clone lock: a pre-lock read can go stale while another
     # updater advances the shared clone, and a later failure rollback would then
@@ -430,8 +448,8 @@ main() {
     fi
   else
     # Mode 1 (cp'd copies) — TRANSACTIONAL: stage every refresh, then swap all, rolling back on ANY
-    # failure so a nonzero exit leaves the install UNTOUCHED (SKILL.md hard rule: "Non-zero exit ⇒ the
-    # install is untouched"). Only the temp-clone precedes staging (clone FIRST; a failed clone exits
+    # failure; an incomplete rollback retains its backups and reports INCOMPLETE. Only the
+    # temp-clone precedes staging (clone FIRST; a failed clone exits
     # here via set -e, install untouched). A SYMLINK entry is a canonical attachment (pi-style
     # `~/.pi/agent/skills/<name> -> ~/.agents/skills/<name>`): LEFT UNTOUCHED + reported — cp-ing over
     # it fails ("Not a directory") / clobbers the attachment; refresh its canonical target instead. In
@@ -450,6 +468,7 @@ main() {
       echo "ERROR: could not acquire the single-flight lock $lock_path — another pipeline-update run is active on $skills_dir (holder pid: $(cat "$lock_path/pid" 2>/dev/null || echo unknown)), or the dir is not writable. Nothing changed; re-run after it finishes. A dead holder's lock is reclaimed automatically; only a leftover $lock_path.reap with a dead pid needs removing by hand." >&2
       exit 1
     fi
+    refuse_pending_transactions "$skills_dir" || exit 1
     git clone --quiet --depth 1 "$REPO_URL" "$TMP"
     new="$(git -C "$TMP" rev-parse HEAD)"
     echo "mode=1 (copies in $skills_dir)"
@@ -489,9 +508,8 @@ main() {
       # $skills_dir, so the staging AND backup paths cannot be pre-created or symlinked by a racing
       # process — the fixed .name.update-* paths were a check-then-mv TOCTOU (a planted backup symlink
       # was followed by mv, moving a live skill out of $skills_dir). Same filesystem ⇒ mv is an atomic
-      # rename, not a cross-device copy. Sweep stale txn dirs from an interrupted run first (safe — we
-      # hold the lock, so no live txn of another run exists).
-      rm -rf "$skills_dir"/.pipeline-update.txn.* 2>/dev/null || true
+      # rename, not a cross-device copy. Pending transactions were refused under the lock;
+      # cleanup may remove only THIS run's transaction, never an earlier recovery copy.
       TXN="$(mktemp -d "$skills_dir/.pipeline-update.txn.XXXXXXXX")" \
         || { echo "ERROR: could not create a private transaction dir in $skills_dir — nothing changed." >&2; exit 1; }
       # Phase A — stage every refresh into the private dir. ANY failure ⇒ exit nonzero; the EXIT trap

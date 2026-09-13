@@ -352,6 +352,11 @@ attachment is only valid from one cwd — do not derive the path from it).
 Legacy layout (more than one dir of real copies): **ONE run per physical copy**, each with its own
 explicit dir argument.
 
+An unresolved `.pipeline-update.txn.*` in an update destination blocks either mode before replacement.
+Its files may be the only recovery copy: inspect and recover them, then move the resolved transaction
+out of that namespace before retrying. A failed update may report an incomplete rollback; do not
+interpret every non-zero exit as proof that the install is intact.
+
 ```bash
 # Mode B — the runtime loads skills straight from a clone (external_dirs). Run the script FROM that
 # clone with NO argument: it self-locates to <clone>/skills, detects Mode 2, fetches + resets the
