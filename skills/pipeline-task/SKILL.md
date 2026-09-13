@@ -18,10 +18,10 @@ stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch �
 
 ## Steps
 
-0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage task` (+ the five envelope fields
-   verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines (`arch.md`
-   / `CONTEXT.md` stay yours); `3` ⇒ verify the slot skill installed yourself; other non-zero ⇒ STOP with its printed reason; script
-   absent ⇒ run the steps as written (CONTRACT §shim loop).
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage task` (+ the five envelope
+   fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines
+   (`arch.md` / `CONTEXT.md` stay yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the
+   steps as written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason.
 1. `git pull --rebase`. Read `current.json` (STOP if missing), `<feature>/arch.md`, `CONTEXT.md`.
 2. Resolve `task` slot; verify installed (else STOP).
 3. **think** to split the work into atomic sub-tasks. **Concreteness gate:** if you cannot write a

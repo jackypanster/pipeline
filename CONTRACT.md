@@ -20,10 +20,13 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    `bash <your skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage <stage>` first, adding
    the five envelope fields verbatim when your invocation carries a dispatch envelope. Exit `0` ⇒ steps 1,
    3, 4 — and, with an envelope, the stale-dispatch guard — are DONE: take their values from its printed
-   lines. Exit `3` ⇒ everything passed except the install check: do step 4's verification yourself and STOP
-   if the skill is not installed. Any other non-zero ⇒ STOP and report the reason it printed. Script absent
-   on this install ⇒ execute steps 1–4 as written. Step 2 stays yours: the script only REPORTS the dotenv
-   file and its key names, never a value, and exports nothing.
+   lines. Exit `3` ⇒ everything ELSE passed and the line names the check(s) it could not make
+   (`install-check` — verify the slot skill is installed and STOP if it is not; `remote-identity` — confirm
+   the remote really is the one `current.json.repo` names): do exactly those yourself. Exit `4` ⇒ the script
+   could not run at all (e.g. `python3-missing`) and changed nothing — execute steps 1–4 as written, exactly
+   as if it were absent. Any other non-zero ⇒ STOP and report the reason it printed. Script absent on this
+   install ⇒ likewise execute steps 1–4 as written. Step 2 stays yours: the script only REPORTS the dotenv
+   file and how many keys it defines — never a name, never a value — and exports nothing.
 5. **Invoke that skill** — it does the REASONING/interview; as a rule it does NOT write files (the shim
    owns I/O). **Sanctioned exception:** `grill-with-docs` (arch) lands `CONTEXT.md`/ADRs **inline** by
    design — even then the shim owns staging/commit/journal/write-set enforcement; only those files'
