@@ -364,7 +364,11 @@ else
   # applied, first url picked exactly as fetch picks it, and no network is touched.
   # expected = `current.json.repo` verbatim. Equal ⇒ verified; anything else ⇒ UNVERIFIED.
   guard_remote=""
-  obs_remote="$(git -C "$repo" ls-remote --get-url "$remote" 2>/dev/null || true)"
+  # Read the URL byte-exact: `$()` would eat EVERY trailing newline, so a URL that itself ends
+  # in one would collapse onto its trimmed twin. Keep the bytes, then drop exactly the ONE
+  # record terminator ls-remote appends (review round 5).
+  obs_remote="$(git -C "$repo" ls-remote --get-url "$remote" 2>/dev/null; printf x)"
+  obs_remote="${obs_remote%x}"; obs_remote="${obs_remote%$'\n'}"
   [ -n "$obs_remote" ] || obs_remote="<absent>"
   if [ "$obs_remote" != "<absent>" ] && [ "$obs_remote" = "$cur_repo" ]; then
     guard_remote=" remote=$obs_remote"
