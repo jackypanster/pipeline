@@ -205,11 +205,14 @@ for k in KEYS:
         print("MISSING " + k); raise SystemExit(0)
     v = d[k]
     # null / number / list / "" are all unusable downstream: a non-empty STRING or nothing.
-    if not isinstance(v, str) or not v.strip():
+    # Surrounding whitespace is rejected too, never trimmed: `repo` is compared BYTE-FOR-BYTE
+    # with the remote URL and `feature` names a directory, so a stray space is a wrong value,
+    # and silently stripping it would let "/r " verify against "/r" (review round 4).
+    if not isinstance(v, str) or not v.strip() or v != v.strip():
         print("BADFIELD " + k); raise SystemExit(0)
 print("OK")
 for k in KEYS:
-    print(d[k].strip())
+    print(d[k])
 pr = d.get("pr")
 if pr is None or (isinstance(pr, str) and not pr.strip()):
     print("")

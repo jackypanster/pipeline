@@ -22,7 +22,7 @@ The five `k=v` envelope fields are all-or-nothing — pass them exactly as the c
 
 The exit-3 checks: **`install-check`** — verify the slot skill is installed on this runtime, STOP if not; **`remote-identity`** — confirm the repo's remote really is the one `current.json.repo` names.
 
-**Remote identity** = `git ls-remote --get-url <remote>` byte-equal to `current.json.repo`; anything else is UNVERIFIED (Git's URL grammar is not re-implemented, and this check never STOPs).
+**Remote identity** = `git ls-remote --get-url <remote>` byte-equal to `current.json.repo` (whose fields are never trimmed — surrounding whitespace is `current.json-invalid-field`); anything else is UNVERIFIED (Git's URL grammar is not re-implemented, and this check never STOPs).
 
 **Journal handoff markers are whole lines** (CONTRACT §Run journal): inside the tail entry, the first line that IS `--- handoff ---`, whose next non-empty line must BE `>>> NEXT`; the command is the next non-empty line after that. Anything else ⇒ `STALE_DISPATCH next observed=<absent-handoff-in-tail>`. Prose that merely mentions `>>> NEXT` is prose. **Slot names are directory names**, `^[A-Za-z0-9][A-Za-z0-9._-]*$` — a path such as `../outside` is `PREFLIGHT STOP slot-invalid-name`, never an install found outside the declared dirs.
 

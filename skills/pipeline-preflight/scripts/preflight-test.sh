@@ -290,6 +290,11 @@ build 08c
 run "$WORK" --stage task
 [ "$RC" = 0 ] || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "pr=https://forge/pr/7" || ok=0
+FX_CURRENT_JSON='{ "repo": "fx-08d/remote ", "branch": "main", "feature": "'"$FEATURE"'", "stage": "arch" }'
+build 08d
+run "$WORK" --stage task
+[ "$RC" = 2 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP current.json-invalid-field repo" || ok=0   # surrounding whitespace is never trimmed
 report "08-current-json-fields" "$ok"
 
 # --- 9. an ALL-EMPTY envelope is an incomplete envelope, not the absence of one --------
