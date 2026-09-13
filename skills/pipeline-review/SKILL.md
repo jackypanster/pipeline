@@ -12,6 +12,7 @@ that merges, and only after an explicit human confirm.**
 (`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
 stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+`preflight.sh` run with those envelope fields executes this guard.
 
 **Skill:** `review` slot resolves to `check` — semantic review of the diff. The forge adapter and
 the freeze gate are YOUR I/O, not check's.
@@ -39,6 +40,10 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
 
 ## Steps
 
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage review` (+ the five envelope
+   fields verbatim when one is present), skipped in meta-PR mode. `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE
+   — use its printed lines (the cards stay yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒
+   run the steps as written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason.
 1. `git pull --rebase`. Read `current.json` + **all of the feature's cards** (this stage runs on a
    COMPLETE feature — expect every card `status: review`; see the pre-merge guard in step 6).
 2. Resolve `review` slot; verify installed (else STOP).

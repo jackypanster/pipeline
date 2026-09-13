@@ -11,12 +11,17 @@ Stage 3. Follow the **shim loop in CONTRACT.md** with slot = `task`.
 (`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
 stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+`preflight.sh` run with those envelope fields executes this guard.
 
 **Skill:** `task` slot resolves to `think` — it produces the decomposition (think writes NO code).
 **YOU write the red-test code and the card frontmatter** — that is the shim's I/O, not think's.
 
 ## Steps
 
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage task` (+ the five envelope
+   fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines
+   (`arch.md` / `CONTEXT.md` stay yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the
+   steps as written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason.
 1. `git pull --rebase`. Read `current.json` (STOP if missing), `<feature>/arch.md`, `CONTEXT.md`.
 2. Resolve `task` slot; verify installed (else STOP).
 3. **think** to split the work into atomic sub-tasks. **Concreteness gate:** if you cannot write a

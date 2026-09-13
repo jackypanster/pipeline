@@ -28,6 +28,7 @@ behind each command is a swappable `roles.yaml` slot.
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
 | pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR — see §Operating modes |
+| pipeline-preflight | (helper script, not a stage) | deterministic executor of shim steps 1/3/4 + the stale-dispatch guard; stage skills call `scripts/preflight.sh` at step 0 — never invoke by hand; set `PIPELINE_SKILL_DIRS` per runtime for a verified install check, otherwise exit 3 and the stage verifies it |
 
 ## Operating modes — the four-track SOP (base decision 2026-07-08; duty track added 2026-08-19)
 
@@ -122,7 +123,9 @@ repo references are intentional so it works from any project):
 > pipeline-task → pipeline-impl → pipeline-review`, plus `pipeline-hunt` for blocked cards. Each
 > command is a ~20-line shim that does the same
 > loop: `git pull --rebase` → read `.pipeline/current.json` + the feature's `journal.md` → resolve the
-> stage's skill via `.pipeline/roles.yaml` → invoke that skill (it *reasons*; the shim owns all I/O) →
+> stage's skill via `.pipeline/roles.yaml` (pull, `current.json`, slot resolution and the coordinated
+> stale-dispatch guard run as `pipeline-preflight/scripts/preflight.sh`) → invoke that skill (it
+> *reasons*; the shim owns all I/O) →
 > write only its stage's write-set → append one entry to `.pipeline/<feature>/journal.md` → commit once
 > → git push → print a self-contained handoff for the next (cold, possibly different-LLM) node. There is **no
 > shared memory, no scheduler, no DB**: a human relays the printed handoff between bots, and any agent
