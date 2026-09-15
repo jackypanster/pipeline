@@ -26,7 +26,10 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    could not run at all (e.g. `python3-missing`) and changed nothing — execute steps 1–4 as written, exactly
    as if it were absent. Any other non-zero ⇒ STOP and report the reason it printed. Script absent on this
    install ⇒ likewise execute steps 1–4 as written. Step 2 stays yours: the script only REPORTS the dotenv
-   file and how many keys it defines — never a name, never a value — and exports nothing.
+   file and how many keys it defines — never a name, never a value — and exports nothing. The script also
+   prints one advisory `UPSTREAM …` line (a once-a-day `git ls-remote` of the pipeline repo compared to the
+   installed version): `UPSTREAM newer` ⇒ add one line to your final report/handoff telling the operator to
+   run `pipeline-update` between stages; it never changes the exit code, and you never update mid-stage.
 5. **Invoke that skill** — it does the REASONING/interview; as a rule it does NOT write files (the shim
    owns I/O). **Sanctioned exception:** `grill-with-docs` (arch) lands `CONTEXT.md`/ADRs **inline** by
    design — even then the shim owns staging/commit/journal/write-set enforcement; only those files'

@@ -28,14 +28,17 @@ The exit-3 checks: **`install-check`** — verify the slot skill is installed on
 
 Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` · `ENV file=<n> keys=<N>` / `ENV none` ·
 `CURRENT ok repo=… branch=… feature=… stage=…[ pr=…]` / `CURRENT absent (prd creates it)` · `SLOT <stage>=<n1>[,<n2>]` ·
+`UPSTREAM ok head=<sha>[ cached]` (installed == pipeline main, or ahead of it) / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <no-install-stamp|network>` ·
 `INSTALLED <n> path=<dir>/<n>` (verified) / `INSTALLED <n> found=<dir>/<n> UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…` ·
 `FETCH fail <remote>/<branch>` · `REMOTE unverified observed=… current.json.repo=…` ·
 `GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)`.
 
 **`PIPELINE_SKILL_DIRS`** (colon-separated, per runtime) declares which dirs THIS runtime actually loads skills from. A hit there is a **verified** install (`path=`). Without it the script still searches the default dirs, but a hit is evidence only (`found=… UNVERIFIED`) — a readable `SKILL.md` on disk never proves the running agent loads it — so the exit is 3 and the stage verifies the slot itself.
 
+**`UPSTREAM …`** is advisory, printed after the guard, just before the final verdict (so a STOP never writes its cache): at most one `git ls-remote` of the pipeline repo per 24h, throttled through `${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head` (a failed fetch is throttled too), with `PIPELINE_UPSTREAM_URL` overriding the URL (tests/mirrors). It compares that sha against the installed version — the clone's HEAD when the skills live in a pipeline clone, else the install stamp `<skills-dir>/.pipeline-update.head` written by `pipeline-update` (no stamp ⇒ `no-install-stamp`). `UPSTREAM newer` ⇒ the stage adds one line to its final report telling the operator to run `pipeline-update` between stages. It never changes the exit code and never STOPs.
+
 **Fallback (mandatory):** script absent on this install, or exit 4 ⇒ execute steps 1–4 as the prose is
 written; exit 3 ⇒ execute the named check(s) that way. The prose IS the spec; this script is only its
 deterministic executor, and rollback = delete this dir.
 
-**Guarantees:** zero file writes anywhere — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (31 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).
+**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (41 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).

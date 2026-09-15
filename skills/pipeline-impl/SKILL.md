@@ -27,7 +27,7 @@ sub-instruction is the cheap seam if your skill supports one).
    fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and step 2's slot resolve + install check are DONE —
    use its printed lines (card picking in step 1 and the `feat/<feature>` create/reconcile in step 2 stay yours); `3` ⇒ do the check(s)
    it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as written (CONTRACT §shim loop); other non-zero ⇒ STOP
-   with its printed reason.
+   with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
 1. `git pull --rebase`. Read `current.json`. Pick the **oldest** `status: todo` card (or the given
    card-id). Idempotency: if `feat/<feature>` already has an open PR and the card reads
    `status: review`, skip — already in flight.

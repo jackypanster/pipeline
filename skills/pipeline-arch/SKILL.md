@@ -22,7 +22,7 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage arch` (+ the five envelope
    fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines
    (`PRD.md` stays yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as written
-   (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason.
+   (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
 1. `git pull --rebase`. Read `.pipeline/current.json` (STOP if missing) and `<feature>/PRD.md`.
 2. Resolve `arch` slot from `roles.yaml`; verify installed (else STOP).
 3. **grill-with-docs** against the PRD + codebase: resolve cross-decision dependencies one at a

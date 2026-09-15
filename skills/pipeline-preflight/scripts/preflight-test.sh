@@ -13,9 +13,11 @@
 #   * $PIPELINE_SKILL_DIRS points at a fake skills dir holding only `think/SKILL.md`;
 #   * after EVERY run the clone must be byte-identical: `git status --porcelain` empty, HEAD
 #     unmoved, and NO file newer than a marker stamped immediately before the run. That triple
-#     is the standing proof that preflight.sh writes no files (final case). The one sanctioned
-#     exception is CONTRACT step 1's own `git pull` advancing HEAD — a case opts into it with
-#     ZW_EXPECT_HEAD and must then land exactly on the tip it pushed.
+#     is the standing proof that preflight.sh writes no files IN THE TARGET REPO (final case); the
+#     only other write it makes anywhere is its own throttle stamp
+#     ($XDG_CACHE_HOME/pipeline/upstream-head, redirected into $ROOT with the rest of the environment).
+#     The one sanctioned exception is CONTRACT step 1's own `git pull` advancing HEAD — a case opts
+#     into it with ZW_EXPECT_HEAD and must then land exactly on the tip it pushed.
 #
 # The suite runs preflight.sh under the SAME bash that runs this file, so
 # `/bin/bash scripts/preflight-test.sh` exercises the bash-3.2 path macOS still ships.
@@ -34,7 +36,12 @@ trap 'rm -rf "$ROOT"' EXIT
 
 # --- hermetic environment -------------------------------------------------------------
 export HOME="$ROOT/home"
+# BOTH XDG roots are redirected, and XDG_CACHE_HOME matters as much as git's: the upstream-check
+# throttle stamp lives at ${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head, so an inherited
+# real XDG_CACHE_HOME would make this suite read and WRITE the operator's own cache.
+# HOME alone is not enough.
 export XDG_CONFIG_HOME="$ROOT/home/.config"   # git also reads XDG; redirect it too
+export XDG_CACHE_HOME="$ROOT/home/.cache"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 cat > "$HOME/.gitconfig" <<'GITCFG'
 [user]
@@ -53,6 +60,25 @@ SKILLS_FAKE="$ROOT/skills-fake"
 mkdir -p "$SKILLS_FAKE/think"
 printf -- '---\nname: think\n---\n' > "$SKILLS_FAKE/think/SKILL.md"
 export PIPELINE_SKILL_DIRS="$SKILLS_FAKE"
+
+# --- upstream fixture: a LOCAL bare repo stands in for github.com/jackypanster/pipeline --------
+# Every case points PIPELINE_UPSTREAM_URL at it, so the once-a-day `UPSTREAM …` check never touches
+# GitHub and a case can advance "main" on demand. UP_SHA is its tip; the mode-1 stamp cases compare
+# against exactly it.
+UPSTREAM_BARE="$ROOT/upstream.git"
+UPSTREAM_SEED="$ROOT/upstream-seed"
+git init --quiet --bare "$UPSTREAM_BARE"
+git clone --quiet "$UPSTREAM_BARE" "$UPSTREAM_SEED" 2>/dev/null
+echo seed > "$UPSTREAM_SEED/seed.txt"
+git -C "$UPSTREAM_SEED" add -A
+git -C "$UPSTREAM_SEED" commit --quiet -m "upstream seed"
+git -C "$UPSTREAM_SEED" push --quiet origin main
+UP_SHA="$(git -C "$UPSTREAM_SEED" rev-parse HEAD)"
+export PIPELINE_UPSTREAM_URL="$UPSTREAM_BARE"
+# The throttle stamp under test, and the mode-1 install stamp path.
+UP_CACHE="$XDG_CACHE_HOME/pipeline/upstream-head"
+STAMP=".pipeline-update.head"
+upstream_url() { export PIPELINE_UPSTREAM_URL="$1"; }
 
 DEFAULT_ROLES='prd:    [grill-me, think]   # grill-me clarifies, then think plans
 arch:   grill-with-docs
@@ -618,6 +644,135 @@ ok=1
 printf '%s\n' "$OUT" | grep -Fq -- "GUARD ok seq=1 commit=$COMMIT" || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=task" || ok=0
 report "30-large-handoff-no-sigpipe" "$ok"
+
+# --- 32..37. the advisory `UPSTREAM …` line (never a STOP, never a changed exit code) ----------
+# The dev tree is a pipeline clone, so the suite's own runs are mode 2. Mode 1 needs a script OUTSIDE
+# any git repo: $ROOT is under $TMPDIR, so a copy of preflight.sh there has no clone to read a HEAD
+# from and must fall back to the install stamp.
+FAKE_SKILLS="$ROOT/fake-skills"
+mkdir -p "$FAKE_SKILLS/pipeline-preflight/scripts"
+cp "$PREFLIGHT" "$FAKE_SKILLS/pipeline-preflight/scripts/preflight.sh"
+FAKE_PREFLIGHT="$FAKE_SKILLS/pipeline-preflight/scripts/preflight.sh"
+DRIFT_SHA="1111111111111111111111111111111111111111"
+
+# --- 32. mode 1, no stamp: nothing was ever verified against main ⇒ say so, never guess --------
+build 32
+rm -f "$FAKE_SKILLS/$STAMP" "$UP_CACHE"
+RUN_SCRIPT="$FAKE_PREFLIGHT"
+run "$WORK" --stage task
+expect "32-upstream-mode1-no-stamp" 0 "UPSTREAM unverified no-install-stamp" \
+  "PREFLIGHT OK stage=task"
+
+# --- 33. mode 1, stamp == upstream HEAD ⇒ ok (and the value came from the fresh cache) ---------
+build 33
+printf '%s\n' "$UP_SHA" > "$FAKE_SKILLS/$STAMP"
+RUN_SCRIPT="$FAKE_PREFLIGHT"
+run "$WORK" --stage task
+expect "33-upstream-mode1-ok" 0 "UPSTREAM ok head=$UP_SHA" "PREFLIGHT OK stage=task"
+
+# --- 34. mode 1, stamp = an unrelated 40-hex sha ⇒ newer + the exact remedy --------------------
+# MUST stay immediately before 35: that case proves the throttle by reusing THIS run's cache.
+build 34
+printf '%s\n' "$DRIFT_SHA" > "$FAKE_SKILLS/$STAMP"
+RUN_SCRIPT="$FAKE_PREFLIGHT"
+run "$WORK" --stage task
+expect "34-upstream-mode1-newer" 0 \
+  "UPSTREAM newer head=$UP_SHA installed=$DRIFT_SHA run=pipeline-update" "PREFLIGHT OK stage=task"
+
+# --- 35. a fresh cache means NO network: an unreachable URL changes nothing --------------------
+build 35
+upstream_url "$ROOT/does-not-exist.git"
+RUN_SCRIPT="$FAKE_PREFLIGHT"
+run "$WORK" --stage task
+upstream_url "$UPSTREAM_BARE"
+expect "35-upstream-cache-no-network" 0 \
+  "UPSTREAM newer head=$UP_SHA installed=$DRIFT_SHA run=pipeline-update cached" \
+  "PREFLIGHT OK stage=task"
+
+# --- 36. a STALE cache + an unreachable URL ⇒ unverified, exit unchanged, and the failed fetch
+#         is itself throttled (the cache now holds an empty sha, so the next 24h costs no wait) --
+build 36
+printf '%s %s\n' "$(( $(date +%s) - 90000 ))" "$UP_SHA" > "$UP_CACHE"
+upstream_url "$ROOT/does-not-exist.git"
+RUN_SCRIPT="$FAKE_PREFLIGHT"
+run "$WORK" --stage task
+upstream_url "$UPSTREAM_BARE"
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "UPSTREAM unverified network" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=task" || ok=0
+grep -Eq '^[0-9]+ $' "$UP_CACHE" || ok=0
+report "36-upstream-cache-stale-unverified" "$ok"
+
+# --- 37. mode 2: the skills live in a pipeline CLONE, whose HEAD is the installed version ------
+MODE2="$ROOT/mode2-clone"
+git clone --quiet "$UPSTREAM_BARE" "$MODE2" 2>/dev/null
+git -C "$MODE2" remote set-url origin https://github.com/jackypanster/pipeline.git   # no network is used
+mkdir -p "$MODE2/skills/pipeline-preflight/scripts"
+cp "$PREFLIGHT" "$MODE2/skills/pipeline-preflight/scripts/preflight.sh"
+MODE2_PREFLIGHT="$MODE2/skills/pipeline-preflight/scripts/preflight.sh"
+# (a) clone HEAD == upstream main ⇒ ok.
+build 37a
+rm -f "$UP_CACHE"
+RUN_SCRIPT="$MODE2_PREFLIGHT"
+run "$WORK" --stage task
+expect "37a-upstream-mode2-ok" 0 "UPSTREAM ok head=$UP_SHA" "PREFLIGHT OK stage=task"
+# (b) upstream advanced by one commit (cache wiped) ⇒ newer, naming the installed clone HEAD.
+SECOND="$ROOT/upstream-second"
+git clone --quiet "$UPSTREAM_BARE" "$SECOND" 2>/dev/null
+echo advanced > "$SECOND/advanced.txt"
+git -C "$SECOND" add -A
+git -C "$SECOND" commit --quiet -m "upstream advanced"
+git -C "$SECOND" push --quiet origin main
+NEW_SHA="$(git -C "$SECOND" rev-parse HEAD)"
+build 37b
+rm -f "$UP_CACHE"
+RUN_SCRIPT="$MODE2_PREFLIGHT"
+run "$WORK" --stage task
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- \
+  "UPSTREAM newer head=$NEW_SHA installed=$UP_SHA run=pipeline-update" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=task" || ok=0
+report "37b-upstream-mode2-newer" "$ok"
+# (c) the clone is AHEAD of upstream main: a local commit is not staleness ⇒ ok, never `newer`.
+git -C "$MODE2" fetch --quiet "$UPSTREAM_BARE" main
+git -C "$MODE2" reset --hard --quiet FETCH_HEAD
+echo local > "$MODE2/local.txt"
+git -C "$MODE2" add -A
+git -C "$MODE2" commit --quiet -m "local ahead"
+build 37c
+rm -f "$UP_CACHE"
+RUN_SCRIPT="$MODE2_PREFLIGHT"
+run "$WORK" --stage task
+expect "37c-upstream-mode2-ahead" 0 "UPSTREAM ok head=$NEW_SHA" "PREFLIGHT OK stage=task"
+
+# --- 38. a STOP writes NOTHING — not even the advisory throttle cache ------------------------
+# CONTRACT §Pre-write stale-dispatch guard: the guard runs before ANY file write and a mismatch
+# leaves zero writes. The freshness advisory WRITES its cache, so it must run after the guard:
+# with a coordinated envelope whose expected_seq mismatches the journal tail, the stale-dispatch
+# STOP must print no UPSTREAM line and must not create the cache file at all.
+build 38
+rm -f "$UP_CACHE"
+run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
+  expected_seq=99 "expected_commit=$COMMIT"
+ok=1
+[ "$RC" = 2 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "STALE_DISPATCH expected_seq observed=1 expected=99" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP stale-dispatch" || ok=0
+refute "UPSTREAM"                                             # no advisory line on a STOP
+if [ -e "$UP_CACHE" ]; then ok=0; fi                         # and no cache write before the guard
+report "38-stale-dispatch-writes-nothing" "$ok"
+
+# --- 39. …but an exit-3 (UNVERIFIED) run still gets the advisory: it did NOT stop ------------
+# UNVERIFIED is not a STOP: the run proceeds, so the advisory still reports freshness. The remote
+# tip is read live — 37b advanced upstream main past the seed sha.
+build 39
+rm -f "$UP_CACHE"
+TODAY_SHA="$(git -C "$UPSTREAM_BARE" rev-parse HEAD)"
+run "$WORK" --stage prd
+expect "39-unverified-still-advisory" 3 "PREFLIGHT UNVERIFIED install-check" \
+  "UPSTREAM newer head=$TODAY_SHA installed="
 
 # --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
 OUT="$ZW"; RC=0

@@ -25,7 +25,7 @@ especially "used to work / can't fix it after N tries").
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage hunt` (+ the five envelope
    fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines
    (your target stays yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as
-   written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason.
+   written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
 1. `git pull --rebase`. Read `current.json` + your target. Usual target = the `blocked` **card**
    (every `## Attempt N` note + the latest `verify:` failure / review rejection). **Alternative target:
    a feature-level integration incident report** `reviews/integration-NN.md` that `pipeline-review`

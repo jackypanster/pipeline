@@ -16,7 +16,7 @@ files; YOU write the PRD.
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage prd`. `0` ⇒ step 1's pull +
    `current.json` read and all of step 2 are DONE — use its printed lines (SEEDING a missing `current.json` stays yours); `3` ⇒ do the
    check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as written (CONTRACT §shim loop); other
-   non-zero ⇒ STOP with its printed reason.
+   non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
 1. `git pull --rebase`. Read/seed `.pipeline/current.json`; this command may CREATE it (set
    `feature` from the idea's slug, `stage: prd`).
 2. Resolve `prd` slot from `.pipeline/roles.yaml`; verify those skills are installed (else STOP).

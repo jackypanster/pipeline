@@ -14,6 +14,7 @@ import tempfile
 SOURCE = Path(__file__).resolve().parents[3]
 SCRIPT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).with_name('update.sh')
 URL = 'https://github.com/jackypanster/pipeline.git'
+STAMP = '.pipeline-update.head'   # advisory install stamp written by a verified Mode-1 success
 
 
 def run(args, cwd, env, check=True):
@@ -35,6 +36,12 @@ def snapshot(root):
         else:
             result[name] = ('dir',)
     return result
+
+
+def without_stamp(tree):
+    """A snapshot minus the install stamp: the stamp is advisory metadata the install owns,
+    so the copy-vs-upstream byte comparison excludes it (it is asserted separately)."""
+    return {name: value for name, value in tree.items() if name != STAMP}
 
 
 def main():
@@ -59,6 +66,8 @@ def main():
         run(['git', 'clone', '--bare', str(upstream), str(bare)], root, env)
         env.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0=f'url.{bare.as_uri()}.insteadOf',
                    GIT_CONFIG_VALUE_0=URL)
+        # Mode 1 clones this bare repo's HEAD, so a successful refresh must stamp exactly it.
+        tip = run(['git', 'rev-parse', 'HEAD'], bare, env).stdout.strip()
         failures = []
 
         def scenario(name, mode, pending=None, current=False, empty=False, source_pending=False):
@@ -114,15 +123,19 @@ def main():
                             assert snapshot(clone / 'skills') == source_before, 'source skill tree changed'
                             assert run(['git', 'rev-parse', 'HEAD'], clone, env).stdout.strip() == base
                             assert not (clone / '.git/pipeline-update.lock').exists(), 'clone lock leaked'
+                        assert not (install / STAMP).exists(), 'a failed run left an install stamp'
                     elif mode == 2:
                         assert result.returncode != 0 and "transport 'https' not allowed" in result.stderr
                         assert 'unresolved recovery transaction' not in result.stderr
                         assert snapshot(install) == before
                         assert run(['git', 'rev-parse', 'HEAD'], clone, env).stdout.strip() == base
                         assert not (clone / '.git/pipeline-update.lock').exists(), 'clone lock leaked'
+                        assert not (install / STAMP).exists(), 'a failed run left an install stamp'
                     else:
                         assert result.returncode == 0, f'update failed: {result.stderr}'
-                        assert snapshot(install) == snapshot(upstream / 'skills'), 'install differs from upstream'
+                        assert without_stamp(snapshot(install)) == snapshot(upstream / 'skills'), 'install differs from upstream'
+                        # Mode 1 success => the install records the upstream commit it is at.
+                        assert (install / STAMP).read_text() == tip + '\n', 'install stamp is not the upstream sha'
                     assert not (install / '.pipeline-update.lock').exists(), 'install lock leaked'
                     if pending == 'symlink':
                         assert (recovery / 'evidence').read_text() == 'keep linked evidence\n'
@@ -144,9 +157,115 @@ def main():
         scenario('clone canonical pending', 2, 'backup')
         scenario('clone canonical only recovery', 2, 'backup', empty=True)
         scenario('clone own pending', 2, 'backup', source_pending=True)
+
+        # A FAILED run writes no stamp — including a genuine ROLLBACK. Here TWO entries need a
+        # refresh and the second cannot be backed up (its slot is immutable), so the first swap is
+        # rolled back: the install must come out bit-identical AND unstamped.
+        if shutil.which('chflags'):
+            case = root / 'copy rolled back run'
+            case.mkdir()
+            install = case / 'installed skills'
+            shutil.copytree(upstream / 'skills', install)
+            (install / 'pipeline-review/upstream-marker.txt').unlink()
+            (install / 'pipeline-prd/local-drift.txt').write_text('drift\n')   # refreshes FIRST
+            before = snapshot(install)
+            run(['chflags', 'uchg', str(install / 'pipeline-review')], case, env)
+            try:
+                result = run(['bash', str(SCRIPT), str(install)], case, env, check=False)
+                assert result.returncode == 1, f'expected a rollback, got {result.returncode}'
+                assert 'updated: pipeline-prd' in result.stdout, 'no swap completed before the failure'
+                assert 'could not back up' in result.stderr, result.stderr
+                assert 'left UNTOUCHED' in result.stderr, result.stderr
+                assert snapshot(install) == before, 'rollback did not restore the install byte-for-byte'
+                assert not (install / STAMP).exists(), 'a rolled-back run left an install stamp'
+                print('PASS copy rolled back run leaves no stamp')
+            except AssertionError as exc:
+                failures.append(f'copy rolled back run: {exc}')
+                print('FAIL', failures[-1])
+            finally:
+                subprocess.run(['chflags', 'nouchg', str(install / 'pipeline-review')],
+                               capture_output=True)
+        else:
+            print('SKIP copy rolled back run — chflags is unavailable, cannot make a swap fail')
+
+        # The `nothing to refresh … skipped` branch verified NOTHING against upstream, so it must
+        # not stamp either (a stamp there would claim a version this run never checked).
+        case = root / 'copy attachments only'
+        case.mkdir()
+        install = case / 'installed skills'
+        install.mkdir()
+        (install / 'pipeline-review').symlink_to(upstream / 'skills/pipeline-review',
+                                                 target_is_directory=True)
+        result = run(['bash', str(SCRIPT), str(install)], case, env, check=False)
+        try:
+            assert result.returncode == 0, f'update failed: {result.stderr}'
+            assert 'nothing to refresh' in result.stdout, 'the skipped branch was not taken'
+            assert not (install / STAMP).exists(), 'the nothing-to-refresh branch left an install stamp'
+            print('PASS copy attachments only leaves no stamp')
+        except AssertionError as exc:
+            failures.append(f'copy attachments only: {exc}')
+            print('FAIL', failures[-1])
+
+        # A Mode-2 clone refreshes the canonical COPIES too, and those copies are what a
+        # symlink-attached runtime's preflight self-locates to and stamps. The remote identity check
+        # accepts any URL that ENDS in the pinned repo, so a bare repo at .../github.com/<owner>/<repo>
+        # is the transport for a REAL local fetch while `remote get-url origin` still reports the
+        # pinned identity: Mode 2 without network and without stubbing anything.
+        canon_root = root / 'mode2 canon'
+        canon_root.mkdir()
+        pinned = canon_root / 'remotes/github.com/jackypanster/pipeline'
+        pinned.parent.mkdir(parents=True)
+        run(['git', 'clone', '--bare', str(bare), str(pinned)], canon_root, env)
+
+        # (a) the lifecycle the reviewer reproduced: a canon copy stamped A, refreshed by Mode 2 to
+        #     B ⇒ exit 0, copy content is B, and the copy's stamp is B (not the stale A).
+        case = canon_root / 'sweep'
+        case.mkdir()
+        clone = case / 'consumer'
+        run(['git', 'clone', str(pinned), str(clone)], case, env)
+        canon = case / 'canonical skills'
+        shutil.copytree(upstream / 'skills', canon)
+        (canon / 'pipeline-review/upstream-marker.txt').unlink()      # the A-era content
+        (canon / STAMP).write_text(base + '\n')                       # ... stamped A
+        result = run(['bash', str(SCRIPT), str(clone / 'skills')], case,
+                     dict(env, PIPELINE_CANON_SKILLS=str(canon)), check=False)
+        try:
+            assert result.returncode == 0, f'update failed: {result.stderr}'
+            assert 'refreshed canonical copy' in result.stdout, result.stdout
+            assert without_stamp(snapshot(canon)) == snapshot(upstream / 'skills'), 'canonical copy is not B'
+            assert (canon / STAMP).read_text() == tip + '\n', 'Mode 2 left the canonical copy stamped A'
+            print('PASS clone sweep stamps the canonical copies')
+        except AssertionError as exc:
+            failures.append(f'clone sweep: {exc}')
+            print('FAIL', failures[-1])
+
+        # (b) a Mode-2 rollback (recovery/attachment problems ⇒ clone rolled back, exit 1) must
+        #     leave the old stamp EXACTLY as it was — a failed run may not claim a version.
+        case = canon_root / 'sweep rollback'
+        case.mkdir()
+        clone = case / 'consumer'
+        run(['git', 'clone', str(pinned), str(clone)], case, env)
+        canon = case / 'canonical skills'
+        shutil.copytree(upstream / 'skills', canon)
+        (canon / 'pipeline-review/upstream-marker.txt').unlink()
+        (canon / STAMP).write_text(base + '\n')
+        shutil.rmtree(canon / 'pipeline-task')                     # a runtime attachment that
+        (canon / 'pipeline-task').symlink_to(case / 'nowhere')     # ...dangles ⇒ problems
+        before = snapshot(canon)
+        result = run(['bash', str(SCRIPT), str(clone / 'skills')], case,
+                     dict(env, PIPELINE_CANON_SKILLS=str(canon)), check=False)
+        try:
+            assert result.returncode == 1, f'expected a refusal, got {result.returncode}'
+            assert snapshot(canon) == before, 'the rollback path touched the canonical copies'
+            assert (canon / STAMP).read_text() == base + '\n', 'the rollback path restamped'
+            print('PASS clone sweep rollback keeps the old stamp')
+        except AssertionError as exc:
+            failures.append(f'clone sweep rollback: {exc}')
+            print('FAIL', failures[-1])
+
         if failures:
             raise SystemExit(f'{len(failures)} scenario(s) failed')
-    print('11 scenarios passed; pending recovery retried twice; all fixtures removed')
+    print('15 checks passed; pending recovery retried twice; all fixtures removed')
 
 
 if __name__ == '__main__':

@@ -128,6 +128,15 @@ release_locks() {
   HELD_LOCKS=()
 }
 
+write_stamp() {  # $1 = skills dir, $2 = sha — record which upstream commit this copy install is at
+  # Advisory metadata ONLY: a failure to record it must never fail an install that is already
+  # correct. Read by pipeline-preflight's once-a-day `upstream_check` (see its `UPSTREAM …` line).
+  # The name deliberately matches none of this script's own artifact globs
+  # (.pipeline-*.update-backup / .pipeline-*.update-staging / .pipeline-update.txn.* / .pipeline-update.lock).
+  printf '%s\n' "$2" > "$1/.pipeline-update.head.tmp.$$" && mv -f "$1/.pipeline-update.head.tmp.$$" "$1/.pipeline-update.head" \
+    || echo "WARNING: could not write install stamp $1/.pipeline-update.head — install itself is correct" >&2
+}
+
 # _m1_rollback <done_list> — restore every completed Mode-1 swap from its PRIVATE backup
 # ($TXN/.bak.<name>): a replaced entry is put back, a newly-added entry is removed. Reads $TXN
 # (global) and main's $skills_dir via dynamic scoping. Every caller is an error path, so each step
@@ -374,6 +383,12 @@ main() {
 
       if [ -z "$refresh_list" ]; then
         echo "canonical copies in $canon already latest"
+        # These copies are what a symlink-attached runtime's preflight self-locates to and reads
+        # ITS OWN stamp from, so a successful Mode-2 sweep must record $new there too — else a copy
+        # stamped A and verified as current at B keeps reporting `UPSTREAM newer` forever. Only on
+        # this success path and the one below: never on problems/rollback (both exit 1 without
+        # mutating canon), and not at all when the sweep was skipped (no pipeline-* entry).
+        write_stamp "$canon" "$new"
       else
         # Phase A: stage EVERYTHING before touching anything live. cp -r into a path
         # that already exists NESTS the source inside it (and Phase B would then swear
@@ -444,6 +459,7 @@ main() {
             || echo "WARNING: could not drop the backup for $name — install itself is correct; janitor retries next run" >&2
           echo "refreshed canonical copy: $canon/$name"
         done
+        write_stamp "$canon" "$new"   # Phase C reached only after a fully verified swap (rc stays 0)
       fi
     fi
   else
@@ -502,6 +518,7 @@ main() {
         echo "nothing to refresh in $skills_dir ($skipped skipped: attachment/absent; not verified against $new)"
       else
         echo "already latest ($new)"
+        write_stamp "$skills_dir" "$new"
       fi
     else
       # PRIVATE, same-filesystem transaction dir. mktemp gives an unpredictable, 0700-mode name INSIDE
@@ -557,6 +574,7 @@ main() {
       # already correct, so backup cleanup is a trap concern, never a step that can fail the run.
       echo "now at $new; latest upstream commits:"
       git -C "$TMP" log --oneline -10
+      write_stamp "$skills_dir" "$new"
     fi
   fi
 
