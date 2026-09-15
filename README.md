@@ -180,6 +180,7 @@ git clone https://github.com/jackypanster/pipeline.git ~/workspace/pipeline   # 
 #    substitute your own runtime:
 #    - a runtime that loads skills from a directory (e.g. ~/.claude/skills):
 cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
+git -C ~/workspace/pipeline rev-parse HEAD > ~/.claude/skills/.pipeline-update.head   # install stamp: preflight's once-a-day upstream check compares it to main
 #    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
 #      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
 

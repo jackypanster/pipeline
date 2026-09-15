@@ -128,6 +128,15 @@ release_locks() {
   HELD_LOCKS=()
 }
 
+write_stamp() {  # $1 = skills dir, $2 = sha — record which upstream commit this copy install is at
+  # Advisory metadata ONLY: a failure to record it must never fail an install that is already
+  # correct. Read by pipeline-preflight's once-a-day `upstream_check` (see its `UPSTREAM …` line).
+  # The name deliberately matches none of this script's own artifact globs
+  # (.pipeline-*.update-backup / .pipeline-*.update-staging / .pipeline-update.txn.* / .pipeline-update.lock).
+  printf '%s\n' "$2" > "$1/.pipeline-update.head.tmp.$$" && mv -f "$1/.pipeline-update.head.tmp.$$" "$1/.pipeline-update.head" \
+    || echo "WARNING: could not write install stamp $1/.pipeline-update.head — install itself is correct" >&2
+}
+
 # _m1_rollback <done_list> — restore every completed Mode-1 swap from its PRIVATE backup
 # ($TXN/.bak.<name>): a replaced entry is put back, a newly-added entry is removed. Reads $TXN
 # (global) and main's $skills_dir via dynamic scoping. Every caller is an error path, so each step
@@ -502,6 +511,7 @@ main() {
         echo "nothing to refresh in $skills_dir ($skipped skipped: attachment/absent; not verified against $new)"
       else
         echo "already latest ($new)"
+        write_stamp "$skills_dir" "$new"
       fi
     else
       # PRIVATE, same-filesystem transaction dir. mktemp gives an unpredictable, 0700-mode name INSIDE
@@ -557,6 +567,7 @@ main() {
       # already correct, so backup cleanup is a trap concern, never a step that can fail the run.
       echo "now at $new; latest upstream commits:"
       git -C "$TMP" log --oneline -10
+      write_stamp "$skills_dir" "$new"
     fi
   fi
 
