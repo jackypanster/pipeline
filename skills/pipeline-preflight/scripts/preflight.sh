@@ -36,6 +36,9 @@
 #
 # Output grammar — one line per check on stdout, greppable, values unquoted:
 #   PULL ok head=<sha>                     | PULL fail  (+ git's stderr)
+#   UPSTREAM ok head=<sha>[ cached]                       # installed == pipeline main (or ahead of it)
+#   UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]
+#   UPSTREAM unverified <no-install-stamp|network>        # advisory only — never affects exit code
 #   ENV file=<name> keys=<N>               # a COUNT only — never a key name, never a value
 #   ENV none
 #   CURRENT ok repo=<v> branch=<v> feature=<v> stage=<v>[ pr=<v>] | CURRENT absent (prd creates it)
@@ -50,11 +53,12 @@
 #   PREFLIGHT OK stage=<s> | PREFLIGHT STOP <reason> | PREFLIGHT UNVERIFIED <checks>
 #   PREFLIGHT SKIPPED <reason>
 #
-# Writes ZERO files anywhere. The only checkout mutations are `git pull --rebase` (CONTRACT
-# step 1) and the guard's `git fetch` — both are the contract's own first act. It never
-# resolves a conflict: a failed pull is a STOP for the human, not a merge decision. A failed
-# fetch is likewise a STOP: comparing a cached remote-tracking ref after a fetch that never
-# reached the network would turn a stale dispatch into a false GUARD ok.
+# Writes nothing inside any repo or skill dir. Its only write is the upstream-check throttle stamp
+# ${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head (once per 24h; see `upstream_check`). The
+# only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch` —
+# both are the contract's own first act. It never resolves a conflict: a failed pull is a STOP for
+# the human, not a merge decision. A failed fetch is likewise a STOP: comparing a cached remote-tracking
+# ref after a fetch that never reached the network would turn a stale dispatch into a false GUARD ok.
 #
 # Deps: git, python3 (stdlib json only), coreutils. Self-contained — sources nothing.
 # Self-test: bash "$(dirname "$0")/preflight-test.sh"
@@ -173,6 +177,90 @@ else
   stop "pull-failed"
 fi
 
+# ------------------------------------------ 1b. advisory upstream freshness (once per 24h)
+# The stage cannot know it is running an OLD skill set; this tells the operator to run
+# `pipeline-update` BETWEEN stages. Advisory by construction: every path returns 0, no path calls
+# `stop`, `exit`, or prints `PREFLIGHT …`, and the caller must invoke it as `upstream_check || true`.
+# Installed version: the clone's HEAD when the skills live in a pipeline clone (a runtime loading
+# them straight from the clone), else the install stamp `pipeline-update` writes
+# (`<skills-dir>/.pipeline-update.head`). No stamp ⇒ nothing was ever verified ⇒ say so, don't guess.
+# Throttle: ONE network call per 24h, guarded by a cache stamp that is written even when the fetch
+# FAILS — a GitHub outage then costs one 8s wait per day, not one per stage run.
+UPSTREAM_URL="${PIPELINE_UPSTREAM_URL:-https://github.com/jackypanster/pipeline.git}"
+UPSTREAM_REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'   # same as update.sh
+upstream_check() {
+  local self_dir skills_dir top installed mode2 cache stamp now c_epoch c_sha c_rest cached remote suffix
+  # Self-locate with symlinks resolved: …/pipeline-preflight/scripts → the skills dir holding the
+  # pipeline-* copies (a symlinked attachment resolves to its real target, like the install check).
+  self_dir="$(cd -P "$(dirname "$0")" && pwd -P)"
+  skills_dir="$(cd -P "$self_dir/../.." && pwd -P)"
+  mode2=0
+  installed=""
+  top="$(git -C "$skills_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ] && git -C "$top" remote get-url origin 2>/dev/null | grep -Eq "$UPSTREAM_REMOTE_RE"; then
+    mode2=1
+    installed="$(git -C "$top" rev-parse HEAD 2>/dev/null || true)"
+  else
+    stamp=""
+    if [ -r "$skills_dir/.pipeline-update.head" ]; then
+      stamp="$(tr -d '[:space:]' < "$skills_dir/.pipeline-update.head" 2>/dev/null || true)"
+    fi
+    if printf '%s' "$stamp" | grep -Eq '^[0-9a-f]{40}$'; then installed="$stamp"; fi
+  fi
+  if [ -z "$installed" ]; then
+    echo "UPSTREAM unverified no-install-stamp"
+    return 0
+  fi
+
+  cache="${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head"
+  now="$(date +%s)"
+  cached=0
+  remote=""
+  if [ -r "$cache" ]; then
+    c_epoch=""; c_sha=""; c_rest=""
+    read -r c_epoch c_sha c_rest < "$cache" 2>/dev/null || true
+    case "$c_epoch" in
+      ''|*[!0-9]*) c_epoch="" ;;
+    esac
+    if [ -n "$c_epoch" ] && [ $((now - c_epoch)) -lt 86400 ]; then
+      remote="$c_sha"; cached=1
+    fi
+  fi
+  if [ "$cached" = 0 ]; then
+    remote="$(GIT_TERMINAL_PROMPT=0 python3 - "$UPSTREAM_URL" <<'PY'
+import subprocess, sys
+try:
+    r = subprocess.run(["git", "ls-remote", sys.argv[1], "HEAD"], capture_output=True, text=True, timeout=8)
+    out = r.stdout.split()
+    print(out[0] if r.returncode == 0 and out else "")
+except Exception:
+    print("")
+PY
+)"
+    # ALWAYS write the throttle stamp — a failed fetch is throttled too. Unwritable cache dir ⇒
+    # skip caching silently: a stale check is advisory, never a reason to fail or to nag louder.
+    if mkdir -p "${cache%/*}" 2>/dev/null \
+       && printf '%s\n' "$now $remote" > "$cache.tmp.$$" 2>/dev/null; then
+      mv -f "$cache.tmp.$$" "$cache" 2>/dev/null || rm -f "$cache.tmp.$$" 2>/dev/null || true
+    fi
+  fi
+  if [ "$cached" = 1 ]; then suffix=" cached"; else suffix=""; fi
+  if [ -z "$remote" ]; then
+    echo "UPSTREAM unverified network"
+  elif [ "$remote" = "$installed" ]; then
+    echo "UPSTREAM ok head=$remote$suffix"
+  elif [ "$mode2" = 1 ] \
+       && git -C "$top" cat-file -e "$remote" 2>/dev/null \
+       && git -C "$top" merge-base --is-ancestor "$remote" HEAD 2>/dev/null; then
+    echo "UPSTREAM ok head=$remote$suffix"          # local clone is AHEAD of main — not stale
+  else
+    echo "UPSTREAM newer head=$remote installed=$installed run=pipeline-update$suffix"
+  fi
+  return 0
+}
+
+upstream_check || true    # advisory only — can never STOP or change the exit code
+
 # -------------------------------------------- 2. CONTRACT step 2: dotenv DETECTION only
 # Reports which file exists and HOW MANY keys it defines — a COUNT, never a name and never a
 # value. Names were dropped deliberately: a multi-line quoted value whose continuation line
@@ -286,6 +374,8 @@ echo "SLOT $stage=$(printf '%s\n' "$names" | paste -sd, -)"
 # skills from there. Only the operator knows that, and declares it in $PIPELINE_SKILL_DIRS
 # (colon-separated). A hit in a DECLARED dir is a verified install; a hit anywhere else is
 # evidence only ⇒ `install-check` joins the UNVERIFIED set and the stage re-verifies it.
+# $PIPELINE_UPSTREAM_URL overrides the repo the advisory `UPSTREAM …` check ls-remotes (default:
+# this repo's GitHub URL) — for tests and mirrors.
 declared_dirs=""
 if [ -n "${PIPELINE_SKILL_DIRS:-}" ]; then
   declared_dirs="$(printf '%s' "$PIPELINE_SKILL_DIRS" | tr ':' '\n' | grep -v '^$' || true)"
