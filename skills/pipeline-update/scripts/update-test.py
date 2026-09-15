@@ -206,9 +206,66 @@ def main():
             failures.append(f'copy attachments only: {exc}')
             print('FAIL', failures[-1])
 
+        # A Mode-2 clone refreshes the canonical COPIES too, and those copies are what a
+        # symlink-attached runtime's preflight self-locates to and stamps. The remote identity check
+        # accepts any URL that ENDS in the pinned repo, so a bare repo at .../github.com/<owner>/<repo>
+        # is the transport for a REAL local fetch while `remote get-url origin` still reports the
+        # pinned identity: Mode 2 without network and without stubbing anything.
+        canon_root = root / 'mode2 canon'
+        canon_root.mkdir()
+        pinned = canon_root / 'remotes/github.com/jackypanster/pipeline'
+        pinned.parent.mkdir(parents=True)
+        run(['git', 'clone', '--bare', str(bare), str(pinned)], canon_root, env)
+
+        # (a) the lifecycle the reviewer reproduced: a canon copy stamped A, refreshed by Mode 2 to
+        #     B ⇒ exit 0, copy content is B, and the copy's stamp is B (not the stale A).
+        case = canon_root / 'sweep'
+        case.mkdir()
+        clone = case / 'consumer'
+        run(['git', 'clone', str(pinned), str(clone)], case, env)
+        canon = case / 'canonical skills'
+        shutil.copytree(upstream / 'skills', canon)
+        (canon / 'pipeline-review/upstream-marker.txt').unlink()      # the A-era content
+        (canon / STAMP).write_text(base + '\n')                       # ... stamped A
+        result = run(['bash', str(SCRIPT), str(clone / 'skills')], case,
+                     dict(env, PIPELINE_CANON_SKILLS=str(canon)), check=False)
+        try:
+            assert result.returncode == 0, f'update failed: {result.stderr}'
+            assert 'refreshed canonical copy' in result.stdout, result.stdout
+            assert without_stamp(snapshot(canon)) == snapshot(upstream / 'skills'), 'canonical copy is not B'
+            assert (canon / STAMP).read_text() == tip + '\n', 'Mode 2 left the canonical copy stamped A'
+            print('PASS clone sweep stamps the canonical copies')
+        except AssertionError as exc:
+            failures.append(f'clone sweep: {exc}')
+            print('FAIL', failures[-1])
+
+        # (b) a Mode-2 rollback (recovery/attachment problems ⇒ clone rolled back, exit 1) must
+        #     leave the old stamp EXACTLY as it was — a failed run may not claim a version.
+        case = canon_root / 'sweep rollback'
+        case.mkdir()
+        clone = case / 'consumer'
+        run(['git', 'clone', str(pinned), str(clone)], case, env)
+        canon = case / 'canonical skills'
+        shutil.copytree(upstream / 'skills', canon)
+        (canon / 'pipeline-review/upstream-marker.txt').unlink()
+        (canon / STAMP).write_text(base + '\n')
+        shutil.rmtree(canon / 'pipeline-task')                     # a runtime attachment that
+        (canon / 'pipeline-task').symlink_to(case / 'nowhere')     # ...dangles ⇒ problems
+        before = snapshot(canon)
+        result = run(['bash', str(SCRIPT), str(clone / 'skills')], case,
+                     dict(env, PIPELINE_CANON_SKILLS=str(canon)), check=False)
+        try:
+            assert result.returncode == 1, f'expected a refusal, got {result.returncode}'
+            assert snapshot(canon) == before, 'the rollback path touched the canonical copies'
+            assert (canon / STAMP).read_text() == base + '\n', 'the rollback path restamped'
+            print('PASS clone sweep rollback keeps the old stamp')
+        except AssertionError as exc:
+            failures.append(f'clone sweep rollback: {exc}')
+            print('FAIL', failures[-1])
+
         if failures:
             raise SystemExit(f'{len(failures)} scenario(s) failed')
-    print('13 checks passed; pending recovery retried twice; all fixtures removed')
+    print('15 checks passed; pending recovery retried twice; all fixtures removed')
 
 
 if __name__ == '__main__':

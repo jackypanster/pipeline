@@ -383,6 +383,12 @@ main() {
 
       if [ -z "$refresh_list" ]; then
         echo "canonical copies in $canon already latest"
+        # These copies are what a symlink-attached runtime's preflight self-locates to and reads
+        # ITS OWN stamp from, so a successful Mode-2 sweep must record $new there too — else a copy
+        # stamped A and verified as current at B keeps reporting `UPSTREAM newer` forever. Only on
+        # this success path and the one below: never on problems/rollback (both exit 1 without
+        # mutating canon), and not at all when the sweep was skipped (no pipeline-* entry).
+        write_stamp "$canon" "$new"
       else
         # Phase A: stage EVERYTHING before touching anything live. cp -r into a path
         # that already exists NESTS the source inside it (and Phase B would then swear
@@ -453,6 +459,7 @@ main() {
             || echo "WARNING: could not drop the backup for $name — install itself is correct; janitor retries next run" >&2
           echo "refreshed canonical copy: $canon/$name"
         done
+        write_stamp "$canon" "$new"   # Phase C reached only after a fully verified swap (rc stays 0)
       fi
     fi
   else
