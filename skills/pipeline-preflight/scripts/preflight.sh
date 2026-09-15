@@ -36,9 +36,6 @@
 #
 # Output grammar — one line per check on stdout, greppable, values unquoted:
 #   PULL ok head=<sha>                     | PULL fail  (+ git's stderr)
-#   UPSTREAM ok head=<sha>[ cached]                       # installed == pipeline main (or ahead of it)
-#   UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]
-#   UPSTREAM unverified <no-install-stamp|network>        # advisory only — never affects exit code
 #   ENV file=<name> keys=<N>               # a COUNT only — never a key name, never a value
 #   ENV none
 #   CURRENT ok repo=<v> branch=<v> feature=<v> stage=<v>[ pr=<v>] | CURRENT absent (prd creates it)
@@ -49,6 +46,11 @@
 #   FETCH fail <remote>/<branch>           (+ git's stderr)
 #   REMOTE unverified observed=<v> current.json.repo=<v>
 #   GUARD ok seq=<n> commit=<sha>[ remote=<url>]      | GUARD n/a (human-relay)
+#   UPSTREAM ok head=<sha>[ cached]                       # installed == pipeline main (or ahead of it)
+#   UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]
+#   UPSTREAM unverified <no-install-stamp|network>        # advisory only — never affects exit code
+#     …printed AFTER the guard (CONTRACT §Pre-write stale-dispatch guard: no write before it,
+#     zero writes on a mismatch) — a STOP prints no UPSTREAM line and writes no cache.
 #   STALE_DISPATCH <field> observed=<v> expected=<v>
 #   PREFLIGHT OK stage=<s> | PREFLIGHT STOP <reason> | PREFLIGHT UNVERIFIED <checks>
 #   PREFLIGHT SKIPPED <reason>
@@ -177,10 +179,13 @@ else
   stop "pull-failed"
 fi
 
-# ------------------------------------------ 1b. advisory upstream freshness (once per 24h)
+# -------------------------------------- 1b. advisory upstream freshness (once per 24h) — DEFINITION
 # The stage cannot know it is running an OLD skill set; this tells the operator to run
 # `pipeline-update` BETWEEN stages. Advisory by construction: every path returns 0, no path calls
 # `stop`, `exit`, or prints `PREFLIGHT …`, and the caller must invoke it as `upstream_check || true`.
+# CALLED as `upstream_check || true` in section 5b — AFTER the guard, never before it — because the
+# throttle cache below is a file write, and CONTRACT §Pre-write stale-dispatch guard requires the
+# guard to run before ANY write and a mismatch to leave zero writes.
 # Installed version: the clone's HEAD when the skills live in a pipeline clone (a runtime loading
 # them straight from the clone), else the install stamp `pipeline-update` writes
 # (`<skills-dir>/.pipeline-update.head`). No stamp ⇒ nothing was ever verified ⇒ say so, don't guess.
@@ -258,8 +263,6 @@ PY
   fi
   return 0
 }
-
-upstream_check || true    # advisory only — can never STOP or change the exit code
 
 # -------------------------------------------- 2. CONTRACT step 2: dotenv DETECTION only
 # Reports which file exists and HOW MANY keys it defines — a COUNT, never a name and never a
@@ -599,6 +602,12 @@ print("OK")
 
   echo "GUARD ok seq=$env_seq commit=$env_commit$guard_remote"
 fi
+
+# -------------- 5b. advisory upstream freshness — after every check, so a STOP writes nothing
+# Deliberately AFTER the guard: `upstream_check` may write its XDG throttle cache, and CONTRACT
+# §Pre-write stale-dispatch guard demands the guard before ANY file write. Reached only on the two
+# paths that proceed (exit 0 and exit 3), so no STOP — above all no STALE_DISPATCH — ever writes it.
+upstream_check || true    # advisory only — can never STOP or change the exit code
 
 # ------------------------------------------------------------------------ 6. final verdict
 if [ -n "$unverified" ]; then

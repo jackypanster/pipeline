@@ -747,6 +747,33 @@ RUN_SCRIPT="$MODE2_PREFLIGHT"
 run "$WORK" --stage task
 expect "37c-upstream-mode2-ahead" 0 "UPSTREAM ok head=$NEW_SHA" "PREFLIGHT OK stage=task"
 
+# --- 38. a STOP writes NOTHING — not even the advisory throttle cache ------------------------
+# CONTRACT §Pre-write stale-dispatch guard: the guard runs before ANY file write and a mismatch
+# leaves zero writes. The freshness advisory WRITES its cache, so it must run after the guard:
+# with a coordinated envelope whose expected_seq mismatches the journal tail, the stale-dispatch
+# STOP must print no UPSTREAM line and must not create the cache file at all.
+build 38
+rm -f "$UP_CACHE"
+run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
+  expected_seq=99 "expected_commit=$COMMIT"
+ok=1
+[ "$RC" = 2 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "STALE_DISPATCH expected_seq observed=1 expected=99" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP stale-dispatch" || ok=0
+refute "UPSTREAM"                                             # no advisory line on a STOP
+if [ -e "$UP_CACHE" ]; then ok=0; fi                         # and no cache write before the guard
+report "38-stale-dispatch-writes-nothing" "$ok"
+
+# --- 39. …but an exit-3 (UNVERIFIED) run still gets the advisory: it did NOT stop ------------
+# UNVERIFIED is not a STOP: the run proceeds, so the advisory still reports freshness. The remote
+# tip is read live — 37b advanced upstream main past the seed sha.
+build 39
+rm -f "$UP_CACHE"
+TODAY_SHA="$(git -C "$UPSTREAM_BARE" rev-parse HEAD)"
+run "$WORK" --stage prd
+expect "39-unverified-still-advisory" 3 "PREFLIGHT UNVERIFIED install-check" \
+  "UPSTREAM newer head=$TODAY_SHA installed="
+
 # --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
 OUT="$ZW"; RC=0
 if [ -z "$ZW" ]; then report "31-zero-writes" 1; else report "31-zero-writes" 0; fi
