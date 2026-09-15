@@ -81,10 +81,10 @@ table, from `roles.yaml`, and from the onboarding snippet.
 
 3. **State the scope boundary.** The script prints it: runtime-shared `pipeline-*` shims only; **no
    target project's `.pipeline/` was touched** (roles.yaml, current.json, cards, journal all
-   untouched). On success in EITHER mode it also records the installed upstream sha in
-   `<skills-dir>/.pipeline-update.head` — Mode 2 stamps the canonical copies it sweeps in
-   `<canon>/.pipeline-update.head` too — and that stamp is what `pipeline-preflight`'s once-a-day
-   `UPSTREAM …` check compares against `main`. If the new version changed the canonical `roles.yaml`
+   untouched). On success it also records the installed upstream sha next to the physical copies it
+   refreshed — Mode 1 in `<skills-dir>/.pipeline-update.head`, Mode 2 in `<canon>/.pipeline-update.head`
+   for the canonical copies it sweeps (the clone itself needs no stamp: its HEAD is its version) — and
+   that stamp is what `pipeline-preflight`'s once-a-day `UPSTREAM …` check compares against `main`. If the new version changed the canonical `roles.yaml`
    schema (e.g. a new slot), add a one-line note to reconcile each project's `roles.yaml` **by hand**
    (diff canonical vs project) — never auto-edit a project. Sibling repos (`pipeline-dashboard`,
    `pipeline-driver`) are out of scope — they update themselves.
