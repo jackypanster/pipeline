@@ -774,7 +774,7 @@ run "$WORK" --stage prd
 expect "39-unverified-still-advisory" 3 "PREFLIGHT UNVERIFIED install-check" \
   "UPSTREAM newer head=$TODAY_SHA installed="
 
-# --- 40..69. the card-invariant check (CARDS …) --------------------------------------------
+# --- 40..72. the card-invariant check (CARDS …) --------------------------------------------
 # Cards + their frozen spec file are written AFTER build() and PUSHED, so the clone is clean and
 # its HEAD matches the remote before run() stamps the zero-write marker. $COMMIT (build's pushed
 # trunk sha) is a real, resolvable commit and stands in for a feature's shared spec-rev.
@@ -991,7 +991,8 @@ cards_push "$WORK"
 run "$WORK" --stage impl
 expect "54-cards-impl-paths-empty-ok" 0 "CARDS ok feature=$FEATURE n=1" "PREFLIGHT OK stage=impl"
 
-# --- 55. legal YAML the first cut mis-read: inline ` #` comments + UNINDENTED block lists ----
+# --- 55. inline ` #` comments on UNQUOTED values + UNINDENTED block lists ------------------
+# (a quoted value carrying a trailing comment is not JSON and is not guessed at — case 70)
 FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-55/remote.git")"; build 55
 mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
 cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
@@ -999,9 +1000,9 @@ cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
 status: todo # ready to pick up
 attempts: 0
 verify:
-- make test A:unit
+- make test A:unit # the red test
 spec-paths:
-- "tests/spec.txt" # frozen by task
+- "tests/spec.txt"
 impl-paths: ["src/a.rs"]
 spec-rev: $COMMIT
 ---
@@ -1250,9 +1251,12 @@ printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
 refute "CARDS stop"
 report "68-cards-text-above-fence" "$ok"
 
-# --- 69. a short rev shared with a BLOB resolves — `^{commit}` disambiguates by TYPE ---------
-# Mint commit objects until one's 4-hex prefix collides with a blob minted in case 58, then
-# assert the card PASSES: ambiguity against non-commit objects is not ambiguity for this check.
+# --- 69..72. short-rev ambiguity, for real, and the two shapes the parser must not guess -----
+# One minting loop serves 69 and 72: commits are minted until (a) one's 4-hex prefix collides
+# with a BLOB (69: `^{commit}` filters by type ⇒ it still resolves) and (b) two COMMITS share a
+# prefix (72: nothing can disambiguate ⇒ unresolvable). Either half SKIPs rather than passing
+# quietly if its collision does not appear. Objects live in fx-69's own .git, which run()'s
+# sweep prunes, and `commit-tree` never moves HEAD.
 FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-69/remote.git")"; build 69
 if [ ! -d "$ROOT/fx-58/amb" ]; then           # independent of case 58 having run
   mkdir -p "$ROOT/fx-58/amb"; amb_i=0
@@ -1261,26 +1265,96 @@ fi
 ls "$ROOT/fx-58/amb" | sed "s|^|$ROOT/fx-58/amb/|" \
   | git -C "$WORK" hash-object -w --stdin-paths > "$ROOT/fx-69/shas"
 amb_tree="$(git -C "$WORK" rev-parse 'HEAD^{tree}')"
-amb_i=0; AMB2=""
-while [ "$amb_i" -lt 600 ]; do
+: > "$ROOT/fx-69/commits"
+amb_i=0; AMB2=""; AMB3=""
+while [ "$amb_i" -lt 800 ]; do
   amb_c="$(git -C "$WORK" commit-tree "$amb_tree" -m "amb-$amb_i" 2>/dev/null)"
   amb_p="$(printf %.4s "$amb_c")"
-  if grep -q "^$amb_p" "$ROOT/fx-69/shas"; then AMB2="$amb_p"; break; fi
+  if [ -z "$AMB3" ] && grep -q "^$amb_p" "$ROOT/fx-69/commits"; then AMB3="$amb_p"; fi
+  echo "$amb_c" >> "$ROOT/fx-69/commits"
+  if [ -z "$AMB2" ] && grep -q "^$amb_p" "$ROOT/fx-69/shas"; then AMB2="$amb_p"; fi
+  if [ -n "$AMB2" ] && [ -n "$AMB3" ]; then break; fi
   amb_i=$((amb_i + 1))
 done
-# …unless those 600 commits themselves collided: then the prefix names two COMMITS and is
-# genuinely ambiguous, which is a different case than this one pins.
-if [ -n "$AMB2" ] && ! git -C "$WORK" rev-parse --verify --quiet "$AMB2^{commit}" >/dev/null 2>&1; then
-  AMB2=""
-fi
+
+# --- 69. a short rev whose prefix a BLOB shares still resolves -------------------------------
 if [ -z "$AMB2" ]; then
-  skip "69-cards-spec-rev-prefix-shared-with-blob" "no commit prefix collided with a blob in 600 tries"
+  skip "69-cards-spec-rev-prefix-shared-with-blob" "no commit prefix collided with a blob in 800 tries"
 else
   card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["src/a.rs"]' "$AMB2"
   cards_push "$WORK"
-  run "$WORK" --stage impl
-  expect "69-cards-spec-rev-prefix-shared-with-blob" 0 "CARDS ok feature=$FEATURE n=1" \
-    "PREFLIGHT OK stage=impl"
+  # The ambiguity probe runs AFTER the last object this fixture creates, so a late collision
+  # (cards_push commits too) cannot leave the case asserting the wrong verdict.
+  if git -C "$WORK" rev-parse --verify --quiet "$AMB2^{commit}" >/dev/null 2>&1; then
+    run "$WORK" --stage impl
+    expect "69-cards-spec-rev-prefix-shared-with-blob" 0 "CARDS ok feature=$FEATURE n=1" \
+      "PREFLIGHT OK stage=impl"
+  else
+    skip "69-cards-spec-rev-prefix-shared-with-blob" "the minted prefix became ambiguous among commits"
+  fi
+fi
+
+# --- 70. a quote we cannot parse as JSON is NOT guessed at ⇒ the fail-open note ---------------
+# `'tests/a # b\'` is a legal single-quoted YAML scalar, but no comment/quote grammar is
+# re-implemented here: JSON or a quote-free scalar, else `card-frontmatter-unrecognized`.
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-70/remote.git")"; build 70
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: todo
+attempts: 0
+verify: ["make test A"]
+spec-paths: 'tests/a # b\'
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-frontmatter-unrecognized card=$FEATURE/01" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS unverified feature=$FEATURE n=1 unchecked=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS stop"
+refute "CARDS ok"
+report "70-cards-unparsable-quote-note" "$ok"
+
+# --- 71. a `- item` after an INLINE array is not a block list ⇒ note, never a judgement -------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-71/remote.git")"; build 71
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: todo
+attempts: 0
+verify: ["make test A"]
+spec-paths: ["tests/spec.txt"]
+- nonexistent.txt
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-frontmatter-unrecognized card=$FEATURE/01" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "card-spec-path-absent"
+refute "CARDS stop"
+refute "CARDS ok"
+report "71-cards-item-after-inline-array" "$ok"
+
+# --- 72. a prefix TWO COMMITS share is unresolvable — nothing can disambiguate it -------------
+if [ -z "$AMB3" ]; then
+  skip "72-cards-spec-rev-two-commit-prefix" "no two of the 800 minted commits shared a 4-hex prefix"
+else
+  # the colliding commits live in fx-69's object db, so this half reuses that fixture
+  card_write "$ROOT/fx-69/work" 01 todo '["make test A"]' '["tests/spec.txt"]' '["src/a.rs"]' "$AMB3"
+  cards_push "$ROOT/fx-69/work"
+  run "$ROOT/fx-69/work" --stage impl
+  expect "72-cards-spec-rev-two-commit-prefix" 2 \
+    "PREFLIGHT STOP card-spec-rev-unresolvable $AMB3 card=$FEATURE/01"
 fi
 
 # --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --

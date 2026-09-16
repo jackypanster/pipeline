@@ -46,15 +46,20 @@ Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` 
 rules CONTRACT already states — the six frontmatter fields present · `status` enum · `attempts` an
 integer · `spec-paths ∩ impl-paths = ∅` with every `spec-paths` entry present in the checkout ·
 non-empty `verify` ≠ `current.json.full-verify` · ONE `spec-rev`, resolved with `git rev-parse` and
-shared (as a full sha) by every card of the feature. It adds no rule and reads no frozen one
+shared (as a full sha) by every card of the feature (a prefix that no commit matches, or that two
+commits match, is `card-spec-rev-unresolvable`; one a blob also matches still resolves — `^{commit}`
+filters by type). It adds no rule and reads no frozen one
 (`attempts >= 3 ⇒ blocked` and the freeze diff stay with the state machine and `pipeline-review`);
 `impl-paths: []` is legal (impl may write `src/**`) and `full-verify` is optional (absent or not a list
 ⇒ `CARDS note full-verify-unknown` and that check is skipped for every card of the feature). A
 `CARDS stop` line becomes `PREFLIGHT STOP <that same reason>`; a `CARDS note` never changes the exit —
-what it cannot read it does not judge. A card carrying any frontmatter shape the parser does not
-recognise (a line that is neither blank, nor `#`, nor `key: value`, nor a `- item` entry; a `- item`
-under a key already holding a scalar; anything above the `---` fence) is reported
-`card-frontmatter-unrecognized` with **all** its STOP checks suppressed — a parser-limitation fail-open,
+what it cannot read it does not judge. **Values are read in three ordered steps, with no quote or
+comment grammar re-implemented:** JSON (exact — a `#` inside a JSON string is data); else, only if the
+text carries no quote at all, a bare scalar with a whitespace-preceded ` #…` tail dropped; else the card
+is unrecognised. So is a card with any other unreadable shape — a line that is neither blank, nor `#`,
+nor `key: value`, nor a `- item` entry; a `- item` under anything but a key declared empty (a scalar or
+an inline array is not a block list); anything above the `---` fence — reported
+`card-frontmatter-unrecognized` with **all** its STOP checks suppressed: a parser-limitation fail-open,
 not an anti-tamper control. `card-no-frontmatter` is reserved for a file with no `---` fence line at all
 (CRLF needs no handling: the cards are read in text mode, which normalises it). Whenever any check was
 skipped — a suppressed card, or a feature-level one — the verdict is `CARDS unverified …
@@ -67,4 +72,4 @@ prose is the spec; this executes it.
 written; exit 3 ⇒ execute the named check(s) that way. The prose IS the spec; this script is only its
 deterministic executor, and rollback = delete this dir.
 
-**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git rev-parse --verify`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (71 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).
+**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git rev-parse --verify`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (74 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).

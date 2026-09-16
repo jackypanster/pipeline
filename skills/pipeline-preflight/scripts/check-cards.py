@@ -12,8 +12,24 @@ STATUS = ("todo", "in-progress", "review", "done", "blocked")
 BAD, ODD = "\x00unparsed", "\x00odd"
 
 
-def unquote(s):
-    return s[1:-1] if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'" else s
+def parse_value(val, listy):
+    """One value, in three ordered steps — no quote/comment grammar is re-implemented:
+    1. JSON, which is exact: a `#` inside a JSON string is data, and JSON has no comments;
+    2. else, ONLY if the text carries no quote at all, a bare scalar with a whitespace-preceded
+       ` #…` tail dropped (that much is unambiguous);
+    3. else — a quote we could not parse as JSON — ODD: we do not guess (fail-open)."""
+    try:
+        v = json.loads(val)
+        return [str(x) for x in v] if isinstance(v, list) else str(v)
+    except Exception:
+        pass
+    if '"' in val or "'" in val:
+        return ODD
+    val = re.sub(r"\s+#.*$", "", val).strip()
+    if val == "":
+        return []
+    #                      a bracket that is not JSON, or a comma-separated list we cannot split
+    return BAD if val.startswith("[") or (listy and "," in val) else val
 
 
 def parse_front(text):
@@ -26,31 +42,32 @@ def parse_front(text):
     m = re.match(r"---\n(.*?)\n---\n?(.*)\Z", text, re.S)
     if not m:   # a `---` line we could not match is ODD; NO fence line at all is a missing artifact
         return ({ODD: True} if re.search(r"(?m)^[ \t]*---[ \t\r]*$", text) else None), text
-    d, key = {}, None
-    for raw in m.group(1).split("\n"):
+    d, key, blocks = {}, None, set()   # `blocks` = keys DECLARED empty, the only ones a `- item`
+    for raw in m.group(1).split("\n"):  #            may extend (an inline array must not be)
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
-        raw = re.sub(r"""("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\s+#.*$""",
-                     lambda g: g.group(1) or "", raw)
         item = raw.strip()
-        if item.startswith("- "):          # block list item, indented or not …
-            if isinstance(d.get(key), list):     # … but ONLY under a key already holding a list:
-                d[key] = d[key] + [unquote(item[2:].strip())]
-            else:                                # an item after a SCALAR is a shape we cannot read
-                d[ODD] = True                    # (never silently replace the scalar)
+        if item.startswith("- "):          # block-list item, indented or not …
+            v = parse_value(item[2:].strip(), False)
+            if key in blocks and isinstance(v, str) and v not in (BAD, ODD):
+                d[key] = d[key] + [v]
+            else:                          # after a scalar / an inline array, or unreadable:
+                d[ODD] = True              # a shape we cannot read — never a silent replacement
             continue
         if raw[:1] in " \t" or ":" not in raw:
             d[ODD] = True              # a shape this parser does not understand
             continue
         key, _, val = raw.partition(":")
         key, val = key.strip(), val.strip()
-        if val.startswith("["):
-            try:
-                d[key] = [str(x) for x in json.loads(val)]
-            except Exception:
-                d[key] = BAD
-        else:   # a comma-separated scalar is a list we cannot honestly split ⇒ BAD, never a path
-            d[key] = [] if val == "" else (BAD if key in LISTS and "," in val else unquote(val))
+        v = parse_value(val, key in LISTS)
+        if v == ODD:
+            d[ODD] = True
+        else:
+            d[key] = v
+        if val == "":
+            blocks.add(key)
+        else:
+            blocks.discard(key)
     return d, m.group(2)
 
 
