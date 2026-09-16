@@ -1,6 +1,6 @@
 ---
 name: pipeline-preflight
-description: "Helper script — NOT a pipeline stage, NOT a roles.yaml slot, never invoke by hand: the six stage skills run its scripts/preflight.sh as their step 0 (CONTRACT §shim loop → deterministic executor). It executes shim steps 1/3/4 (pull · current.json · slot resolve + install check) and the coordinated-mode pre-write stale-dispatch guard, printing one greppable line per check. Args: none — you are not the caller."
+description: "Helper script — NOT a pipeline stage, NOT a roles.yaml slot, never invoke by hand: the six stage skills run its scripts/preflight.sh as their step 0 (CONTRACT §shim loop → deterministic executor). It executes shim steps 1/3/4 (pull · current.json · slot resolve + install check), the coordinated-mode pre-write stale-dispatch guard, and a read-only card-invariant check on impl/review/hunt entry, printing one greppable line per check. Args: none — you are not the caller."
 ---
 
 # pipeline-preflight
@@ -31,14 +31,30 @@ Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` 
 `UPSTREAM ok head=<sha>[ cached]` (installed == pipeline main, or ahead of it) / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <no-install-stamp|network>` ·
 `INSTALLED <n> path=<dir>/<n>` (verified) / `INSTALLED <n> found=<dir>/<n> UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…` ·
 `FETCH fail <remote>/<branch>` · `REMOTE unverified observed=… current.json.repo=…` ·
-`GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)`.
+`GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)` ·
+`CARDS ok feature=<f> n=<N> spec-rev=<sha7>` / `CARDS note <assumptions-missing|full-verify-unknown|card-list-unparsed|card-spec-path-glob|card-frontmatter-unrecognized> card=<f>/<id>` /
+`CARDS stop <card-no-frontmatter|card-missing-field|card-bad-status|card-bad-attempts|card-{verify,spec-paths,impl-paths}-empty|card-spec-impl-overlap|card-spec-path-absent|card-verify-full-suite|card-spec-rev-unresolvable|feature-spec-rev-not-shared|full-verify-missing> [detail] card=<f>/<id>` / `CARDS advisory stage=hunt findings=<n>` / `CARDS unchecked rc=<n>`.
 
 **`PIPELINE_SKILL_DIRS`** (colon-separated, per runtime) declares which dirs THIS runtime actually loads skills from. A hit there is a **verified** install (`path=`). Without it the script still searches the default dirs, but a hit is evidence only (`found=… UNVERIFIED`) — a readable `SKILL.md` on disk never proves the running agent loads it — so the exit is 3 and the stage verifies the slot itself.
 
 **`UPSTREAM …`** is advisory, printed after the guard, just before the final verdict (so a STOP never writes its cache): at most one `git ls-remote` of the pipeline repo per 24h, throttled through `${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head` (a failed fetch is throttled too), with `PIPELINE_UPSTREAM_URL` overriding the URL (tests/mirrors). It compares that sha against the installed version — the clone's HEAD when the skills live in a pipeline clone, else the install stamp `<skills-dir>/.pipeline-update.head` written by `pipeline-update` (no stamp ⇒ `no-install-stamp`). `UPSTREAM newer` ⇒ the stage adds one line to its final report telling the operator to run `pipeline-update` between stages. It never changes the exit code and never STOPs.
 
+**`CARDS …`** = the card-invariant check (`scripts/check-cards.py`, read-only, python3 stdlib): on
+`impl`/`review`/`hunt` entry, when `.pipeline/<current feature>/tasks/*.md` exists, it executes the card
+rules CONTRACT already states — required frontmatter fields · `status` enum · `spec-paths ∩ impl-paths = ∅`
+with every `spec-paths` entry present in the checkout · non-empty `verify` ≠ `current.json.full-verify` ·
+ONE resolvable `spec-rev` shared by every card of the feature. It adds no rule and reads no frozen one
+(`attempts >= 3 ⇒ blocked` and the freeze diff stay with the state machine and `pipeline-review`). A
+`CARDS stop` line becomes `PREFLIGHT STOP <that same reason>`; a `CARDS note` never changes the exit —
+what it cannot read it does not judge, and a card carrying any frontmatter line the parser does not
+recognise (neither blank, nor `#`, nor `key: value`, nor a `- item` entry) is reported as
+`card-frontmatter-unrecognized` with **all** its STOP checks suppressed. **`hunt` is advisory too**
+(`CARDS advisory stage=hunt`): hunt REPAIRS cards, so a card defect must never gate its own entry. Any
+other exit prints `CARDS unchecked rc=<n>` and the run continues — `pipeline-task` 6b / `pipeline-review`
+prose is the spec; this executes it.
+
 **Fallback (mandatory):** script absent on this install, or exit 4 ⇒ execute steps 1–4 as the prose is
 written; exit 3 ⇒ execute the named check(s) that way. The prose IS the spec; this script is only its
 deterministic executor, and rollback = delete this dir.
 
-**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (41 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).
+**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git cat-file -e`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (51 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).

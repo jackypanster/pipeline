@@ -17,8 +17,8 @@ journal + handoff + write-set enforcement**, not "no skill ever writes a file".
 Each command body (~20 lines):
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
 write your stage's write-set + append handoff to journal.md → commit (one) → push → print handoff`.
-The pull, `current.json`, slot resolution and the coordinated stale-dispatch guard run deterministically
-as `pipeline-preflight/scripts/preflight.sh` (the stage's step 0); the prose stays the spec and the fallback.
+The pull, `current.json`, slot resolution, the coordinated stale-dispatch guard and the card-invariant
+check run deterministically as `pipeline-preflight/scripts/preflight.sh` (the stage's step 0); the prose stays the spec and the fallback.
 
 ## Commands
 
