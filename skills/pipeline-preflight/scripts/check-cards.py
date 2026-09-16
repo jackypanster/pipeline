@@ -13,23 +13,30 @@ BAD, ODD = "\x00unparsed", "\x00odd"
 
 
 def parse_value(val, listy):
-    """One value, in three ordered steps — no quote/comment grammar is re-implemented:
-    1. JSON, which is exact: a `#` inside a JSON string is data, and JSON has no comments;
+    """One value, in ordered steps — no quote/comment grammar is re-implemented:
+    0. a value that STARTS with `#` is a comment, i.e. an empty value;
+    1. `[`/`"` ⇒ JSON, which is exact (a `#` inside a JSON string is data, and JSON has no
+       comments). JSON is asked ONLY about these two, never about a bare scalar: `7e16` is a
+       legal short sha, not the float 7e+16, and `null`/`true` are text a card wrote;
     2. else, ONLY if the text carries no quote at all, a bare scalar with a whitespace-preceded
        ` #…` tail dropped (that much is unambiguous);
     3. else — a quote we could not parse as JSON — ODD: we do not guess (fail-open)."""
-    try:
-        v = json.loads(val)
-        return [str(x) for x in v] if isinstance(v, list) else str(v)
-    except Exception:
-        pass
+    if val[:1] == "#":
+        return []
+    if val[:1] in ('[', '"'):     # a tuple, not a string: `'' in '["'` would be TRUE
+        try:
+            v = json.loads(val)
+        except Exception:
+            v = None
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        #     a str is the value; a number/bool/null/object is not a shape this field can hold
+        return v if isinstance(v, str) else (BAD if val[:1] == "[" else ODD)
     if '"' in val or "'" in val:
         return ODD
     val = re.sub(r"\s+#.*$", "", val).strip()
-    if val == "":
-        return []
-    #                      a bracket that is not JSON, or a comma-separated list we cannot split
-    return BAD if val.startswith("[") or (listy and "," in val) else val
+    #                          an empty value, or a comma-separated list we cannot honestly split
+    return [] if val == "" else (BAD if listy and "," in val else val)
 
 
 def parse_front(text):
@@ -49,6 +56,8 @@ def parse_front(text):
         item = raw.strip()
         if item.startswith("- "):          # block-list item, indented or not …
             v = parse_value(item[2:].strip(), False)
+            if v == []:                    # `- # note` / a bare `-`: a comment, not an item
+                continue
             if key in blocks and isinstance(v, str) and v not in (BAD, ODD):
                 d[key] = d[key] + [v]
             else:                          # after a scalar / an inline array, or unreadable:
@@ -64,7 +73,7 @@ def parse_front(text):
             d[ODD] = True
         else:
             d[key] = v
-        if val == "":
+        if val == "" or val[:1] == "#":    # declared empty (or comment-only) ⇒ a block list may follow
             blocks.add(key)
         else:
             blocks.discard(key)

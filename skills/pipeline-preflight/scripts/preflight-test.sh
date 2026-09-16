@@ -774,7 +774,7 @@ run "$WORK" --stage prd
 expect "39-unverified-still-advisory" 3 "PREFLIGHT UNVERIFIED install-check" \
   "UPSTREAM newer head=$TODAY_SHA installed="
 
-# --- 40..72. the card-invariant check (CARDS …) --------------------------------------------
+# --- 40..75. the card-invariant check (CARDS …) --------------------------------------------
 # Cards + their frozen spec file are written AFTER build() and PUSHED, so the clone is clean and
 # its HEAD matches the remote before run() stamps the zero-write marker. $COMMIT (build's pushed
 # trunk sha) is a real, resolvable commit and stands in for a feature's shared spec-rev.
@@ -804,7 +804,10 @@ cards_push() {  # cards_push <workdir> — the frozen spec file + the cards, in 
   mkdir -p "$1/tests"
   echo red > "$1/tests/spec.txt"
   git -C "$1" add -A
-  git -C "$1" commit --quiet -m cards
+  # --allow-empty: a case may re-write a card to content a previous case already committed
+  # (cases 69/72/75 share fx-69 and can draw the same minted prefix twice) — an empty commit is
+  # correct there, and `git commit` failing under `set -e` would kill the run.
+  git -C "$1" commit --quiet --allow-empty -m cards
   git -C "$1" push --quiet origin main
 }
 
@@ -1266,14 +1269,16 @@ ls "$ROOT/fx-58/amb" | sed "s|^|$ROOT/fx-58/amb/|" \
   | git -C "$WORK" hash-object -w --stdin-paths > "$ROOT/fx-69/shas"
 amb_tree="$(git -C "$WORK" rev-parse 'HEAD^{tree}')"
 : > "$ROOT/fx-69/commits"
-amb_i=0; AMB2=""; AMB3=""
+amb_i=0; AMB2=""; AMB3=""; AMB4=""
 while [ "$amb_i" -lt 800 ]; do
   amb_c="$(git -C "$WORK" commit-tree "$amb_tree" -m "amb-$amb_i" 2>/dev/null)"
   amb_p="$(printf %.4s "$amb_c")"
   if [ -z "$AMB3" ] && grep -q "^$amb_p" "$ROOT/fx-69/commits"; then AMB3="$amb_p"; fi
   echo "$amb_c" >> "$ROOT/fx-69/commits"
   if [ -z "$AMB2" ] && grep -q "^$amb_p" "$ROOT/fx-69/shas"; then AMB2="$amb_p"; fi
-  if [ -n "$AMB2" ] && [ -n "$AMB3" ]; then break; fi
+  # a prefix JSON would read as a float — `7e16` is 7×10^16 to a number parser (case 75)
+  if [ -z "$AMB4" ]; then case "$amb_p" in [0-9]e[0-9][0-9]) AMB4="$amb_p" ;; esac; fi
+  if [ -n "$AMB2" ] && [ -n "$AMB3" ] && [ -n "$AMB4" ]; then break; fi
   amb_i=$((amb_i + 1))
 done
 
@@ -1355,6 +1360,83 @@ else
   run "$ROOT/fx-69/work" --stage impl
   expect "72-cards-spec-rev-two-commit-prefix" 2 \
     "PREFLIGHT STOP card-spec-rev-unresolvable $AMB3 card=$FEATURE/01"
+fi
+
+# --- 73. a value that IS a comment is an EMPTY value, on keys and on items -------------------
+# (a) `verify: # TODO` must not read as the command "# TODO"; (b) `spec-paths: # frozen` still
+# declares a block list, and a `- # note` line inside it is a comment, not a path.
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-73/remote.git")"; build 73
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: todo
+attempts: 0
+verify: # TODO write the command
+spec-paths: ["tests/spec.txt"]
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 2 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP card-verify-empty card=$FEATURE/01" || ok=0
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: todo
+attempts: 0
+verify: ["make test A"]
+spec-paths: # frozen by task
+- tests/spec.txt
+- # the fixture dir comes later
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS ok feature=$FEATURE n=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS stop"
+refute "CARDS note"
+report "73-cards-comment-only-values" "$ok"
+
+# --- 74. a scalar is TEXT: `null` / `1e0` are what the card wrote, never coerced -------------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-74/remote.git")"; build 74
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: null
+attempts: 1e0
+verify: ["make test A"]
+spec-paths: ["tests/spec.txt"]
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "74-cards-scalars-not-coerced" 2 \
+  "CARDS stop card-bad-status null card=$FEATURE/01" \
+  "CARDS stop card-bad-attempts 1e0 card=$FEATURE/01" \
+  "PREFLIGHT STOP card-bad-status null card=$FEATURE/01"
+
+# --- 75. a short spec-rev that LOOKS like a float (`7e16`) is a sha, and must resolve --------
+# JSON would read it as 7e+16; it is asked only about `[`/`"` values, never about a bare scalar.
+if [ -z "$AMB4" ]; then
+  skip "75-cards-spec-rev-float-shaped" "no [0-9]e[0-9][0-9] commit prefix among the minted commits"
+else
+  card_write "$ROOT/fx-69/work" 01 todo '["make test A"]' '["tests/spec.txt"]' '["src/a.rs"]' "$AMB4"
+  cards_push "$ROOT/fx-69/work"
+  if git -C "$ROOT/fx-69/work" rev-parse --verify --quiet "$AMB4^{commit}" >/dev/null 2>&1; then
+    run "$ROOT/fx-69/work" --stage impl
+    expect "75-cards-spec-rev-float-shaped" 0 "CARDS ok feature=$FEATURE n=1" \
+      "PREFLIGHT OK stage=impl"
+  else
+    skip "75-cards-spec-rev-float-shaped" "the float-shaped prefix is ambiguous in this fixture"
+  fi
 fi
 
 # --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
