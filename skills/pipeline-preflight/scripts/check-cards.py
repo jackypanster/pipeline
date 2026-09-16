@@ -24,17 +24,20 @@ def parse_front(text):
     is no `---` fence at all; a fence we cannot match (a line above it) is ODD, not absent
     (CRLF needs nothing: python reads these files in text mode, which normalises it)."""
     m = re.match(r"---\n(.*?)\n---\n?(.*)\Z", text, re.S)
-    if not m:
-        return ({ODD: True} if re.match(r"\s*---\r?\n", text) else None), text
+    if not m:   # a `---` line we could not match is ODD; NO fence line at all is a missing artifact
+        return ({ODD: True} if re.search(r"(?m)^[ \t]*---[ \t\r]*$", text) else None), text
     d, key = {}, None
     for raw in m.group(1).split("\n"):
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
-        raw = re.sub(r"""("[^"]*"|'[^']*')|\s+#.*$""", lambda g: g.group(1) or "", raw)
+        raw = re.sub(r"""("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\s+#.*$""",
+                     lambda g: g.group(1) or "", raw)
         item = raw.strip()
-        if key is not None and item.startswith("- "):     # block list item, indented or not
-            v = d.get(key)
-            d[key] = (v if isinstance(v, list) else []) + [unquote(item[2:].strip())]
+        if item.startswith("- "):          # block list item, indented or not …
+            if isinstance(d.get(key), list):     # … but ONLY under a key already holding a list:
+                d[key] = d[key] + [unquote(item[2:].strip())]
+            else:                                # an item after a SCALAR is a shape we cannot read
+                d[ODD] = True                    # (never silently replace the scalar)
             continue
         if raw[:1] in " \t" or ":" not in raw:
             d[ODD] = True              # a shape this parser does not understand
@@ -129,10 +132,10 @@ def check(root, feature):   # -> (lines printed verbatim by the caller, violatio
         stop("feature-spec-rev-not-shared %s feature=%s"
              % (",".join(r[:7] for r in sorted(revs)), feature))
     bad = sum(1 for l in out if l.startswith("CARDS stop "))
-    if not bad:                        # never claim `ok` over a card whose checks were suppressed
-        if skipped:
+    if not bad:                        # never claim `ok` over a check we did not run
+        if skipped or fv is None:      # fv unknown ⇒ check 4 was skipped for EVERY card
             out.append("CARDS unverified feature=%s n=%d unchecked=%d"
-                       % (feature, len(cards), len(skipped)))
+                       % (feature, len(cards), len(cards) if fv is None else len(skipped)))
         else:
             out.append("CARDS ok feature=%s n=%d spec-rev=%s"
                        % (feature, len(cards), sorted(revs)[0][:7] if revs else "-"))
