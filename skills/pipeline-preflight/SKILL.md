@@ -54,9 +54,10 @@ filters by type). It adds no rule and reads no frozen one
 ⇒ `CARDS note full-verify-unknown` and that check is skipped for every card of the feature). A
 `CARDS stop` line becomes `PREFLIGHT STOP <that same reason>`; a `CARDS note` never changes the exit —
 what it cannot read it does not judge. **Values are read in ordered steps, with no quote or comment
-grammar re-implemented:** a value starting with `#` is a comment, i.e. empty; a value starting with `[`
-or `"` is JSON (exact — a `#` inside a JSON string is data), and JSON is asked about nothing else, so a
-bare `7e16` stays a short sha and `null`/`true` stay text; else, only if the text carries no quote at
+grammar re-implemented:** a value starting with `#` is a comment, i.e. empty; a value starting with `[`,
+`"` or `{` is JSON (exact — a `#` inside a JSON string is data), and JSON is asked about nothing else,
+so a bare `7e16` stays a short sha and `null`/`true` stay text; a block-list item is a comment only when
+its own raw text starts with `#`, and an item that is not a string (`- []`) is unreadable, not skipped; else, only if the text carries no quote at
 all, a bare scalar with a whitespace-preceded ` #…` tail dropped; else the card is unrecognised. So is a card with any other unreadable shape — a line that is neither blank, nor `#`,
 nor `key: value`, nor a `- item` entry; a `- item` under anything but a key declared empty (a scalar or
 an inline array is not a block list); anything above the `---` fence — reported
@@ -73,4 +74,4 @@ prose is the spec; this executes it.
 written; exit 3 ⇒ execute the named check(s) that way. The prose IS the spec; this script is only its
 deterministic executor, and rollback = delete this dir.
 
-**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git rev-parse --verify`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (77 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).
+**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git rev-parse --verify`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (78 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).

@@ -15,15 +15,15 @@ BAD, ODD = "\x00unparsed", "\x00odd"
 def parse_value(val, listy):
     """One value, in ordered steps — no quote/comment grammar is re-implemented:
     0. a value that STARTS with `#` is a comment, i.e. an empty value;
-    1. `[`/`"` ⇒ JSON, which is exact (a `#` inside a JSON string is data, and JSON has no
-       comments). JSON is asked ONLY about these two, never about a bare scalar: `7e16` is a
-       legal short sha, not the float 7e+16, and `null`/`true` are text a card wrote;
+    1. `[`/`"`/`{` ⇒ JSON, which is exact (a `#` inside a JSON string is data, and JSON has no
+       comments). JSON is asked ONLY about those three openers, never about a bare scalar: `7e16`
+       is a legal short sha, not the float 7e+16, and `null`/`true` are text a card wrote;
     2. else, ONLY if the text carries no quote at all, a bare scalar with a whitespace-preceded
        ` #…` tail dropped (that much is unambiguous);
     3. else — a quote we could not parse as JSON — ODD: we do not guess (fail-open)."""
     if val[:1] == "#":
         return []
-    if val[:1] in ('[', '"'):     # a tuple, not a string: `'' in '["'` would be TRUE
+    if val[:1] in ('[', '"', '{'):   # a tuple, not a string: `'' in '["'` would be TRUE
         try:
             v = json.loads(val)
         except Exception:
@@ -55,9 +55,10 @@ def parse_front(text):
             continue
         item = raw.strip()
         if item.startswith("- "):          # block-list item, indented or not …
-            v = parse_value(item[2:].strip(), False)
-            if v == []:                    # `- # note` / a bare `-`: a comment, not an item
-                continue
+            text = item[2:].strip()
+            if text[:1] in ("#", ""):      # a comment item / a bare `- `, decided on the RAW text:
+                continue                   # a value that PARSES to [] (`- []`) is not a comment
+            v = parse_value(text, False)
             if key in blocks and isinstance(v, str) and v not in (BAD, ODD):
                 d[key] = d[key] + [v]
             else:                          # after a scalar / an inline array, or unreadable:

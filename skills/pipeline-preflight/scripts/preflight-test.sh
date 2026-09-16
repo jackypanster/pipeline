@@ -774,7 +774,7 @@ run "$WORK" --stage prd
 expect "39-unverified-still-advisory" 3 "PREFLIGHT UNVERIFIED install-check" \
   "UPSTREAM newer head=$TODAY_SHA installed="
 
-# --- 40..75. the card-invariant check (CARDS …) --------------------------------------------
+# --- 40..76. the card-invariant check (CARDS …) --------------------------------------------
 # Cards + their frozen spec file are written AFTER build() and PUSHED, so the clone is clean and
 # its HEAD matches the remote before run() stamps the zero-write marker. $COMMIT (build's pushed
 # trunk sha) is a real, resolvable commit and stands in for a feature's shared spec-rev.
@@ -1438,6 +1438,34 @@ else
     skip "75-cards-spec-rev-float-shaped" "the float-shaped prefix is ambiguous in this fixture"
   fi
 fi
+
+# --- 76. `- []` is an ITEM, not a comment: a container item is a shape we cannot read ---------
+# "comment" is decided on the RAW item text (first char `#`), never on a value that happens to
+# PARSE to an empty list — otherwise `- []` is dropped and the card is reported verified.
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-76/remote.git")"; build 76
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: todo
+attempts: 0
+verify:
+- make test A
+- []
+spec-paths: ["tests/spec.txt"]
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-frontmatter-unrecognized card=$FEATURE/01" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS unverified feature=$FEATURE n=1 unchecked=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS stop"
+refute "CARDS ok"
+report "76-cards-container-item-not-a-comment" "$ok"
 
 # --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
 OUT="$ZW"; RC=0
