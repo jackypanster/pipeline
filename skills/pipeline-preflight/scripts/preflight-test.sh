@@ -774,14 +774,15 @@ run "$WORK" --stage prd
 expect "39-unverified-still-advisory" 3 "PREFLIGHT UNVERIFIED install-check" \
   "UPSTREAM newer head=$TODAY_SHA installed="
 
-# --- 40..49. the card-invariant check (CARDS …) --------------------------------------------
+# --- 40..65. the card-invariant check (CARDS …) --------------------------------------------
 # Cards + their frozen spec file are written AFTER build() and PUSHED, so the clone is clean and
 # its HEAD matches the remote before run() stamps the zero-write marker. $COMMIT (build's pushed
 # trunk sha) is a real, resolvable commit and stands in for a feature's shared spec-rev.
 CARD_FV='{ "repo": "%s", "branch": "main", "feature": "'"$FEATURE"'", "stage": "task", "full-verify": ["make build", "make test"] }'
 CARD_ROLES='impl: think
 review: think
-hunt: think'
+hunt: think
+task: think'
 
 card_write() {  # card_write <workdir> <NN> <status> <verify> <spec-paths> <impl-paths> <spec-rev>
   mkdir -p "$1/.pipeline/$FEATURE/tasks"
@@ -917,9 +918,10 @@ run "$WORK" --stage impl
 ok=1
 [ "$RC" = 0 ] || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-frontmatter-unrecognized card=$FEATURE/01" || ok=0
-printf '%s\n' "$OUT" | grep -Fq -- "CARDS ok feature=$FEATURE n=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS unverified feature=$FEATURE n=1 unchecked=1" || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
 refute "CARDS stop"
+refute "CARDS ok"
 report "48-cards-frontmatter-unrecognized" "$ok"
 
 # --- 49. list VALUES this parser cannot read ⇒ note, the checks needing them are skipped ----
@@ -933,9 +935,231 @@ ok=1
 [ "$RC" = 0 ] || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-list-unparsed verify card=$FEATURE/01" || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-list-unparsed spec-paths card=$FEATURE/01" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS unverified feature=$FEATURE n=1 unchecked=1" || ok=0
 printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
 refute "CARDS stop"
 report "49-cards-list-unreadable" "$ok"
+
+# --- 50..65. round-1 review coverage: every STOP reason, every note, the degrade paths -------
+# --- 50. a card with no `---` fence at all (the one shape that still fails CLOSED) -----------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-50/remote.git")"; build 50
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+printf '%s\n' '# card 01' 'this card was never given frontmatter' \
+  > "$WORK/.pipeline/$FEATURE/tasks/01.md"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "50-cards-no-frontmatter" 2 "PREFLIGHT STOP card-no-frontmatter card=$FEATURE/01"
+
+# --- 51. `status` outside the enum and a non-integer `attempts` (both STOP, first one wins) --
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-51/remote.git")"; build 51
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: nope
+attempts: soon
+verify: ["make test A"]
+spec-paths: ["tests/spec.txt"]
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "51-cards-bad-status-attempts" 2 \
+  "CARDS stop card-bad-status nope card=$FEATURE/01" \
+  "CARDS stop card-bad-attempts soon card=$FEATURE/01" \
+  "PREFLIGHT STOP card-bad-status nope card=$FEATURE/01"
+
+# --- 52. an EMPTY ITEM is not a value: `verify: [""]` is an empty verify ---------------------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-52/remote.git")"; build 52
+card_write "$WORK" 01 todo '[""]' '["tests/spec.txt"]' '["src/a.rs"]' "$COMMIT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "52-cards-verify-empty" 2 "PREFLIGHT STOP card-verify-empty card=$FEATURE/01"
+
+# --- 53. `spec-paths: []` — a card with nothing frozen (CONTRACT §Freeze coverage) -----------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-53/remote.git")"; build 53
+card_write "$WORK" 01 todo '["make test A"]' '[]' '["src/a.rs"]' "$COMMIT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "53-cards-spec-paths-empty" 2 "PREFLIGHT STOP card-spec-paths-empty card=$FEATURE/01"
+
+# --- 54. …but `impl-paths: []` is LEGAL: impl's write-set is impl-paths + src/** (L160) ------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-54/remote.git")"; build 54
+card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '[]' "$COMMIT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "54-cards-impl-paths-empty-ok" 0 "CARDS ok feature=$FEATURE n=1" "PREFLIGHT OK stage=impl"
+
+# --- 55. legal YAML the first cut mis-read: inline ` #` comments + UNINDENTED block lists ----
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-55/remote.git")"; build 55
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+cat > "$WORK/.pipeline/$FEATURE/tasks/01.md" <<CARD
+---
+status: todo # ready to pick up
+attempts: 0
+verify:
+- make test A:unit
+spec-paths:
+- "tests/spec.txt" # frozen by task
+impl-paths: ["src/a.rs"]
+spec-rev: $COMMIT
+---
+CARD
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS ok feature=$FEATURE n=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS stop"
+refute "CARDS note"
+report "55-cards-comments-and-unindented-list" "$ok"
+
+# --- 56. fence shapes: CRLF parses normally; a DISPLACED fence is a note, never a STOP ------
+# (a) python reads cards in text mode, so `\r\n` is normalised on the way in — a CRLF card is a
+# normal card. (b) a line above the fence IS unreadable here ⇒ the fail-OPEN note, not a STOP.
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-56/remote.git")"; build 56
+mkdir -p "$WORK/.pipeline/$FEATURE/tasks"
+printf '%s\r\n' '---' 'status: todo' 'attempts: 0' 'verify: ["make test A"]' \
+  'spec-paths: ["tests/spec.txt"]' 'impl-paths: ["src/a.rs"]' "spec-rev: $COMMIT" '---' \
+  > "$WORK/.pipeline/$FEATURE/tasks/01.md"
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS ok feature=$FEATURE n=1" || ok=0
+refute "CARDS stop"
+printf '%s\n' '' '---' 'status: todo' 'attempts: 0' 'verify: ["make test A"]' \
+  'spec-paths: ["tests/nope.txt"]' 'impl-paths: ["tests/nope.txt"]' "spec-rev: $ZERO_SHA" '---' \
+  > "$WORK/.pipeline/$FEATURE/tasks/01.md"
+cards_push "$WORK"
+run "$WORK" --stage impl
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS note card-frontmatter-unrecognized card=$FEATURE/01" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS unverified feature=$FEATURE n=1 unchecked=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS stop"
+refute "CARDS ok"
+report "56-cards-fence-shapes" "$ok"
+
+# --- 57. a 7-char prefix and the full sha of the SAME commit are ONE baseline ----------------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-57/remote.git")"; build 57
+CARD_SHORT="$(printf %.7s "$COMMIT")"
+card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["src/a.rs"]' "$COMMIT"
+card_write "$WORK" 02 todo '["make test B"]' '["tests/spec.txt"]' '["src/b.rs"]' "$CARD_SHORT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS ok feature=$FEATURE n=2 spec-rev=$CARD_SHORT" || ok=0
+refute "feature-spec-rev-not-shared"
+report "57-cards-spec-rev-short-shared" "$ok"
+
+# --- 58. an AMBIGUOUS short spec-rev is unusable by the freeze gate ⇒ unresolvable -----------
+# 1500 blobs make a 4-hex prefix collision near-certain; if none appears the case SKIPs rather
+# than passing quietly. The objects land in the fixture's OWN object db (.git is never swept).
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-58/remote.git")"; build 58
+mkdir -p "$ROOT/fx-58/amb"
+amb_i=0
+while [ "$amb_i" -lt 1500 ]; do echo "$amb_i" > "$ROOT/fx-58/amb/$amb_i"; amb_i=$((amb_i + 1)); done
+ls "$ROOT/fx-58/amb" | sed "s|^|$ROOT/fx-58/amb/|" \
+  | git -C "$WORK" hash-object -w --stdin-paths > "$ROOT/fx-58/shas"
+AMB="$(cut -c1-4 "$ROOT/fx-58/shas" | sort | uniq -d | head -1)"
+if [ -z "$AMB" ]; then
+  skip "58-cards-spec-rev-ambiguous" "no 4-hex prefix collision among 1500 generated objects"
+else
+  card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["src/a.rs"]' "$AMB"
+  cards_push "$WORK"
+  run "$WORK" --stage impl
+  expect "58-cards-spec-rev-ambiguous" 2 \
+    "PREFLIGHT STOP card-spec-rev-unresolvable $AMB card=$FEATURE/01"
+fi
+
+# --- 59. a DIRECTORY spec-path passes; a GLOB is not expanded ⇒ note + `unverified` ----------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-59/remote.git")"; build 59
+mkdir -p "$WORK/tests/fixtures"
+echo fixture > "$WORK/tests/fixtures/a.txt"
+card_write "$WORK" 01 todo '["make test A"]' '["tests/fixtures", "tests/spec-*.txt"]' \
+  '["src/a.rs"]' "$COMMIT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "59-cards-spec-path-dir-and-glob" 0 \
+  "CARDS note card-spec-path-glob tests/spec-*.txt card=$FEATURE/01" \
+  "CARDS unverified feature=$FEATURE n=1 unchecked=1" "PREFLIGHT OK stage=impl"
+
+# --- 60. check-cards.py ABSENT from this install ⇒ the hook is a no-op, the prose stands -----
+# A copy of preflight.sh in a scripts dir with no helper next to it: the real `[ -r … ]` false
+# branch, with cards present that WOULD have produced two STOPs.
+CARDS_ALT="$ROOT/alt-skills/pipeline-preflight/scripts"
+mkdir -p "$CARDS_ALT"
+cp "$HERE/preflight.sh" "$CARDS_ALT/preflight.sh"
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-60/remote.git")"; build 60
+card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["tests/spec.txt"]' "$ZERO_SHA"
+cards_push "$WORK"
+RUN_SCRIPT="$CARDS_ALT/preflight.sh"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS"
+report "60-cards-helper-absent-noop" "$ok"
+
+# --- 61. the helper CRASHES ⇒ `CARDS unchecked rc=<n>`, exit unchanged, never a STOP ---------
+printf '%s\n' 'raise SystemExit("check-cards stub: boom")' > "$CARDS_ALT/check-cards.py"
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-61/remote.git")"; build 61
+card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["tests/spec.txt"]' "$ZERO_SHA"
+cards_push "$WORK"
+RUN_SCRIPT="$CARDS_ALT/preflight.sh"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "CARDS unchecked rc=1" || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=impl" || ok=0
+refute "CARDS stop"
+report "61-cards-helper-crash-unchecked" "$ok"
+
+# --- 62. a CARDS STOP writes nothing either — not even the once-a-day throttle cache ---------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-62/remote.git")"; build 62
+card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["tests/spec.txt"]' "$COMMIT"
+cards_push "$WORK"
+rm -f "$UP_CACHE"
+run "$WORK" --stage impl
+ok=1
+[ "$RC" = 2 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT STOP card-spec-impl-overlap" || ok=0
+refute "UPSTREAM"
+if [ -e "$UP_CACHE" ]; then ok=0; fi
+report "62-cards-stop-writes-no-cache" "$ok"
+
+# --- 63. stage `task` (and prd/arch) never invokes the check, however broken the cards -------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-63/remote.git")"; build 63
+card_write "$WORK" 01 todo '["make test A"]' '["tests/spec.txt"]' '["tests/spec.txt"]' "$ZERO_SHA"
+cards_push "$WORK"
+run "$WORK" --stage task
+ok=1
+[ "$RC" = 0 ] || ok=0
+printf '%s\n' "$OUT" | grep -Fq -- "PREFLIGHT OK stage=task" || ok=0
+refute "CARDS"
+report "63-cards-not-run-on-task" "$ok"
+
+# --- 64. `full-verify` is OPTIONAL (CONTRACT L72): absent ⇒ note, check 4b skipped, exit 0 ---
+FX_ROLES="$CARD_ROLES"
+FX_CURRENT_JSON="$(printf '{ "repo": "%s", "branch": "main", "feature": "'"$FEATURE"'", "stage": "task" }' "$ROOT/fx-64/remote.git")"
+build 64
+card_write "$WORK" 01 todo '["make build", "make test"]' '["tests/spec.txt"]' '["src/a.rs"]' "$COMMIT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "64-cards-full-verify-unknown" 0 "CARDS note full-verify-unknown feature=$FEATURE" \
+  "CARDS ok feature=$FEATURE n=1" "PREFLIGHT OK stage=impl"
+
+# --- 65. a spec-path that is not in the checkout (the freeze has nothing to diff) ------------
+FX_ROLES="$CARD_ROLES"; FX_CURRENT_JSON="$(printf "$CARD_FV" "$ROOT/fx-65/remote.git")"; build 65
+card_write "$WORK" 01 todo '["make test A"]' '["tests/missing.txt"]' '["src/a.rs"]' "$COMMIT"
+cards_push "$WORK"
+run "$WORK" --stage impl
+expect "65-cards-spec-path-absent" 2 \
+  "PREFLIGHT STOP card-spec-path-absent tests/missing.txt card=$FEATURE/01"
 
 # --- 31. zero writes: not one run above moved HEAD, dirtied the tree, or wrote a file --
 OUT="$ZW"; RC=0

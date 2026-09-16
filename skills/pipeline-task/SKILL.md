@@ -77,8 +77,8 @@ stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch �
       `verify` MUST be card-scoped (test-name filter or dedicated file) and you MUST also set
       `current.json.full-verify` (the unfiltered whole-suite runner) — both defined in CONTRACT
       §State authority (card-scoped verify + full-verify).
-      Before this commit run `python3 <this skill's base dir>/../pipeline-preflight/scripts/check-cards.py
-      --repo . --feature <feature>`; non-zero ⇒ fix the cards, do NOT commit (script absent ⇒ the assertions above stand).
+      From the repo ROOT, before this commit: `python3 <this skill's base dir>/../pipeline-preflight/scripts/check-cards.py --repo . --feature <feature>`.
+      A `CARDS stop` line (exit 2) ⇒ fix the cards, do NOT commit. Helper or `python3` absent, or `CARDS unchecked` ⇒ a HELPER failure, never a card error: the assertions above stand, proceed.
 
    **Re-freeze / append-card** (re-routed by review/hunt): NOT initial authoring. Which fields to
    preserve on siblings, when to reset vs keep, and the trunk-rebase handoff — all defined in CONTRACT

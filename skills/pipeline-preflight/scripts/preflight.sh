@@ -52,8 +52,11 @@
 #     …printed AFTER the guard (CONTRACT §Pre-write stale-dispatch guard: no write before it,
 #     zero writes on a mismatch) — a STOP prints no UPSTREAM line and writes no cache.
 #   STALE_DISPATCH <field> observed=<v> expected=<v>
-#   CARDS ok feature=<f> n=<N> spec-rev=<sha7>   | CARDS note <reason> card=<f>/<id>
-#   CARDS stop <reason> [detail] card=<f>/<id>   | CARDS advisory stage=hunt findings=<n>
+#   CARDS ok feature=<f> n=<N> spec-rev=<sha7> | CARDS unverified feature=<f> n=<N> unchecked=<k>
+#   CARDS note <assumptions-missing|card-frontmatter-unrecognized|card-list-unparsed <key>|
+#     card-spec-path-glob <path>> card=<f>/<id> | CARDS note full-verify-unknown feature=<f>
+#   CARDS stop <reason> [detail] card=<f>/<id> | CARDS stop feature-spec-rev-not-shared <sha7,…> feature=<f>
+#   CARDS advisory stage=hunt findings=<n> (hunt repairs cards — not a STOP) | CARDS unchecked rc=<n>
 #   PREFLIGHT OK stage=<s> | PREFLIGHT STOP <reason> | PREFLIGHT UNVERIFIED <checks>
 #   PREFLIGHT SKIPPED <reason>
 #
@@ -606,7 +609,7 @@ print("OK")
 fi
 
 # -------------------------------- 5b. card invariants (impl/review/hunt, cards present only)
-# Read-only (frontmatter reads + `git cat-file -e`), so it sits AFTER the guard — STALE_DISPATCH
+# Read-only (frontmatter reads + `git rev-parse --verify`), so it sits AFTER the guard — STALE_DISPATCH
 # and slot errors keep priority, and 38's "a STOP writes nothing" proof covers a card STOP too.
 # `--stage hunt` is advisory by design: hunt REPAIRS cards, so a card defect must not gate it.
 case "$stage" in
