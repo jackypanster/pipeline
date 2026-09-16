@@ -52,6 +52,11 @@
 #     …printed AFTER the guard (CONTRACT §Pre-write stale-dispatch guard: no write before it,
 #     zero writes on a mismatch) — a STOP prints no UPSTREAM line and writes no cache.
 #   STALE_DISPATCH <field> observed=<v> expected=<v>
+#   CARDS ok feature=<f> n=<N> spec-rev=<sha7> | CARDS unverified feature=<f> n=<N> unchecked=<k>
+#   CARDS note <assumptions-missing|card-frontmatter-unrecognized|card-list-unparsed <key>|
+#     card-spec-path-glob <path>> card=<f>/<id> | CARDS note full-verify-unknown feature=<f>
+#   CARDS stop <reason> [detail] card=<f>/<id> | CARDS stop feature-spec-rev-not-shared <sha7,…> feature=<f>
+#   CARDS advisory stage=hunt findings=<n> (hunt repairs cards — not a STOP) | CARDS unchecked rc=<n>
 #   PREFLIGHT OK stage=<s> | PREFLIGHT STOP <reason> | PREFLIGHT UNVERIFIED <checks>
 #   PREFLIGHT SKIPPED <reason>
 #
@@ -183,7 +188,7 @@ fi
 # The stage cannot know it is running an OLD skill set; this tells the operator to run
 # `pipeline-update` BETWEEN stages. Advisory by construction: every path returns 0, no path calls
 # `stop`, `exit`, or prints `PREFLIGHT …`, and the caller must invoke it as `upstream_check || true`.
-# CALLED as `upstream_check || true` in section 5b — AFTER the guard, never before it — because the
+# CALLED as `upstream_check || true` in section 5c — AFTER the guard, never before it — because the
 # throttle cache below is a file write, and CONTRACT §Pre-write stale-dispatch guard requires the
 # guard to run before ANY write and a mismatch to leave zero writes.
 # Installed version: the clone's HEAD when the skills live in a pipeline clone (a runtime loading
@@ -603,7 +608,31 @@ print("OK")
   echo "GUARD ok seq=$env_seq commit=$env_commit$guard_remote"
 fi
 
-# -------------- 5b. advisory upstream freshness — after every check, so a STOP writes nothing
+# -------------------------------- 5b. card invariants (impl/review/hunt, cards present only)
+# Read-only (frontmatter reads + `git rev-parse --verify`), so it sits AFTER the guard — STALE_DISPATCH
+# and slot errors keep priority, and 38's "a STOP writes nothing" proof covers a card STOP too.
+# `--stage hunt` is advisory by design: hunt REPAIRS cards, so a card defect must not gate it.
+case "$stage" in
+  impl|review|hunt)
+    if [ -n "$cur_feature" ] && ls "$repo/.pipeline/$cur_feature/tasks"/*.md >/dev/null 2>&1; then
+      cards_script="$(cd -P "$(dirname "$0")" && pwd -P)/check-cards.py"
+      if [ -r "$cards_script" ]; then
+        cards_rc=0
+        cards_out="$(python3 "$cards_script" --repo "$repo" --feature "$cur_feature" \
+                       --stage "$stage" 2>&1)" || cards_rc=$?
+        if [ -n "$cards_out" ]; then printf '%s\n' "$cards_out"; fi
+        if [ "$cards_rc" = 2 ]; then
+          cards_reason="$(printf '%s\n' "$cards_out" | sed -n 's/^CARDS stop //p' | sed -n 1p)"
+          stop "${cards_reason:-card-check-failed}"
+        elif [ "$cards_rc" != 0 ]; then
+          echo "CARDS unchecked rc=$cards_rc"   # a helper bug degrades to the prose, never STOPs
+        fi
+      fi
+    fi
+    ;;
+esac
+
+# -------------- 5c. advisory upstream freshness — after every check, so a STOP writes nothing
 # Deliberately AFTER the guard: `upstream_check` may write its XDG throttle cache, and CONTRACT
 # §Pre-write stale-dispatch guard demands the guard before ANY file write. Reached only on the two
 # paths that proceed (exit 0 and exit 3), so no STOP — above all no STALE_DISPATCH — ever writes it.
