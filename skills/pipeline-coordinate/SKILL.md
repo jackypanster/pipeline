@@ -116,6 +116,27 @@ send, or unchanged Git after a send, always STOPS for human inspection of the pa
 a dispatch whose effect is OBSERVED (journal advanced / commits landed / verdict posted) is
 replay-safe to move past.
 
+## Remote Pi pane (executor on another host) — Profile A only
+
+The Pi pane may live on another machine while CC, Codex, the observer clone, and every rule above stay local and unchanged. **Profile B is BLOCKED with a remote Pi pane**: `coordinate.sh doctor` resolves all three role clones and panes on the local socket and has no remote mode, so a remote `PI_WORKDIR` cannot pass Preflight item 4; do not substitute manual sampling for doctor. Until a `PI_SSH` field exists in `pipeline-driver`, use this section for Profile A meta-PRs only.
+
+Herdr remote control IS ssh — pane/agent ids are per-server (two hosts can both have `w1:p1`) — so the two transport verbs, and `pane list` / `pane read` / `agent wait` aimed at the Pi pane, run on the Pi host. Put `BatchMode yes`, `ConnectTimeout 10`, `ServerAliveInterval 5`, `ServerAliveCountMax 3`, `ControlMaster auto`, `ControlPath ~/.ssh/cm-%C`, `ControlPersist 10m` in that host's `~/.ssh/config` block so both shapes inherit them (bash; a bare `$R` scalar does not word-split under zsh):
+
+    H=<host>; P=<pane>
+    r() { ssh -n "$H" "$@"; }                           # sample and other argument-only verbs
+    r herdr agent explain "$P" --json
+    ssh "$H" bash -s <<'REMOTE'                         # send: text crosses ssh as a stdin script, quoted inside
+    herdr pane run <pane> '<single line>'
+    REMOTE
+
+`PI_WORKDIR` is then a path on that host; the local `herdr` version is irrelevant (only the remote CLI talks to the remote socket). **Watch step:** `watch-pane.py` talks to the LOCAL socket only — never hand it a remote pane id (it would select an unrelated local pane). The remote equivalent with the same bounded, fail-closed semantics: `r herdr agent wait "$P" --until idle --until done --timeout <ms>`, then ONE `r herdr agent explain "$P" --json` requiring `fallback_reason == null`; a wait timeout or a non-authoritative sample → stop, exactly as in the Transport verbs section. Preflight additions, each a command, any miss = stop:
+
+- `r true` exits 0 (`BatchMode yes` needs a loaded key/agent or an authenticated master; the master authenticates once — observed ~1 s per verb → tens of ms). `ServerAlive*` bounds a hung session to ~15 s so remote timeouts reach CC; on failure apply the existing STOP rules, re-establish, resume by hand — never auto-reconnect.
+- `r herdr status` is running and `r herdr integration status` lists pi; the Pi pane was started with `herdr agent start --kind pi` (a `pane run pi` pane never reaches authority — pane setup in the adhoc playbook §7).
+- `git ls-remote` succeeds on BOTH hosts and the forge CLI works where it will run. A local `Host <forge>` + `ProxyJump <host>` routes ONLY ssh git remotes and keeps URLs identical; HTTPS remotes and forge API calls are not covered.
+
+Attended layer only; unattended cross-host queueing is a different layer and out of scope here. Provenance: 2026-09-16, MacBook → Mac Studio over a relay tunnel, local herdr 0.8.2 driving remote 0.9.0.
+
 ## Profile A — meta-PR flow (toolchain, docs, small changes; quality via adversarial review)
 
 For no-`.pipeline`-state changes only (CONTRACT §Self-improvement lane: this repo + the sibling
