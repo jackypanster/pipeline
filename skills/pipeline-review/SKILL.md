@@ -32,7 +32,11 @@ documented hard rules and guarantees)? **Size-budget axis** — for each `skills
 can't be net-neutral; why it can't live in CONTRACT.md / a reference file); triggered + no
 justification ⇒ changes requested — the axis judges presence and plausibility, never forbids growth.
 Net ≤ 0 or ≤ 120 lines never triggers (shrinking and net-0 rewrites are free; a file already over 120
-flags only on further growth). (b) write the verdict as a PR
+flags only on further growth). **Evidence tier** — tag every blocking finding `observed` (a repro
+command, or a cited journal/log/issue where it actually happened) or `hypothetical` (reasoned-only:
+concurrency, pid reuse, TOCTOU, other platforms/users). The toolchain has ONE operator, so a
+`hypothetical` finding does NOT block — list it as a non-blocking follow-up in the verdict. Exception:
+a finding against a hard rule or frozen invariant blocks regardless of tier. (b) write the verdict as a PR
 comment; (c) on the human's explicit confirm via the same self-terminating exact-token GO-gate (step 6 —
 direct operator, same reviewer session), **squash-merge**. Everything else still holds:
 only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a

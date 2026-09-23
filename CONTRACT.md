@@ -511,7 +511,9 @@ feature freeze-gate machinery does not apply to a skill diff; only-reviewer-merg
 still do. The meta-PR semantic review also runs a **size-budget axis**: any `skills/*/SKILL.md` whose
 net growth > 0 AND whose post-merge length exceeds 120 lines requires an explicit size-budget
 justification in the PR description, else review requests changes (exact numstat/wc trigger in
-`pipeline-review`'s Meta-PR mode).
+`pipeline-review`'s Meta-PR mode). Blocking findings carry an **evidence tier** (`observed` vs
+`hypothetical`); for this one-operator toolchain a `hypothetical` finding is a non-blocking
+follow-up unless it hits a hard rule or frozen invariant.
 
 The same meta-PR gate covers, **additively**: proposals to **any other file of this repo** (a
 `DESIGN.md`/`README` diff is reviewed exactly like a skill diff), and PRs against the **sibling
