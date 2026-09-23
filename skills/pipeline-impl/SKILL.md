@@ -83,9 +83,9 @@ sub-instruction is the cheap seam if your skill supports one).
 "Append" means the **physical END of the file**: `>>` in a shell
 (`cat >> .pipeline/<feature>/journal.md`), never an editor insert, never the file head, never
 between entries. The physically-LAST entry is the run authority (CONTRACT §Run journal), so a
-misplaced entry makes your run invisible: drivers/dashboards keep reading the old tail and a driven
-run halts on "no progress" (field-failed twice on 2026-07-11 — a driven impl node PREPENDED its
-entries, once with fabricated copies of earlier entries, and both runs read as never-completed).
+misplaced entry makes your run invisible: coordinators/dashboards keep reading the old tail
+(field-failed twice on 2026-07-11 — an impl node PREPENDED its entries, once with fabricated copies
+of earlier entries, and both runs read as never-completed).
 
 The header must match the CONTRACT template EXACTLY:
 `## seq=N · <ISO-8601 UTC> · impl→<to> · <status> · by=<tag>` — seq = current tail's seq + 1;

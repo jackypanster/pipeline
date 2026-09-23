@@ -82,7 +82,7 @@ runtime — do not paste a second copy of the steps here, so the two can never d
 4. **Report — install is the operator's ground truth.** State what was installed / attached / already
    present / skipped, and every unresolved slot with its source. Do NOT print a blanket "installed OK":
    leave verification to the operator running an actual command (each stage self-checks its slot; a
-   sibling `drive.sh doctor`-style checker, where present, is the ground truth) — honest degrade over
+   sibling `coordinate.sh doctor`, where present, is the ground truth) — honest degrade over
    faked success.
 
 ## Hard rules

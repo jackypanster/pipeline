@@ -138,22 +138,17 @@ not a built-in mechanism).
 
 ## Constraints
 
-No cron, no scheduler in the contract (human relays) — TWO bounded, human-bracketed spans MAY be
-auto-advanced, plus ONE feature-authorized coordinated mode and its queued duty re-entry (4), and
-nothing else: (1) the `impl`
-multi-card loop on a cheap model, driven by the OPTIONAL external `pipeline-driver` (the write-side
-twin of the read-only `pipeline-dashboard`), STOPPING
-before the review/merge gate, which stays human-run (the merge itself is a human step; trunk may
-additionally be protected against force-push/deletion server-side where the plan allows); (2) the
-review↔fix RELAY of a toolchain-repo meta-PR (the CONTRACT §Self-improvement lane): the review is
-still `pipeline-review` in meta-PR mode, the verdict still lands on the PR, and the human-confirm +
-reviewer-only squash-merge gate is untouched — the relay automates the TYPING between verdicts under
-capped rounds and fail-closed halts, never a review judgment and never a merge. Span 2 is carried by
-the `pipeline-coordinate` playbook (Profile A) — an attended CC session dispatching the fixer and
-reviewer panes and reading verdicts off the PR — NOT by a driver script: the driver's `review-drive.sh`
-implementation was retired with its orca transport (one span, one implementation). Both spans begin and
-end at a human read; they are never chained to each other or to anything
-else. (3) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
+No cron, no scheduler in the contract (human relays) — ONE bounded, human-bracketed span MAY be
+auto-advanced, plus ONE feature-authorized coordinated mode and its queued duty re-entry (3), and
+nothing else (the merge itself is always a human step; trunk may additionally be protected against
+force-push/deletion server-side where the plan allows): (1) the review↔fix RELAY of a toolchain-repo
+meta-PR (the CONTRACT §Self-improvement lane): the review is still `pipeline-review` in meta-PR
+mode, the verdict still lands on the PR, and the human-confirm + reviewer-only squash-merge gate is
+untouched — the relay automates the TYPING between verdicts under capped rounds and fail-closed
+halts, never a review judgment and never a merge. It is carried by the `pipeline-coordinate`
+playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes and reading
+verdicts off the PR — NOT by a driver script (one span, one implementation). The span
+begins and ends at a human read and is never chained to anything else. (2) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
 a coordinator MAY type every NORMAL stage handoff — v1 is a CC session running the
 `pipeline-coordinate` playbook (the deterministic `coordinate.sh` dispatcher was evaluated and rejected — pipeline-driver PR #14 closed;
@@ -163,7 +158,7 @@ on the journal tail's transition forms, performs no stage work belonging to anot
 fail-closed on anything outside the known forms, and can neither merge nor confirm a merge (the review
 GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
 prohibition stays the DEFAULT — coordinated mode is its one explicit, opt-in, journal-audited
-exception. (4) **Duty mode** (pilot 2026-08-19, one target repo — README §Operating modes, fourth
+exception. (3) **Duty mode** (pilot 2026-08-19, one target repo — README §Operating modes, third
 track): coordinated mode re-entered on a timer while the operator is away. The operator's standing
 `/loop 1h /pipeline-coordinate … duty tick` line re-presents the invocation at each re-entry (role
 stays assigned, never inferred), and each tick advances at most the head of a human-ordered
@@ -174,8 +169,8 @@ instrument). Gates notify out-of-band (Telegram) with a guaranteed daily dead-ma
 blocked, spec-drift, or over-budget head halts the whole queue. The duty coordinator stays
 READ-ONLY toward the target repo (the §Coordinated-mode write ban holds: `queue.md` is human-owned,
 run state is derived per tick from journal + cards + forge; its only session-side state is a local,
-disposable notification ledger). This IS unattended operation past the freeze gate — Open item 3's
-trigger condition — so duty carries the specified halt clause NOW: cumulative impl `attempts`
+disposable notification ledger). This IS unattended operation past the freeze gate, so duty carries
+Open item 3's halt clause: cumulative impl `attempts`
 (journal/card evidence, never estimate) crossing `impl-budget-per-feature` in the target repo's
 `queue.md` Config halts to human (route=human, not hunt), alongside the coarser
 `max-features-per-day`. The
@@ -192,23 +187,10 @@ frontier model; `impl` tolerates a capable local LLM) · commands are extensible
 2. **`pipeline-learn`** (a research stage before arch for unfamiliar external dependencies) — add when
    a domain-unfamiliar requirement actually appears, not before.
 3. **Feature-level impl-loop budget ceiling** — the loop-engineering canon (`WHEN TO STOP` is a
-   mandatory loop-charter field; every loop needs a budget ceiling) wants a stop condition above the
-   per-card `attempts >= 3` breaker: impl's next-card routing auto-advances `card→card` with no
-   feature-level bound on cumulative attempts/cost. **Not added:** under the default human-relay mode the
-   operator IS the per-card ceiling; the only unbounded path is the **optional, not-yet-used
-   `pipeline-driver`** unattended loop — no real runaway signal exists, so adding a mechanism now would
-   violate the ratchet ("every line traces to a specific failure"). **Add when** the driver is first run
-   unattended across ≥N cards past a single freeze gate (no per-card human checkpoint), OR a real
-   cost-overrun is recorded in a `journal.md` entry — then specify it as a driver-honored clause in
-   §Constraints: halt-and-report-to-human (route=human, NOT hunt — no single owner) when the feature's
-   cumulative impl `attempts` (computed from the journal — evidence, not estimate) crosses
-   `current.json.impl-budget`. Not before.
-   *(Data point 2026-07-08: the driver's first real run crossed 2 cards past one freeze gate with
-   no per-card checkpoint — bounded fine by `CARD_TIMEOUT` + the consecutive-failure breaker + the
-   impl model's own quota ceiling; no overrun, so still deferred pending a real cost signal.)*
-   *(2026-08-19: duty mode crossed the trigger — Constraint (4) now carries the halt clause for
-   duty runs, reading `impl-budget-per-feature` from the target repo's `queue.md` Config; the
-   driver-side `current.json.impl-budget` variant stays deferred pending a driver signal.)*
+   mandatory loop-charter field) wants a stop condition above the per-card `attempts >= 3` breaker.
+   Under human-relay/coordinated mode the attended operator IS that ceiling. **Resolved for duty mode**
+   (2026-08-19, the one unattended path past a freeze gate): Constraint (3) halts to human when
+   cumulative impl `attempts` crosses `impl-budget-per-feature` in the target repo's `queue.md` Config.
 
 ## Rejected
 
