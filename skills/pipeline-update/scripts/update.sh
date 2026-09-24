@@ -15,8 +15,12 @@ printf '%s\n' "$origin" | grep -Eq "$REMOTE_RE" || stop "$clone origin is $origi
 [ -z "$(git -C "$clone" status --porcelain --untracked-files=no)" ] \
   || stop "$clone has tracked-file changes — it is a read-only consumer clone; inspect by hand (never reset/stash)"
 
+branch="$(git -C "$clone" symbolic-ref --quiet --short HEAD)" || stop "$clone is on a detached HEAD, not main"
+[ "$branch" = main ] || stop "$clone is on branch $branch, not main — inspect by hand"
+
 before="$(git -C "$clone" rev-parse HEAD)"
-git -C "$clone" pull --ff-only --quiet || stop "git pull --ff-only failed in $clone (see git's message above; never reset)"
+# Explicit source: reviewed main only, never whatever upstream the branch happens to track.
+git -C "$clone" pull --ff-only --quiet origin main || stop "git pull --ff-only origin main failed in $clone (see git's message above; never reset)"
 after="$(git -C "$clone" rev-parse HEAD)"
 
 legacy=0

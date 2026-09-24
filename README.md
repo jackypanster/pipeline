@@ -155,14 +155,19 @@ for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
   [ -e ~/.agents/skills/$n ] || [ -L ~/.agents/skills/$n ] || ln -s ../pipeline/skills/$n ~/.agents/skills/$n
 done
 
-# 3. Runtime attachments → the canonical entries (skip a runtime this machine does not have).
+# 3. Runtime attachments → the canonical entries, for each runtime installed on this machine
+#    (its home dir exists). Its skills/ dir is created if missing; any ln failure is a STOP.
 for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
-  [ -e ~/.claude/skills/$n ] || ln -s ../../.agents/skills/$n ~/.claude/skills/$n   # claude: relative
-  [ -e ~/.codex/skills/$n ]  || ln -s ~/.agents/skills/$n ~/.codex/skills/$n        # codex: absolute
+  if [ -d ~/.claude ]; then mkdir -p ~/.claude/skills                                # claude: relative
+    [ -e ~/.claude/skills/$n ] || ln -s ../../.agents/skills/$n ~/.claude/skills/$n || echo "STOP: claude $n"; fi
+  if [ -d ~/.codex ]; then mkdir -p ~/.codex/skills                                  # codex: absolute
+    [ -e ~/.codex/skills/$n ] || ln -s ~/.agents/skills/$n ~/.codex/skills/$n || echo "STOP: codex $n"; fi
 done
-for n in pipeline-impl pipeline-preflight; do                                        # pi: impl + preflight only
-  [ -e ~/.pi/agent/skills/$n ] || ln -s ../../../.agents/skills/$n ~/.pi/agent/skills/$n
-done
+if [ -d ~/.pi/agent ]; then mkdir -p ~/.pi/agent/skills                              # pi: impl + preflight only
+  for n in pipeline-impl pipeline-preflight; do
+    [ -e ~/.pi/agent/skills/$n ] || ln -s ../../../.agents/skills/$n ~/.pi/agent/skills/$n || echo "STOP: pi $n"
+  done
+fi
 
 # 4. Per target project, bind the slots. Never clobber an existing roles.yaml — overwriting a configured
 #    project wipes its bindings and restores the unresolved <autonomous-coding-skill> placeholder.
@@ -179,11 +184,15 @@ mkdir -p .pipeline && [ -e .pipeline/roles.yaml ] || [ -L .pipeline/roles.yaml ]
 runtime attachments keep working: they point at `~/.agents/skills/<name>`, which becomes a link.
 
 ```bash
-bak=~/.agents/skill-backups/$(date +%Y%m%d)-copy-install
-[ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
-mkdir -p "$bak" && mv ~/.agents/skills/pipeline-* "$bak"/
-mv ~/.agents/skills/.pipeline-update* "$bak"/ 2>/dev/null || true   # old update stamp/leftovers, if any
-# then run the step-2 link loop above
+( set -e   # any failure stops BEFORE the live copies move; a usable clone is the precondition
+  [ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
+  [ -f ~/.agents/pipeline/skills/pipeline-preflight/scripts/preflight.sh ]   # clone is usable
+  bak=~/.agents/skill-backups/$(date +%Y%m%d)-copy-install; mkdir -p "$bak"
+  mv ~/.agents/skills/pipeline-* "$bak"/
+  for f in ~/.agents/skills/.pipeline-update*; do if [ -e "$f" ]; then mv "$f" "$bak"/; fi; done   # old stamp
+  for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")               # = step-2 link loop
+    ln -s ../pipeline/skills/$n ~/.agents/skills/$n; done
+  echo "migrated; backup at $bak" )
 ```
 
 ### Canonical multi-runtime layout — one clone, links all the way down

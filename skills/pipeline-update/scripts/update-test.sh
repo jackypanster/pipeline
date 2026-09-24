@@ -58,6 +58,20 @@ git -C "$CLONE" remote set-url origin https://github.com/jackypanster/pipeline-d
 check 5-foreign-origin 1 "STOP:" "not github.com/jackypanster/pipeline"
 git -C "$CLONE" remote set-url origin "$URL"
 
+# 5b. main tracks an unreviewed upstream branch ⇒ update still pulls origin main only.
+git -C "$ROOT/seed" checkout --quiet -b unreviewed; echo unreviewed > "$ROOT/seed/skills/pipeline-impl/SKILL.md"
+git -C "$ROOT/seed" commit --quiet -am unreviewed; git -C "$ROOT/seed" push --quiet origin unreviewed
+git -C "$ROOT/seed" checkout --quiet main
+git -C "$CLONE" fetch --quiet origin; git -C "$CLONE" config branch.main.merge refs/heads/unreviewed
+check 5b-wrong-upstream 0 "already latest" "HEAD $(git -C "$ROOT/seed" rev-parse main)"
+[ "$(cat "$CLONE/skills/pipeline-impl/SKILL.md")" = "name: pipeline-impl" ] || { echo "FAIL 5b2-unreviewed-content"; fails=$((fails+1)); }
+git -C "$CLONE" config branch.main.merge refs/heads/main
+
+# 5c. a non-main checkout ⇒ STOP before any pull.
+git -C "$CLONE" checkout --quiet -b side
+check 5c-not-main 1 "STOP:" "not main"
+git -C "$CLONE" checkout --quiet main; git -C "$CLONE" branch --quiet -D side
+
 # 6. a real directory (copy install) ⇒ LEGACY, non-zero, left byte-for-byte untouched.
 rm "$SKILLS/pipeline-preflight"; mkdir "$SKILLS/pipeline-preflight"; echo copy > "$SKILLS/pipeline-preflight/SKILL.md"
 check 6-legacy 1 "LEGACY pipeline-preflight" "ok pipeline-impl"
