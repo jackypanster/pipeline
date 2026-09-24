@@ -27,7 +27,7 @@ GitHub copy before the clone exists) and execute it; do not keep a second copy o
 2. **Verify delegated deps** (README §"Verify + supplement dependencies"): each `roles.yaml` slot
    skill must resolve on the runtime that runs its command. Missing ⇒ install it from its own
    source, then re-check. An unresolvable slot is a blocking gap — name it with its source.
-3. **Bind a project** (only when a target is given): README §Install step 4 — copy the canonical
+3. **Bind a project** (only when a target is given): README §Install step 5 (after the machine block printed `install OK`) — copy the canonical
    `roles.yaml` only when absent. **Never clobber an existing `roles.yaml`.** When newly created, set
    the impl slot to the runtime's real installed skill name, never the `<autonomous-coding-skill>`
    placeholder.

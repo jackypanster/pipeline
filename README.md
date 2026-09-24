@@ -16,7 +16,7 @@ behind each command is a swappable `roles.yaml` slot.
 - `skills/pipeline-*/SKILL.md` — the 7 command shims.
 - `skills/pipeline-coordinate/SKILL.md` — playbook (**not** a stage, no `roles.yaml` slot): a CC session coordinates Pi/Codex panes through a feature or meta-PR (see §Operating modes). Needs `herdr` + `python3` ≥3.9 — see §Verify + supplement dependencies.
 - `skills/pipeline-install/SKILL.md` — maintenance command (**not** a stage): stand up the shims on a runtime + bind a target project's `roles.yaml`, by executing README §Install. The setup-side twin of `pipeline-update`. See [§Install](#install-agent-execute-this-it-is-written-for-you-not-a-human).
-- `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update).
+- `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update-agent-execute-this-on-the-machine-being-updated).
 
 | command | slot → skill | in → out |
 |---|---|---|
@@ -146,7 +146,7 @@ bind), the setup-side twin of `pipeline-update`.
 Every machine that runs a pipeline stage (including a remote agent reached over herdr) must install the full `pipeline-*` set — stage skills locate preflight as a sibling dir, and an absent preflight is a STOP.
 
 ```bash
-( set -e   # ANY failure (clone, mkdir, ln — e.g. a dangling attachment) aborts every later step, incl. the bind
+( set -e   # MACHINE install — ANY failure (clone, mkdir, ln — e.g. a dangling attachment) aborts every later step
 # 1. A READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
 [ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
 
@@ -170,17 +170,20 @@ if [ -d ~/.pi/agent ]; then mkdir -p ~/.pi/agent/skills                         
   done
 fi
 
-# 4. Per target project, bind the slots. Never clobber an existing roles.yaml — overwriting a configured
-#    project wipes its bindings and restores the unresolved <autonomous-coding-skill> placeholder.
+# 4. (optional; coordinated mode needs it) The companion driver provides `coordinate.sh doctor/status`.
+#    Runs in place, no install step. Absent ⇒ clone; present ⇒ keep it (§Update pulls it).
+[ -e ~/workspace/pipeline-driver ] || git clone https://github.com/jackypanster/pipeline-driver.git ~/workspace/pipeline-driver
+echo "install OK" )
+```
+
+```bash
+# 5. Per target project, bind the slots — ONLY after the machine block printed "install OK".
+#    Never clobber an existing roles.yaml — overwriting a configured project wipes its bindings
+#    and restores the unresolved <autonomous-coding-skill> placeholder.
 #    When newly created, set the impl slot to your runtime's real installed skill name.
 cd <target-repo>
 mkdir -p .pipeline
 [ -e .pipeline/roles.yaml ] || [ -L .pipeline/roles.yaml ] || cp ~/.agents/pipeline/roles.yaml .pipeline/roles.yaml
-
-# 5. (optional; coordinated mode needs it) The companion driver provides `coordinate.sh doctor/status`.
-#    Runs in place, no install step. Absent ⇒ clone; present ⇒ keep it (§Update pulls it).
-[ -e ~/workspace/pipeline-driver ] || git clone https://github.com/jackypanster/pipeline-driver.git ~/workspace/pipeline-driver
-echo "install OK" )
 ```
 
 **Migrate from a copy install** (one time; `pipeline-update` reports `LEGACY <name>` until done). The
@@ -261,39 +264,67 @@ section (skill dirs, `goal-driven-*`) illustrate how to set up YOUR runtime — 
 contract. Never copy a specific tool/framework/agent/LLM name into the onboarding snippet or
 `roles.yaml`: both reach target projects and must stay tool-agnostic.
 
-## Update
+## Update (agent: execute this on the machine being updated)
 
-Refresh the installed skills to the latest `main` **without re-reading the Install steps**: run
-`pipeline-update`. It is a **maintenance command, NOT one of the stages** — it runs no shim loop and
-touches no project `.pipeline/` state. Run it between stages, never mid-stage.
+**Operator — paste this to the agent on any machine:**
+`Update pipeline on this machine: fetch https://github.com/jackypanster/pipeline/blob/main/README.md and execute its §Update runbook step by step.`
+Enter through this URL, not through the locally installed `pipeline-update` skill: an old machine's
+installed skill predates this layout and does not know it. Run between stages, never mid-stage. The
+runbook touches only this machine's skill install — never a project's `.pipeline/` state or `roles.yaml`.
+
+**U1. Detect the install state** (read-only):
 
 ```bash
-bash ~/.agents/skills/pipeline-update/scripts/update.sh   # default clone ~/.agents/pipeline
+for d in ~/.agents/skills ~/.claude/skills ~/.codex/skills ~/.pi/agent/skills; do
+  for e in "$d"/pipeline-*; do [ -e "$e" ] || [ -L "$e" ] || continue
+    if [ -L "$e" ]; then echo "LINK $e -> $(readlink "$e")"; else echo "REAL $e"; fi; done; done
+[ -d ~/.agents/pipeline/.git ] && echo "CLONE $(git -C ~/.agents/pipeline log --oneline -1)" || echo "NO-CLONE"
 ```
 
-It checks that the clone's origin is this repo and that it has no tracked-file edits (either ⇒
-`STOP`), runs `git pull --ff-only` (git gives atomicity; a refusal ⇒ `STOP`, never a reset), then
-walks `skills/pipeline-*`: a missing canonical entry is linked (`LINKED <name>` — add its runtime
-attachments by hand, Install step 3), a correct link is `ok`, and a real directory is
-`LEGACY <name>` (non-zero exit, left untouched — see *Migrate from a copy install*). It ends with
-`HEAD <sha>` and `updated …` / `already latest`.
+Pick the FIRST row that matches:
 
-Runtime-shared skills only. A project's `.pipeline/roles.yaml` (your slot bindings) is never touched —
-if a new version adds a slot, reconcile it by hand. Sibling repos (`pipeline-dashboard`,
-`pipeline-driver`) update themselves — for the usually co-installed driver (Install step 5) that is
-one guarded pull. Refresh the whole toolchain:
+| state | signature | do |
+|---|---|---|
+| **A current** | every `~/.agents/skills/pipeline-*` is `LINK … -> ../pipeline/skills/…`, `CLONE` present | U2 |
+| **B copy install** (before 2026-09-24) | `REAL ~/.agents/skills/pipeline-*` | §Install *Migrate from a copy install* block, then U2 |
+| **C per-runtime copies** (before 2026-07-29) | `REAL` entries under `~/.claude`/`~/.codex`/`~/.pi` skills, not only under `~/.agents` | move each `REAL` runtime entry to `~/.agents/skill-backups/$(date +%Y%m%d)-runtime-copies/<runtime>/`; then the B block if `~/.agents/skills` holds `REAL` entries; then the §Install machine block (idempotent — it creates only what is missing); then U2 |
+| **D nothing installed** | no `pipeline-*` rows | §Install, then U2 |
+| **E anything else** (a `LINK` pointing elsewhere, a dev clone as source, …) | — | STOP: report the U1 output to the operator; do not improvise |
+
+**U2. Update + verify** — all of these must hold:
 
 ```bash
-# 1. skills: run the pipeline-update command (above)
-# 2. driver: deterministic preflight — a read-only consumer clone must have NO local edits to
-#    tracked files (untracked files are normal and allowed); then fast-forward
-#    only (--ff-only refuses diverged history). On any refusal: inspect by hand — never reset,
-#    never stash blindly.
+bash ~/.agents/skills/pipeline-update/scripts/update.sh      # ⇒ every entry "ok", then "updated …" or "already latest", exit 0
+for n in $(ls ~/.agents/pipeline/skills); do                  # every installed runtime resolves every attachment
+  for d in ~/.claude/skills ~/.codex/skills; do [ -d "${d%/skills}" ] && { [ -f "$d/$n/SKILL.md" ] || echo "MISSING $d/$n"; }; done
+done
+for n in pipeline-impl pipeline-preflight; do [ -d ~/.pi/agent ] && { [ -f ~/.pi/agent/skills/$n/SKILL.md ] || echo "MISSING pi $n"; }; done
+```
+
+- `STOP: …` from `update.sh` ⇒ report it verbatim and stop. Never reset, stash, or re-clone to force it.
+- `LINKED <name>` (a new upstream skill) or `MISSING …` ⇒ run the §Install machine block (idempotent; adds only what is missing), then re-run U2.
+- `LEGACY` / `MISLINKED` ⇒ you are not in state A — go back to U1.
+- Freshness: in any target repo, `preflight.sh --stage impl --repo <repo>` must print `UPSTREAM ok`.
+  `UPSTREAM unverified network` right after a bad-network spell is the 24h throttle cache
+  (`~/.cache/pipeline/upstream-head`); deleting that file is safe and forces a recheck.
+- Runtime discovery (optional, strongest): a FRESH session of each runtime lists every `pipeline-*`
+  skill — e.g. `codex exec --skip-git-repo-check "<list your pipeline-* skills>"`, `pi -p "…"`,
+  `claude -p "…"`. Already-running sessions keep the skill list they loaded at start.
+
+**U3. Report**: the U1 state, what you moved (backup paths), the `update.sh` tail (`HEAD <sha>` +
+`updated`/`already latest`), and the verification results. A new `roles.yaml` slot in the upstream
+template is reconciled by hand per project — say so if `~/.agents/pipeline/roles.yaml` changed.
+
+**Rollback** (B/C migrations): delete the new `~/.agents/skills/pipeline-*` links and move the entries
+back from the `~/.agents/skill-backups/<date>-*` dirs the migration printed.
+
+**Driver clone** (only on machines that run coordinated mode; it holds `coordinate.sh`): a read-only
+consumer clone — refuse on local tracked edits, then fast-forward only:
+
+```bash
 if git -C ~/workspace/pipeline-driver status --porcelain --untracked-files=no | grep -q .; then
-  echo "ERROR: driver clone has local edits to tracked files — inspect before updating" >&2
-  exit 1
-fi
-git -C ~/workspace/pipeline-driver pull --ff-only
+  echo "STOP: driver clone has local edits to tracked files — inspect by hand" >&2
+else git -C ~/workspace/pipeline-driver pull --ff-only; fi
 ```
 
 ## State
