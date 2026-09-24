@@ -19,7 +19,7 @@ GitHub copy before the clone exists) and execute it; do not keep a second copy o
      `pipeline-update` refreshes it).
    - Run the link loop: each `~/.agents/skills/pipeline-<name>` becomes the relative symlink
      `../pipeline/skills/pipeline-<name>`. An existing correct link ⇒ report it. A real directory
-     there ⇒ a copy install: run the README's *Migrate from a copy install* block first.
+     there ⇒ an old install: run README §Update (U1 → N) first.
    - Add the runtime attachments for every runtime on this machine (`.claude`, `.codex`, and `.pi`
      for impl/preflight only), exactly as the README shows. Every machine that runs a stage gets the
      full `pipeline-*` set.
@@ -27,7 +27,7 @@ GitHub copy before the clone exists) and execute it; do not keep a second copy o
 2. **Verify delegated deps** (README §"Verify + supplement dependencies"): each `roles.yaml` slot
    skill must resolve on the runtime that runs its command. Missing ⇒ install it from its own
    source, then re-check. An unresolvable slot is a blocking gap — name it with its source.
-3. **Bind a project** (only when a target is given): README §Install step 4 — copy the canonical
+3. **Bind a project** (only when a target is given): README §Install step 5 (after the machine block printed `install OK`) — copy the canonical
    `roles.yaml` only when absent. **Never clobber an existing `roles.yaml`.** When newly created, set
    the impl slot to the runtime's real installed skill name, never the `<autonomous-coding-skill>`
    placeholder.

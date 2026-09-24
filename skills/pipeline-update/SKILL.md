@@ -20,14 +20,14 @@ each canonical entry `~/.agents/skills/pipeline-<name>` is a relative symlink
    bash ~/.agents/skills/pipeline-update/scripts/update.sh [clone]   # PIPELINE_SKILLS_DIR overrides ~/.agents/skills
    ```
 
-   It checks the clone's origin is the pipeline repo and has no tracked-file edits, runs
-   `git pull --ff-only`, then checks every `skills/pipeline-*` entry. `HEAD <sha>` +
+   It checks the clone's origin is the pipeline repo, it is on `main` with no tracked-file edits or
+   local-only commits, fast-forwards to `origin/main`, then checks every `skills/pipeline-*` entry. `HEAD <sha>` +
    `updated …` / `already latest` is the result.
    - `STOP: …` ⇒ report it and stop. Never reset, stash or re-clone to force it through.
-   - `LINKED <name>` ⇒ a new skill was linked; tell the operator to add its runtime attachments
-     (README §Install).
-   - `LEGACY <name>` / `MISLINKED <name>` ⇒ tell the operator to migrate per README §Install
-     (*Migrate from a copy install*). The script leaves those entries untouched.
+   - `LINKED <name>` ⇒ a new skill was linked; run the README §Install machine block (idempotent; adds only what is missing).
+   - `LEGACY <name>` / `MISLINKED <name>`, or this script is absent ⇒ the machine predates this layout:
+     execute README §Update from U1 (state detection → migration → verify). The operator asking for an
+     update authorizes that migration; it backs up before moving anything.
 2. **Re-verify delegated deps** (README §"Verify + supplement dependencies"): a newly missing or
    added `roles.yaml` slot skill ⇒ report it; do not auto-install.
 3. **Scope.** No target `.pipeline/` was touched. If the canonical `roles.yaml` schema changed, note
