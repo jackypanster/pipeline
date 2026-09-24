@@ -455,10 +455,10 @@ Merge is always human-confirmed. The pipeline performs no destructive forge oper
 ## Self-improvement — skills propose, review gates (never self-edit)
 
 A running bot must **NEVER edit a live/installed skill in place**. A bot's pipeline clone is
-a **read-only consumer**: `git fetch && git reset --hard origin/main` each run; it does not carry local
-skill edits. When shims are installed as **copies** rather than loaded from the clone, the maintenance
-command `pipeline-update` re-applies this same refresh to those copies (pull-only — it opens no PR and
-merges nothing; the write direction stays the gated `pipeline-improve` path below).
+a **read-only consumer**: it never carries local skill edits. The canonical skill entries are
+**symlinks into that clone**; the maintenance command `pipeline-update` is an ff-only pull of it (a dirty
+or diverged clone ⇒ STOP, never reset) (pull-only — it opens no PR and merges
+nothing; the write direction stays the gated `pipeline-improve` path below).
 
 When a run reveals a skill gap, **emit a proposal — do not apply it**: add a line to your report/handoff
 `SKILL-PROPOSAL: <skill> — <what to change + why, one line>`. A proposal reaches `main` ONLY through the
