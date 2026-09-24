@@ -19,7 +19,7 @@ GitHub copy before the clone exists) and execute it; do not keep a second copy o
      `pipeline-update` refreshes it).
    - Run the link loop: each `~/.agents/skills/pipeline-<name>` becomes the relative symlink
      `../pipeline/skills/pipeline-<name>`. An existing correct link ⇒ report it. A real directory
-     there ⇒ a copy install: run the README's *Migrate from a copy install* block first.
+     there ⇒ an old install: run README §Update (U1 → N) first.
    - Add the runtime attachments for every runtime on this machine (`.claude`, `.codex`, and `.pi`
      for impl/preflight only), exactly as the README shows. Every machine that runs a stage gets the
      full `pipeline-*` set.

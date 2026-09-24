@@ -42,7 +42,7 @@ for src in "$clone"/skills/pipeline-*/; do
   elif [ -L "$entry" ]; then
     echo "MISLINKED $name -> $(readlink "$entry") (expected $want) — fix by hand"; legacy=1
   else
-    echo "LEGACY $name (copy install — migrate per README §Install)"; legacy=1
+    echo "LEGACY $name (copy install — migrate per README §Update)"; legacy=1
   fi
 done
 
