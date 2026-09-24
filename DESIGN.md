@@ -1,8 +1,8 @@
 # pipeline — design contract
 
 A thin skill-aggregation pipeline. The **only durable asset is this contract** (command sequence +
-handoff format + git+md state convention). Each command is a ~20-line shim delegating to a
-swappable skill. Forge-agnostic, machine-agnostic, human-relayed, no scheduler.
+handoff format + git+md state convention). Each command is a thin shim delegating to a swappable
+skill; its body follows the CONTRACT shim loop, and its length is whatever that stage's own steps need. Forge-agnostic, machine-agnostic, human-relayed, no scheduler.
 
 ## Core principle: skills reason, the shim does I/O
 
@@ -14,7 +14,7 @@ all of that is the **shim's** contract, never assumed of the skill. (Verified: `
 only those files' authorship is the skill's. So the precise invariant is **the shim owns commit +
 journal + handoff + write-set enforcement**, not "no skill ever writes a file".
 
-Each command body (~20 lines):
+Each command body follows the shim loop:
 `git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
 write your stage's write-set + append handoff to journal.md → commit (one) → push → print handoff`.
 The pull, `current.json`, slot resolution, the coordinated stale-dispatch guard and the card-invariant
@@ -121,7 +121,7 @@ this file; commands carry no logic of their own.
 
 ## Borrowed / rejected
 
-**Borrowed:** the ~20-line read-prior/write-next command shape (spec-kit); a truth-vs-proposal file
+**Borrowed:** the thin read-prior/write-next command shape (spec-kit); a truth-vs-proposal file
 split (OpenSpec). **Rejected:** spec-kit's `specify` CLI / templates / constitution machinery;
 heavy multi-subagent runtimes. We ship N markdown skill files — no CLI, no DB, no scheduler.
 
@@ -151,9 +151,7 @@ verdicts off the PR — NOT by a driver script (one span, one implementation). T
 begins and ends at a human read and is never chained to anything else. (2) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
 a coordinator MAY type every NORMAL stage handoff — v1 is a CC session running the
-`pipeline-coordinate` playbook (the deterministic `coordinate.sh` dispatcher was evaluated and rejected — pipeline-driver PR #14 closed;
-design history pinned at https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md;
-`coordinate.sh` ships read-only `doctor`/`status` only). It observes remote Git only, routes
+`pipeline-coordinate` playbook (why not a deterministic dispatcher: §Provenance). It observes remote Git only, routes
 on the journal tail's transition forms, performs no stage work belonging to another role, halts
 fail-closed on anything outside the known forms, and can neither merge nor confirm a merge (the review
 GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
@@ -177,8 +175,68 @@ Open item 3's halt clause: cumulative impl `attempts`
 contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
 any machine · LLM-agnostic (reasoning commands want a
 frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new
-~20-line shim + one `roles.yaml` line + the prior command's handoff naming it (e.g. `deploy`, `test`,
+thin shim + one `roles.yaml` line + the prior command's handoff naming it (e.g. `deploy`, `test`,
 `learn` for unfamiliar-domain research).
+
+## Provenance (moved from CONTRACT)
+
+History, citations, and field lessons behind CONTRACT rules. CONTRACT carries the rules only; the
+reasons live here, grouped by CONTRACT section.
+
+- **§State machine — review rejection `review → todo`.** Without the flip a rejected feature leaves
+  every card at `review` and impl (oldest `todo`) has nothing to pick. It completed the already-implied
+  "reject routes to impl" semantics; the `>= 3 ⇒ blocked` circuit-breaker was unchanged.
+- **§State authority — precedence.** Ref: arXiv:2605.18747 "Code as Agent Harness" — fix state
+  precedence before conflicts occur. The journal-tail-over-`current.json` rule, step 1's
+  rebuild-from-git, paths-never-bodies handoffs, and coordinated mode's remote-Git-only truth are all
+  instances of the one order.
+- **§State authority — rebase an in-flight branch.** Without it review's freeze gate diffs the new
+  `spec-rev` against a stale branch tip and falsely rejects.
+- **§State authority — card-scoped `verify`.** If card 1's `verify` ran the whole suite it could never
+  pass while cards 2..N are still red — the loop deadlocks.
+- **§State authority — "Disagrees" means neither end.** A literal cache==most-recently-completed reading
+  false-flags every compliant mid-flight state (field lesson: `jackypanster/pipeline-dashboard` ADR 0008,
+  2026-07-11, where that misreading cost a full bug-fix feature).
+- **§Test ownership — one freeze commit per feature.** If cards were frozen in sequence and two shared a
+  test file, an earlier card's `spec-rev` would predate a later sibling's append, and the freeze gate
+  (which diffs `spec-rev..review-tip` over `spec-paths`) would mis-flag that legitimate sibling test as
+  an impl spec-edit and falsely reject. A partial re-freeze reintroduces the same mis-flag; resetting
+  siblings on re-freeze would silently restart cards mid-impl or in review. A green "spec" is a no-op.
+- **§Freeze coverage — no escape hatch, seams first.** An unfrozen required step ships as a hollow stub
+  that passes every frozen test and the full-verify; only review catches it, late. Freezing only the
+  command text or an honest-degrade message can still leave the real action path hollow. Field lesson:
+  a generated-config wizard shipped 4 of 7 required steps as empty stubs behind a fully green suite; the
+  sink defects behind the remaining "review must read" surface then took three review rounds to reach
+  `blocked`. The fail-closed rule strengthens coverage and changes nothing in the freeze gate, spec-rev
+  protocol, state machine, or merge rules.
+- **§Impl assumptions.** Un-pinned decisions are where the implementing agent silently authors product
+  intent; a contradicting assumption is exactly that failure. Failed/blocked dispositions skip the
+  section because there is no delivered implementation to interpret; the card copy means the no-forge
+  path loses nothing.
+- **§Handoff block.** A cold frontier bot with a thin handoff guesses wrong; the "Your task" + "Feature
+  gotchas" sections are what let a different LLM on a different bot execute the stage with no shared
+  memory. The shim-loop push is the other half of step 1's `git pull`: an un-pushed commit means the
+  next node sees no card or a stale spec.
+- **§Run journal.** See §Why a journal above. Resumable = chat dies ⇒ read the tail; auditable = the
+  append sequence IS the run history (a failed/blocked dead end is part of it); orchestratable = a human
+  or another LLM reads the tail to take over.
+- **§Coordinated mode — why a CC playbook, not a dispatcher.** A deterministic dispatcher was evaluated
+  and rejected: pipeline-driver PR #14 closed unmerged; the pivot is recorded in coordinator-design.md
+  v1.3 §25, pinned at <https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md>. `coordinate.sh` ships only the read-only `doctor`/`status`
+  preflight.
+- **§The coordinator role is ASSIGNED.** Field-observed 2026-08-07: a second implementer session, handed
+  an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing into each
+  other's panes is the failure this forecloses. It is the node-side complement to the playbook's
+  one-pane-per-role preflight.
+- **§Pre-write stale-dispatch guard, step 4.** The two delivered-but-unrecorded windows are recorded in
+  `coordinator-design.md` v1.2 (same pinned doc).
+- **§Stage-consistent transitions.** Human-relay journals wrote `impl→review · completed` even
+  mid-feature; coordinated routing needs the `impl→impl` continuation.
+- **§Forge adapter.** A *mandatory* PR would fail closed in air-gapped/intranet/non-forge contexts (see
+  §Rejected), hence the fail-open degrade.
+- **§Self-improvement.** Editing a live skill mutates the contract mid-flight, untracked and ungated, and
+  can silently break every future run. Skills are markdown + git: a bad edit only mis-guides the next
+  run (caught by review), and is one `git revert` away.
 
 ## Open items
 

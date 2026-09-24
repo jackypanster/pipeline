@@ -5,8 +5,8 @@ Agent-facing skill collection. Consumers are LLM/agents, not humans — read [CO
 **What:** a forge-agnostic, machine-agnostic dev pipeline as 7 thin command-skills over a git+md
 state bus. Human-relayed by default (no scheduler); each command prints a handoff the operator copies
 to the next bot. An opt-in per-feature **coordinated mode** lets a coordinator type those handoffs
-(CONTRACT §Coordinated mode; see §Operating modes — v1 is an attended CC playbook; a deterministic
-dispatcher was evaluated and rejected — driver PR #14 closed, design v1.3 §25). The only durable asset is the orchestration contract; the skill
+(CONTRACT §Coordinated mode; see §Operating modes — v1 is an attended CC playbook; why not a
+dispatcher: DESIGN.md §Provenance). The only durable asset is the orchestration contract; the skill
 behind each command is a swappable `roles.yaml` slot.
 
 ## Files
@@ -46,8 +46,8 @@ stages; Pi implements; Codex reviews — three roles on three different models s
 own work), routing ONLY on the journal tail, halting fail-closed on anything else. Judgment stays
 where it was: stages do their own work, review still verdicts, and the **merge confirm is still a
 direct operator token in the same reviewer session** — the coordinator has no merge path and the
-GO-gate rejects relayed tokens. (`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; its
-dispatch half was evaluated and rejected — driver PR #14 closed, design v1.3 §25.)
+GO-gate rejects relayed tokens. (`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; see
+DESIGN.md §Provenance.)
 
 **Third track — duty mode (值守: queued timed re-entry of coordinated mode; pilot 2026-08-19,
 target repo `oh-my-wiki`).** Coordinated mode with the operator AWAY: the operator opens a dedicated
@@ -103,7 +103,7 @@ repo references are intentional so it works from any project):
 >
 > **How it works.** All work flows through staged commands `pipeline-prd → pipeline-arch →
 > pipeline-task → pipeline-impl → pipeline-review`, plus `pipeline-hunt` for blocked cards. Each
-> command is a ~20-line shim that does the same
+> command is a thin shim that runs the same
 > loop: `git pull --rebase` → read `.pipeline/current.json` + the feature's `journal.md` → resolve the
 > stage's skill via `.pipeline/roles.yaml` (pull, `current.json`, slot resolution and the coordinated
 > stale-dispatch guard run as `pipeline-preflight/scripts/preflight.sh`) → invoke that skill (it
