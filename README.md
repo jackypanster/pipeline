@@ -30,31 +30,14 @@ behind each command is a swappable `roles.yaml` slot.
 | pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR — see §Operating modes |
 | pipeline-preflight | (helper script, not a stage) | deterministic executor of shim steps 1/3/4 + the stale-dispatch guard + the card-invariant check (impl/review/hunt entry, task 6b); stage skills call `scripts/preflight.sh` at step 0 — never invoke by hand; set `PIPELINE_SKILL_DIRS` per runtime for a verified install check, otherwise exit 3 and the stage verifies it |
 
-## Operating modes — the four-track SOP (base decision 2026-07-08; duty track added 2026-08-19)
+## Operating modes — the three-track SOP (base decision 2026-07-08; duty track added 2026-08-19)
 
 **Default = the normal human-relayed mode** for every feature: the human reads each handoff
 and relays each stage; use it for anything important or write-path (e.g. trading behavior).
-**The drive mode must be EXPLICITLY requested by the operator** ("用 drive 范式") and is
-reserved for read-only / low-risk / ergonomics features. Risk-tiering happens when the mode
-is chosen — picking drive IS the ex-ante trust grant, so the driving agent may type the
-GATE 1 spec-rev itself after reading the spec it froze.
+Model split (all modes): frontier for prd/arch/task + review; a capable cheap model for impl
+(per-stage requirement in `roles.yaml`).
 
-Drive mode runs end-to-end with exactly ONE human touchpoint:
-
-```text
-[auto]  cc: prd → arch → task → freeze → GATE 1 (types spec-rev) → starts pipeline-driver
-[auto]  driver: card 01 → card 02 → … → HALT at review        (stop-points.md enumerates every halt)
-[auto]  cc: dispatches the review bot → freeze gate + full-verify + semantic review → verdict
-──────────────────────────────────────────────────────────────
-[HUMAN] merge confirm after ACCEPT — never delegated (CONTRACT frozen invariant)
-[auto]  review bot: squash-merge → delete feat branch → journal wrap-up → done
-```
-
-A review REJECTION is a "problem found" → stop and show the human the verdict; never
-silently restart the loop. Model split (both modes): frontier for prd/arch/task + review;
-a capable cheap model for impl (per-stage requirement in `roles.yaml`).
-
-**Third track — coordinated mode (opt-in per feature, CONTRACT §Coordinated mode).** The operator
+**Second track — coordinated mode (opt-in per feature, CONTRACT §Coordinated mode).** The operator
 explicitly requests it in the PRD session; `pipeline-prd` then commits
 `.pipeline/<feature>/control.json` as the authorization audit. From the first journal entry on, a
 coordinator types every NORMAL stage handoff into the right long-lived agent pane — **v1 is a CC
@@ -66,7 +49,7 @@ direct operator token in the same reviewer session** — the coordinator has no 
 GO-gate rejects relayed tokens. (`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; its
 dispatch half was evaluated and rejected — driver PR #14 closed, design v1.3 §25.)
 
-**Fourth track — duty mode (值守: queued timed re-entry of coordinated mode; pilot 2026-08-19,
+**Third track — duty mode (值守: queued timed re-entry of coordinated mode; pilot 2026-08-19,
 target repo `oh-my-wiki`).** Coordinated mode with the operator AWAY: the operator opens a dedicated
 CC session **in its own duty/observer clone — never a role pane's checkout** (the playbook's
 per-role-clone discipline; the duty tick's `git switch`/`pull` must not move HEAD under an in-flight
@@ -84,7 +67,7 @@ operator out-of-band (`hermes send` → Telegram), once per condition, plus ONE 
 as a dead-man switch: a silent day means the duty session is down, never that nothing happened. A
 blocked, spec-drift, or over-budget head halts the WHOLE queue (linear by design);
 `max-features-per-day` plus a per-feature `impl-budget` (cumulative-attempts halt, DESIGN
-Constraint (4)) cap spend. The duty session stays READ-ONLY toward the target repo — CONTRACT's
+Constraint (3)) cap spend. The duty session stays READ-ONLY toward the target repo — CONTRACT's
 coordinator write ban holds: `queue.md` is human-owned, run state is derived each tick from
 journal + cards + forge, and the session's only private state is a local, disposable notification
 ledger whose loss at worst repeats a notification.
@@ -96,14 +79,13 @@ agent consults this table, shows the current machine bindings (the `coordinate.s
 block where the installed version emits one, else drive.defaults, else "bindings unavailable —
 pipeline-driver is optional"), and recommends ONE mode with a one-line
 rationale. The operator's reply decides. The decision is recorded only by the existing mechanisms —
-coordinated ⇒ `control.json` (pipeline-prd), drive ⇒ the YOLO grant + drive.config, human-relay ⇒
-nothing — a recommendation never becomes an authorization by itself.
+coordinated ⇒ `control.json` (pipeline-prd), human-relay ⇒ nothing — a recommendation never becomes an authorization by itself.
 
 | situation | recommend |
 |---|---|
-| dangerous surface — write-path / trading / external side effects | human-relay (mandatory; drive, coordinated, and duty are forbidden here) |
-| new feature, unit-testable spec, multi-card impl | human-relayed pipeline; add `drive.sh` for the impl stretch when low-risk |
-| small feature / bugfix on an existing project, low-risk | drive mode (the driver runs the impl loop) |
+| dangerous surface — write-path / trading / external side effects | human-relay (mandatory; coordinated and duty are forbidden here) |
+| new feature, unit-testable spec, multi-card impl | human-relay, or coordinated mode when low-risk |
+| small feature / bugfix on an existing project, low-risk | human-relay (coordinated if the operator wants zero relay typing) |
 | operator present but wants zero relay typing | coordinated mode (`control.json`; visible panes; merge token still human-direct) |
 | operator away for hours; frozen, low-risk features queued up | duty mode (`/loop` + `queue.md` + `duty-tick.md`; day sessions freeze, read GATE 1, and enqueue) |
 
@@ -149,17 +131,8 @@ repo references are intentional so it works from any project):
 > run-journal timeline (who ran each stage, what transitioned, what failed, what's next), with a
 > feature-level blocked banner. It never writes to the observed repo.
 >
-> **To auto-advance the `impl` loop (optional):** instead of hand-relaying each `impl` card, the
-> repetitive `impl` multi-card loop can be run by
-> [`jackypanster/pipeline-driver`](https://github.com/jackypanster/pipeline-driver) — a deterministic
-> loop that runs `pipeline-impl` on a cheap model and **HALTS at every gate** (it never merges; review
-> + the merge confirm stay gated). Its GATE 1 binds the run to a read of the frozen red test (echoing
-> its `spec-rev`); **who performs that read is the operator's risk-tier call** — default a human,
-> delegable to the coordinating agent only when the operator explicitly chose the drive mode for a
-> low-risk feature (see §Operating modes in the [`jackypanster/pipeline`](https://github.com/jackypanster/pipeline) README). It is the write-side twin of the dashboard, scoped to
-> `impl` ONLY. Every other stage stays human-relayed by default — **do not build any other
-> scheduler**; the pipeline deliberately has none (see `DESIGN.md`). The single sanctioned exception
-> is the opt-in **coordinated mode** (CONTRACT §Coordinated mode): a feature whose
+> **Do not build any other scheduler**; the pipeline deliberately has none (see `DESIGN.md`). The
+> single sanctioned exception is the opt-in **coordinated mode** (CONTRACT §Coordinated mode): a feature whose
 > `.pipeline/<feature>/control.json` authorizes it may have its normal stage handoffs typed by a
 > coordinator — v1 is a CC session running the `pipeline-coordinate` playbook skill — with no stage
 > work belonging to another role, no merge path, and the human-direct merge confirm unchanged.
@@ -227,8 +200,8 @@ else
   ) || exit $?
 fi
 
-# 4. (optional, usually wanted) The companion driver — a SIBLING of the pipeline clone. It runs in
-#    place, no install step; one-time config + when-to-use live in ITS README §Setup. Idempotent:
+# 4. (optional; coordinated mode needs it) The companion driver — a SIBLING of the pipeline clone —
+#    provides `coordinate.sh doctor/status` for coordinated mode. Runs in place, no install step. Idempotent:
 #    absent ⇒ clone; a USABLE driver clone (exact intended-repo origin AND a non-bare checkout whose
 #    HEAD resolves) ⇒ kept as-is; anything else at the path ⇒ STOP with remediation — never delete
 #    it, never clone into it.
@@ -378,7 +351,7 @@ one guarded pull. Refresh the whole toolchain:
 ```bash
 # 1. skills: run the pipeline-update command (above)
 # 2. driver: deterministic preflight — a read-only consumer clone must have NO local edits to
-#    tracked files (untracked files, e.g. drive.config, are normal and allowed); then fast-forward
+#    tracked files (untracked files are normal and allowed); then fast-forward
 #    only (--ff-only refuses diverged history). On any refusal: inspect by hand — never reset,
 #    never stash blindly.
 if git -C ~/workspace/pipeline-driver status --porcelain --untracked-files=no | grep -q .; then

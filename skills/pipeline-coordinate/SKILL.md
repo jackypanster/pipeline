@@ -251,9 +251,6 @@ CONTRACT.md binds; this profile only adds who types what.
   hunt`); you validate the card evidence by READING it, and stop on any disagreement between journal
   and cards.
 - **Merge gate**: identical to Profile A — Codex arms, the human types the token in the Codex pane.
-- **drive.sh (optional).** For a long multi-card impl stretch the operator MAY start `drive.sh`
-  themselves (its own gates apply). While it runs, you only observe the journal; never type into the
-  Pi pane a drive.sh span is using.
 
 ## Templates (copy, fill, keep to one line for sends)
 
@@ -270,7 +267,7 @@ CONTRACT.md binds; this profile only adds who types what.
 
 No daemon, no ledger, no state files beyond disposable handoffs, no unattended operation, no
 parallel features, no merges by anyone but Codex-with-a-human-token. Sole carve-out: duty mode
-(README §Operating modes, fourth track) — normative bounds live in the target repo's
+(README §Operating modes, third track) — normative bounds live in the target repo's
 `.pipeline/duty-tick.md`, which a duty session MUST read IN FULL before acting. It excepts exactly
 two clauses: unattended re-entry between the per-feature human brackets, and one local, disposable
 notification ledger (loss at worst repeats a notification); toward the target repo a duty session

@@ -66,18 +66,17 @@ files; YOU write the PRD.
      (PTY harness / temp dir + injected failure / symlinked destination / stubbed executables). No
      plausible seam ⇒ Deferred, or hold it at the HITL wait as a design question — never hand an
      un-freezable required behaviour to arch/task, where it fails closed late or burns review rounds.
-4. **Recommend a drive mode (the operator DECIDES).** The requirement is now settled — consult
+4. **Recommend an operating mode (the operator DECIDES).** The requirement is now settled — consult
    README §Operating modes → "Choosing the mode" decision table. Show the current machine bindings
    first: if a reachable `coordinate.sh status` run actually EMITS a machine-bindings block (newer
    driver versions), show that block; else read
    `${XDG_CONFIG_HOME:-$HOME/.config}/pipeline-driver/drive.defaults` and show its binding fields;
    if neither yields bindings, state "machine bindings unavailable (pipeline-driver is optional) —
-   human-relay and coordinated remain available". Then recommend ONE mode with a one-line risk-tier rationale and wait for the
-   operator's choice. The choice is recorded ONLY by the existing mechanisms (coordinated ⇒
-   control.json in step 5; drive ⇒ the operator's YOLO grant + drive.config, outside this stage;
-   human-relay ⇒ nothing). An operator reply choosing coordinated mode IS the explicit in-session
-   request the control.json hard rule demands — silence or ambiguity is NOT (fail closed to
-   human-relay).
+   human-relay and coordinated remain available". Then recommend ONE mode (human-relay / coordinated /
+   duty) with a one-line risk-tier rationale and wait for the operator's choice. The choice is recorded
+   ONLY by the existing mechanisms (coordinated ⇒ control.json in step 5; human-relay ⇒ nothing). An
+   operator reply choosing coordinated mode IS the explicit in-session request the control.json hard
+   rule demands — silence or ambiguity is NOT (fail closed to human-relay).
 5. Write `.pipeline/<feature>/PRD.md` — problem, goal, success criteria, scope/non-scope, a
    **`## Deferred (future PRDs)` section** (everything the step-3 subtraction pass cut, each with a
    one-line reason; write `none` only when nothing was cut), the
