@@ -8,11 +8,9 @@ description: "Pipeline stage 5 — semantic review of a card's diff/PR, enforce 
 Stage 5. Follow the **shim loop in CONTRACT.md** with slot = `review`. **This is the only command
 that merges, and only after an explicit human confirm.**
 
-**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
-(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
-stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+**Coordinated dispatch guard:** with a dispatch envelope (`repo= branch= feature= expected_seq= expected_commit=`),
+step 0 runs CONTRACT §Coordinated mode's pre-write stale-dispatch guard, BEFORE any write; a mismatch ⇒
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
-`preflight.sh` run with those envelope fields executes this guard.
 
 **Skill:** `review` slot resolves to `check` — semantic review of the diff. The forge adapter and
 the freeze gate are YOUR I/O, not check's.
@@ -45,12 +43,12 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
 ## Steps
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage review` (+ the five envelope
-   fields verbatim when one is present), skipped in meta-PR mode. `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE
-   — use its printed lines (the cards stay yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒
-   run the steps as written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. `git pull --rebase`. Read `current.json` + **all of the feature's cards** (this stage runs on a
+   fields verbatim when one is present), skipped in meta-PR mode. `0` ⇒ pull, `current.json` read, slot resolve + install check DONE
+   — use its printed lines; `3` ⇒ do the check(s) it names yourself, STOP if one fails; anything else or script absent ⇒ STOP with its
+   printed reason. `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
+1. Read **all of the feature's cards** (this stage runs on a
    COMPLETE feature — expect every card `status: review`; see the pre-merge guard in step 6).
-2. Resolve `review` slot; verify installed (else STOP).
+2. (Pull, `current.json`, slot resolve and install check: step 0.)
 3. **Freeze gate (deterministic, run FIRST):** the **two-commit** diff
    `git diff <card.spec-rev> <review-tip> -- <card.spec-paths>`, where `<review-tip>` is the PR head
    (forge: `gh pr view --json headRefOid` / the `gitee-cli` equivalent; no forge: the `feat/<feature>`

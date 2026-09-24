@@ -143,6 +143,7 @@ You are an agent installing this collection on your runtime. Do it once, then ve
 To run this as a triggerable command instead of following it by hand, invoke the `pipeline-install`
 skill — it executes exactly the steps below (idempotent machine install + per-project `roles.yaml`
 bind), the setup-side twin of `pipeline-update`.
+Every machine that runs a pipeline stage (including a remote agent reached over herdr) must install the full `pipeline-*` set — stage skills locate preflight as a sibling dir, and an absent preflight is a STOP.
 
 ```bash
 # 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).

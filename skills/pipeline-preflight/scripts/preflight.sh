@@ -8,9 +8,10 @@
 # every check either prints its one line or STOPs with a machine-readable reason.
 #
 # NOT a pipeline stage and NOT a `roles.yaml` slot: a stage skill runs it as its step 0.
-# It is the executor, not the spec — CONTRACT's prose steps 1–4 remain the spec AND the
-# fallback (script absent, exit 4, or the checks named by exit 3 ⇒ the caller does that part
-# as written).
+# It is the executor, not the spec — CONTRACT's prose steps 1/3/4 remain the SPEC; this script is
+# the ONLY executor. Absent or unrunnable (any exit other than 0/3) ⇒ the caller STOPs: every machine
+# that runs a stage installs the full pipeline-* set, so an absent script means an incomplete install.
+# Only the checks named by exit 3 are done by the caller itself.
 #
 # Usage:
 #   preflight.sh --stage <prd|arch|task|impl|review|hunt> [--repo <path>] \
@@ -28,10 +29,6 @@
 #                              — everything ELSE passed; the caller performs the NAMED check(s)
 #                                itself and STOPs on failure. Checks: `install-check`,
 #                                `remote-identity`.
-#   4   PREFLIGHT SKIPPED <why>
-#                              — the script could not run (python3 missing): NOTHING was executed
-#                                and nothing was mutated; the caller runs steps 1–4 as written,
-#                                exactly as if this script were absent.
 #   64  usage error (message on stderr)
 #
 # Output grammar — one line per check on stdout, greppable, values unquoted:
@@ -58,7 +55,6 @@
 #   CARDS stop <reason> [detail] card=<f>/<id> | CARDS stop feature-spec-rev-not-shared <sha7,…> feature=<f>
 #   CARDS advisory stage=hunt findings=<n> (hunt repairs cards — not a STOP) | CARDS unchecked rc=<n>
 #   PREFLIGHT OK stage=<s> | PREFLIGHT STOP <reason> | PREFLIGHT UNVERIFIED <checks>
-#   PREFLIGHT SKIPPED <reason>
 #
 # Writes nothing inside any repo or skill dir. Its only write is the upstream-check throttle stamp
 # ${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head (once per 24h; see `upstream_check`). The
@@ -143,11 +139,11 @@ if [ -z "$repo" ]; then
 fi
 
 # Dependency check BEFORE any git mutation: without python3 this script cannot parse
-# current.json / control.json, so it must degrade to "not run at all" — exit 4, NOT exit 3.
+# current.json / control.json — an incomplete install, so STOP (exit 2), NOT exit 3.
 # Exit 3 means "one named check is unverified, everything else passed"; here nothing passed.
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "PREFLIGHT SKIPPED python3-missing"
-  exit 4
+  echo "PREFLIGHT STOP python3-missing"
+  exit 2
 fi
 
 # The UNVERIFIED set: an ordered, de-duplicated comma list of the checks this run could NOT

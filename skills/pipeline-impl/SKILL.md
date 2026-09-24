@@ -7,11 +7,9 @@ description: "Pipeline stage 4 — implement one task card: make its frozen red 
 
 Stage 4. Follow the **shim loop in CONTRACT.md** with slot = `impl`.
 
-**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
-(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
-stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+**Coordinated dispatch guard:** with a dispatch envelope (`repo= branch= feature= expected_seq= expected_commit=`),
+step 0 runs CONTRACT §Coordinated mode's pre-write stale-dispatch guard, BEFORE any write; a mismatch ⇒
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
-`preflight.sh` run with those envelope fields executes this guard.
 
 **Skill:** the `impl` slot runs an autonomous think→design-tests→code→check loop. The pipeline is
 runtime-agnostic: bind whichever autonomous-coding skill your runtime provides in `roles.yaml`. Whatever
@@ -24,15 +22,12 @@ sub-instruction is the cheap seam if your skill supports one).
 ## Steps
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage impl` (+ the five envelope
-   fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and step 2's slot resolve + install check are DONE —
-   use its printed lines (card picking in step 1 and the `feat/<feature>` create/reconcile in step 2 stay yours); `3` ⇒ do the check(s)
-   it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as written (CONTRACT §shim loop); other non-zero ⇒ STOP
-   with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. `git pull --rebase`. Read `current.json`. Pick the **oldest** `status: todo` card (or the given
-   card-id). Idempotency: if `feat/<feature>` already has an open PR and the card reads
-   `status: review`, skip — already in flight.
-2. Resolve `impl` slot; verify installed (else STOP). **Create or reconcile the feature branch**
-   **`feat/<feature>`** (per CONTRACT §State authority — one branch per feature, NOT per card):
+   fields verbatim when one is present). `0` ⇒ pull, `current.json` read, slot resolve + install check DONE — use its printed lines
+   (card picking and the `feat/<feature>` create/reconcile stay yours); `3` ⇒ do the check(s) it names yourself, STOP if one fails;
+   anything else or script absent ⇒ STOP with its printed reason. `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
+1. Pick the **oldest** `status: todo` card (or the given card-id). Idempotency: if `feat/<feature>`
+   already has an open PR and the card reads `status: review`, skip — already in flight.
+2. **Create or reconcile the feature branch `feat/<feature>`** (per CONTRACT §State authority — one branch per feature, NOT per card):
    - **New branch:** cut it from trunk (`main`) — it inherits the current frozen specs.
    - **Existing branch (feature in flight):** if trunk's spec advanced since it was cut (a re-freeze or
      append-card landed a new `spec-rev` the branch lacks), **rebase it onto trunk and force-push**

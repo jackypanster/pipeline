@@ -9,9 +9,8 @@ Escalation stage (not on the happy path). Follow the **shim loop in CONTRACT.md*
 A `blocked` **card** — OR a feature-level **integration incident report** (`reviews/integration-NN.md`)
 — routes here; **never blind-retry**. (Both are "targets"; see step 1.)
 
-**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
-(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
-stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+**Coordinated dispatch guard:** with a dispatch envelope (`repo= branch= feature= expected_seq= expected_commit=`),
+step 0 runs CONTRACT §Coordinated mode's pre-write stale-dispatch guard, BEFORE any write; a mismatch ⇒
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it. Your
 journal entry MUST use the exact stage-consistent forms `hunt→task · completed` (re-split/re-spec) or
 `hunt→impl · completed` (diagnosed card reset to `todo, attempts: 0`) — the coordinator routes on them.
@@ -23,15 +22,15 @@ especially "used to work / can't fix it after N tries").
 ## Steps
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage hunt` (+ the five envelope
-   fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines
-   (your target stays yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as
-   written (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. `git pull --rebase`. Read `current.json` + your target. Usual target = the `blocked` **card**
+   fields verbatim when one is present). `0` ⇒ pull, `current.json` read, slot resolve + install check DONE — use its printed lines;
+   `3` ⇒ do the check(s) it names yourself, STOP if one fails; anything else or script absent ⇒ STOP with its printed reason.
+   `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
+1. Read your target. Usual target = the `blocked` **card**
    (every `## Attempt N` note + the latest `verify:` failure / review rejection). **Alternative target:
    a feature-level integration incident report** `reviews/integration-NN.md` that `pipeline-review`
    routed for a cross-card full-suite failure with no single owner — it is evidence (failing-suite
    output), NOT a card, and there is no `tasks/` card to flip (see the integration branch in step 3).
-2. Resolve `hunt` slot; verify installed (else STOP).
+2. (Pull, `current.json`, slot resolve and install check: step 0.)
 3. **hunt** to confirm the ROOT CAUSE (not symptoms). Classify it:
    - **Card too big / not atomic** ⇒ re-split: hand back to **pipeline-task** to break it down.
    - **Spec/red test wrong** ⇒ the test itself is the bug ⇒ hand back to **pipeline-task** to fix

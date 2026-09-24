@@ -15,9 +15,8 @@ The five `k=v` envelope fields are all-or-nothing — pass them exactly as the c
 | exit | prints | the calling stage then |
 |---|---|---|
 | 0 | `PREFLIGHT OK stage=<s>` | steps 1/3/4 (+ the guard, + any card check) are DONE — take the values from the printed lines |
-| 2 | `PREFLIGHT STOP <reason>`, incl. `STALE_DISPATCH <field> observed=… expected=…` | STOPs and reports that reason; zero writes |
+| 2 | `PREFLIGHT STOP <reason>`, incl. `STALE_DISPATCH <field> observed=… expected=…` and `python3-missing` | STOPs and reports that reason; zero writes |
 | 3 | `PREFLIGHT UNVERIFIED <check>[,<check>]` | everything ELSE passed — **does the named check(s) itself** and STOPs on failure |
-| 4 | `PREFLIGHT SKIPPED <reason>` (e.g. `python3-missing`) | nothing ran and nothing was mutated — executes steps 1–4 as written, same as if the script were absent |
 | 64 | usage error on stderr | fixes the invocation |
 
 The exit-3 checks: **`install-check`** — verify the slot skill is installed on this runtime, STOP if not; **`remote-identity`** — confirm the repo's remote really is the one `current.json.repo` names.
@@ -70,8 +69,9 @@ unchecked=<k>`, never `CARDS ok`. **`hunt` is advisory too**
 other exit prints `CARDS unchecked rc=<n>` and the run continues — `pipeline-task` 6b / `pipeline-review`
 prose is the spec; this executes it.
 
-**Fallback (mandatory):** script absent on this install, or exit 4 ⇒ execute steps 1–4 as the prose is
-written; exit 3 ⇒ execute the named check(s) that way. The prose IS the spec; this script is only its
-deterministic executor, and rollback = delete this dir.
+**Mandatory, no prose fallback:** script absent on this install, or any exit other than 0/3 ⇒ the stage
+STOPs and reports (absent = incomplete install: every machine that runs a stage installs the full
+`pipeline-*` set); exit 3 ⇒ the stage does the named check(s) itself. The prose IS the spec; this script
+is its only executor.
 
 **Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git rev-parse --verify`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (78 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).

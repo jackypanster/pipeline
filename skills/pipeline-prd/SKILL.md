@@ -13,13 +13,11 @@ files; YOU write the PRD.
 
 ## Steps
 
-0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage prd`. `0` ⇒ step 1's pull +
-   `current.json` read and all of step 2 are DONE — use its printed lines (SEEDING a missing `current.json` stays yours); `3` ⇒ do the
-   check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as written (CONTRACT §shim loop); other
-   non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. `git pull --rebase`. Read/seed `.pipeline/current.json`; this command may CREATE it (set
-   `feature` from the idea's slug, `stage: prd`).
-2. Resolve `prd` slot from `.pipeline/roles.yaml`; verify those skills are installed (else STOP).
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage prd`. `0` ⇒ pull,
+   `current.json` read, slot resolve + install check DONE — use its printed lines; `3` ⇒ do the check(s) it names yourself, STOP if one
+   fails; anything else or script absent ⇒ STOP with its printed reason. `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
+1. `CURRENT absent` ⇒ this command CREATES `.pipeline/current.json` (set `feature` from the idea's slug, `stage: prd`).
+2. (Pull, slot resolve and install check: step 0.)
 3. **Survey the codebase before grilling** (skip only if the idea is already fully scoped):
    - If the idea is "pick N endpoint/feature to implement": cross-reference the API doc / spec index
      against existing command enum variants to build the GAP list. Rank by ROI (usage frequency ×
