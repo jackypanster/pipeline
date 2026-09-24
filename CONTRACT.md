@@ -7,8 +7,7 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
 
 1. **`git pull --rebase`** — always your first act (no shared memory; rebuild from git).
 2. **Load the repo's local config if present.** Most projects keep config/secrets in a dotenv-style
-   file (`.env`, sometimes `.env.local`/`.envrc`). The delegated skill, the build, and any forge CLI
-   may need it. If such a file exists, load its vars into the environment before step 5. Do NOT assume
+   file (`.env`, sometimes `.env.local`/`.envrc`). If such a file exists, load its vars into the environment before step 5. Do NOT assume
    a fixed name or casing — read what the repo actually uses and adapt (e.g. a lowercase `gitee_token`
    may need exporting as the upper-case `GITEE_TOKEN` a tool expects). **Never print secret values.**
 3. **Read `.pipeline/current.json`** → `{repo, branch, pr?, feature, stage}`. Missing + you are
@@ -40,9 +39,8 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    `.pipeline/<feature>/journal.md`** (it is part of your metadata write-set — see *Run journal*).
    `git add` those paths **+ `journal.md`**, commit **once** (the journal entry rides this same commit —
    never a separate/orphan commit, never an amend), **then `git push` your commit(s) to the remote.**
-   The push is load-bearing, not optional — it is the other half of step 1's `git pull`: the next node is
-   a COLD session that rebuilds all state from `git pull` and shares no memory with you, so an un-pushed
-   local commit is invisible and the next command sees no card / a stale spec. (Metadata commits straight
+   The push is mandatory: the next node is a COLD session that rebuilds all state from `git pull`, so an
+   un-pushed commit is invisible to it. (Metadata commits straight
    to trunk as a fast-forward append; never force-push trunk — see *State machine*.) Writing outside your
    write-set is a contract violation, symmetric to the freeze gate.
 7. **Print the handoff block** (already persisted to the journal in step 6) and stop. The human relays
@@ -56,14 +54,12 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
 and a `blocked` card routes to `pipeline-hunt`, never blind retry.
 **A review rejection (freeze-gate or semantic) sends the offending card `review → todo`** — the retry
 edge, so `pipeline-impl` (which picks the oldest `todo`) has an actionable target — or `→ blocked` at
-`attempts >= 3`. Without this flip a rejected feature leaves every card at `review` and impl has nothing
-to pick. (This completes the already-implied "reject routes to impl" semantics; the `>= 3 ⇒ blocked`
-circuit-breaker is unchanged.)
+`attempts >= 3`.
 **Only `pipeline-review` merges**, and only after an explicit human confirm.
 **Never force-push trunk or any shared/published ref; never delete anything beyond a task's own branch;
 never touch another card.** (Scope: an in-flight `feat/<feature>` branch is the coder's own — `pipeline-impl`
-MAY rebase it onto trunk + force-push to absorb new spec commits from a re-freeze / append-card. That is
-standard PR hygiene on your own branch, NOT a trunk force-push; trunk/shared refs are never force-pushed.)
+MAY rebase it onto trunk + force-push to absorb new spec commits from a re-freeze / append-card — its own
+branch, NOT a trunk force-push; trunk/shared refs are never force-pushed.)
 
 ## Layout (`.pipeline/` lives in the TARGET repo)
 
@@ -92,9 +88,7 @@ descends: **pushed trunk (remote git) > local clone/working tree > running proce
 (chat context, handoff prose, an agent's own "done" claim). This ranks cross-node authority, NOT temporal
 freshness: a stage trusts its own working tree while working, but nothing exists for any other node until
 pushed (step 6), and no claim outranks the artifact it describes — "done" is exactly as authoritative as
-the pushed commit + test output behind it. The journal-tail-over-`current.json` rule, step 1's
-rebuild-from-git, paths-never-bodies handoffs, and coordinated mode's remote-Git-only truth are instances
-of this order. (Ref: arXiv:2605.18747 "Code as Agent Harness" — fix state precedence before conflicts occur.)
+the pushed commit + test output behind it.
 
 **A feature branch carries ONLY the reviewable code diff.** Name it `feat/<feature>`. `pipeline-impl`
 cuts it from trunk, writes `src` + white-box tests there, opens the PR. `pipeline-review` squash-merges
@@ -103,8 +97,7 @@ it (the only merge). One branch convention, one merge style — no `task/*` name
 **Reconcile an in-flight branch with advanced trunk spec.** If trunk's frozen spec advances after the
 branch was cut — a **re-freeze** (new shared `spec-rev`) or an **append-card** (a new card's red test) —
 the existing `feat/<feature>` carries the STALE spec. `pipeline-impl` must **rebase `feat/<feature>` onto
-trunk + force-push** before continuing, so the branch carries the current frozen tests. Otherwise review's
-freeze gate diffs the new `spec-rev` against a stale branch tip and **falsely rejects**. This rebase +
+trunk + force-push** before continuing, so the branch carries the current frozen tests. This rebase +
 force-push of the coder's own branch is the sanctioned exception to never-force-push (trunk is never
 force-pushed; see State machine scope).
 
@@ -115,9 +108,8 @@ flight at a time**. If either stops holding (CI added, or parallel features), mo
 feature branch and make `spec-rev` a branch commit instead.
 
 **Multi-card consequence — a card's `verify` MUST be card-scoped, never the full suite.** `pipeline-task`
-freezes ALL of a feature's cards up front, so trunk's suite is RED across *every* not-yet-done card. If
-card 1's `verify` ran the whole suite it could never pass while cards 2..N are still red — the loop
-deadlocks. So a card's `verify` test command runs **only that card's own frozen test(s)**. The mechanism
+freezes ALL of a feature's cards up front, so trunk's suite is RED across *every* not-yet-done card; a
+card's `verify` test command therefore runs **only that card's own frozen test(s)**. The mechanism
 is the task author's choice — a **test-name filter** (`cargo test smoke_login_help`, `pytest -k`,
 `go test -run`; preferred, works even when several cards share one test file) or a **dedicated test
 file** — the invariant is *card-scoped, not full-suite*. The cross-card integration check is a separate
@@ -147,10 +139,7 @@ compliant cache may read as the tail's *from* (the completing stage just wrote i
 sanctioned to-end cases being `done` on the terminal `review→done` commit and a failed/re-routing
 review (e.g. `review→impl · failed`) that leaves `stage` at the routed-to stage rather than
 re-asserting `review`. Consumers (dashboard, driver, any observer) must treat only the neither-end
-case as stale — a literal cache==most-recently-completed reading false-flags every compliant
-mid-flight state (field lesson: `jackypanster/pipeline-dashboard` ADR 0008, 2026-07-11, where that
-misreading cost a full bug-fix feature). Beyond `stage`, the artifact
-write-sets are:
+case as stale. Beyond `stage`, the artifact write-sets are:
 
 | stage | write-set (may create/modify) | must NOT touch |
 |---|---|---|
@@ -178,10 +167,8 @@ per-stage rows above.
 
 1. **Freeze commit** — write **all of the feature's** failing red tests, touching **only `spec-paths`**,
    in **ONE** commit. Its hash = the **feature's single `spec-rev`**, recorded by *every* card. The tests
-   must compile and FAIL here (a green "spec" is a no-op). **One commit for the whole feature, NOT
-   per-card:** if cards were frozen in sequence and two shared a test file, an earlier card's `spec-rev`
-   would predate a later sibling's append, and the freeze gate (which diffs `spec-rev..review-tip` over
-   `spec-paths`) would mis-flag that legitimate sibling test as an impl spec-edit and falsely reject.
+   must compile and FAIL here. **One commit for the whole feature, NOT per-card** (so cards sharing a
+   test file share one baseline).
 2. **Record commit** — write **each card's** frontmatter (`spec-paths`, `impl-paths`, and the **shared
    `spec-rev` from step 1**, all exact) and advance `current.json.stage`. This commit touches **metadata
    only (the cards + `current.json`), never `spec-paths`** — so the freeze stays intact (the load-bearing
@@ -193,11 +180,11 @@ test green via `src` + `impl-paths` only, and must NOT create/modify/delete anyt
 (deterministic, not working-tree) FIRST; **non-empty ⇒ reject** (`attempts++`, route to impl, or hunt
 at ≥3). If the spec itself is wrong, that is NOT an impl fix — re-route to `pipeline-task` to re-freeze
 (the re-route handoff MUST **name the offending spec target** so task doesn't guess): re-freeze the
-**whole feature's** tests in a NEW single commit and update **every** card's `spec-rev` to the new sha (a
-partial re-freeze would reintroduce the shared-file mis-flag — keep the baseline shared). Re-freeze
+**whole feature's** tests in a NEW single commit and update **every** card's `spec-rev` to the new sha
+(never a partial re-freeze — keep the baseline shared). Re-freeze
 updates **only `spec-rev`** and **preserves each card's `status`/`attempts`/`verify`/`impl-paths`** (only
 the named re-spec'd card may change otherwise); it is NOT initial authoring, so it **never resets siblings
-to `todo`/`0`** — that would silently restart cards mid-impl or in review. The coder never edits the
+to `todo`/`0`**. The coder never edits the
 frozen spec. Git-only, no CI.
 
 **Append-card** (hunt routes an integration fix, or a new card is needed on an in-flight feature) is a
@@ -224,35 +211,28 @@ surface a hermetic test genuinely cannot assert — interactive/TUI cosmetics, r
 execution, or logic with no black-box handle (the binary-crate case above). It is NOT a licence to
 leave a **required** behaviour unfrozen: if a hermetic test could detect that behaviour's *absence*,
 freeze at least a **dry-run / command-construction assertion** (assert the step WOULD act — construct
-the command, hit the honest-degrade path — with no real side effect). Otherwise impl satisfies the
-letter (green suite) not the intent — an unfrozen required step ships as a no-op/hollow stub that passes
-every frozen test and the full-verify, and only review catches it, late (field lesson: a generated-config
-wizard shipped 4 of 7 required steps as empty stubs behind a fully green suite; the sink defects behind
-the remaining "review must read" surface then took three review rounds to reach `blocked`).
+the command, hit the honest-degrade path — with no real side effect).
 
 **Before ruling any required behaviour "review must read", `pipeline-task` MUST first seek or design an
 honest test SEAM** — most "hard to freeze" surfaces are in fact hermetically testable: a
 **pseudo-terminal harness** (prompt/PTY-cancel/EOF), **a temp dir + an injected failure seam** (write
 atomicity, mid-write failure), a **symlinked/pre-created destination** (symlink/temp-race sinks), and
 **stubbed executables** (network/package steps). Where a command can be stubbed, freeze the
-**invocation AND its arguments**, not merely the command text or an honest-degrade message — those alone
-can still leave the real action path hollow. "review must read" is admissible ONLY after the card
+**invocation AND its arguments**, not merely the command text or an honest-degrade message. "review must read" is admissible ONLY after the card
 records **why no such seam exists**. When a required behaviour is genuinely un-seamable **and** `arch`
 did not resolve it — or a feature is *dominated* by such risks — `pipeline-task` **FAILS CLOSED**: it
 does NOT proceed to the freeze commit (6a) or hand off to impl; it **stops and routes back through
 `arch`/design-review**, recording the risk in the artifact that legally exists at that stop — its
 **`task→arch` journal handoff** (the card does not exist until step 6b — never write partial card
 metadata pre-6a). The resumed task records the resolved `## Freeze coverage` on the card in the normal
-6b record commit. The flag is a hard stop, not a silent note. This STRENGTHENS coverage; it changes nothing in the freeze gate, spec-rev protocol, state
-machine, or merge rules.
+6b record commit. The flag is a hard stop, not a silent note.
 
 ## Impl assumptions (recorded on the card, read by review)
 
 The frozen test pins what it asserts; it does NOT pin the implementer's interpretation around it.
 An **impl assumption** is any decision the implementer made that the card's spec text and its frozen
 test do NOT pin down — user-facing wording, edge-case behavior outside the frozen assertions,
-data-shape/format choices, dependency or API selection. These un-pinned decisions are where the
-implementing agent silently authors product intent.
+data-shape/format choices, dependency or API selection.
 
 **This is NOT arch's labeled assumptions** — those are design-time unknowns recorded in
 `arch.md`/ADRs by the arch stage. Impl assumptions are implementation-time interpretation only;
@@ -263,15 +243,12 @@ They live in a **`## Assumptions` section on the CARD file** (trunk-authoritativ
 features included). When there are none, the section body is exactly `none` — the sentinel is
 mandatory, so a missing section is distinguishable from an honest empty. It is written on the
 **GREEN path only**, in the SAME single metadata commit on `main` that flips the card
-`status: review` (impl step 4); the failed/blocked dispositions do NOT write it — there is no
-delivered implementation to interpret. The card is the authoritative home: when a forge PR exists,
-impl MAY mirror the list into the PR body, but review reads the card copy (the no-forge path loses
-nothing). This is a deliberate, narrowly-scoped extension of impl's card write-set (§State authority
+`status: review` (impl step 4); the failed/blocked dispositions do NOT write it. The card is the authoritative home: when a forge PR exists,
+impl MAY mirror the list into the PR body, but review reads the card copy. This is a deliberate, narrowly-scoped extension of impl's card write-set (§State authority
 table); this grant covers exactly the `## Assumptions` section and nothing more.
 
 **`pipeline-review` reads it.** A card in `status: review` whose `## Assumptions` section is missing
-⇒ changes requested (mechanical check). An assumption that CONTRADICTS the card/spec/PRD ⇒ reject —
-that is the agent authoring product intent, the exact failure this slot exists to expose. A `none`
+⇒ changes requested (mechanical check). An assumption that CONTRADICTS the card/spec/PRD ⇒ reject. A `none`
 while the diff visibly contains un-pinned decisions ⇒ a review finding (semantic judgment).
 
 ## Handoff block — a self-contained briefing for a COLD next node
@@ -279,8 +256,7 @@ while the diff visibly contains un-pinned decisions ⇒ a review finding (semant
 **The next node is a FRESH session — possibly a different agent on a different frontier LLM — with ZERO
 prior context.** It has only: this repo (via `git pull`), `CONTRACT.md`, and your handoff. So the
 handoff must carry everything it needs to ACT, not a one-liner. Point at artifacts (git is the bus —
-never paste bodies), give **concrete numbered steps**, and name **feature-specific gotchas**. A cold
-frontier bot with a thin handoff guesses wrong — err toward MORE next-step detail, not less.
+never paste bodies), give **concrete numbered steps**, and name **feature-specific gotchas**. Err toward MORE next-step detail, not less.
 Chat-friendly: plain text, short lines, no tables.
 
 Carry one **`Model:`** line naming THIS next stage's model requirement — reasoning stages
@@ -312,18 +288,14 @@ On failure: attempts++; >=3 ⇒ blocked ⇒ run pipeline-hunt.
 <<< END
 ```
 
-Carry artifact PATHS, never bodies — git is the bus. The "Your task" + "Feature gotchas" sections are
-what let a different LLM on a different bot execute this stage correctly with no shared memory.
+Carry artifact PATHS, never bodies — git is the bus.
 
 ## Run journal — the handoff, persisted (append-only)
 
-The handoff block above is the **most load-bearing artifact in the pipeline** (it carries all cross-stage
-context to a cold node) and was the **only one not on git** — it lived solely in chat. `journal.md` fixes
-that: **at step 6, append your handoff to `.pipeline/<feature>/journal.md` as part of your stage's
-metadata commit** (one atomic commit with the rest of your write-set — never a separate/orphan commit,
-never an amend); step 7 only prints what is already journaled. This makes the run **resumable** (chat
-dies ⇒ read the tail), **auditable** (the append sequence IS the run history), and **orchestratable by
-anyone** (a human or another LLM reads the tail to take over).
+**At step 6, append your handoff to `.pipeline/<feature>/journal.md` as part of your stage's metadata
+commit** (one atomic commit with the rest of your write-set — never a separate/orphan commit, never an
+amend); step 7 only prints what is already journaled. The journal makes the run resumable, auditable,
+and orchestratable by anyone reading the tail (see DESIGN.md §Why a journal).
 
 One entry per completed stage, appended (never edited or deleted — the git history is the audit trail):
 
@@ -340,7 +312,7 @@ output: <artifact path(s)>        # paths, never bodies — git is the bus
 Rules:
 
 - **`seq`** — per-feature monotonic integer. Read the current tail, add 1 (first entry `seq=1`). It is
-  the run ordinal: "we are at step N".
+  the run ordinal.
 - **Append-only.** Never rewrite or delete a prior entry. A correction is a NEW entry, not an edit.
 - **One commit.** The entry rides your stage's metadata commit (step 6) — `git add journal.md` alongside
   your other write-set paths and commit once. Never a separate/orphan commit, never `git commit --amend`.
@@ -348,17 +320,15 @@ Rules:
   `current.json.stage` is only a fast cache; on any disagreement the journal tail wins.
 - **Resume protocol (cold start, chat gone):** `git pull --rebase` → open `journal.md` → read the LAST
   entry → its handoff IS your briefing. `current.json` is a hint, the journal is the source.
-- A `failed`/`blocked` stage still appends an entry (status + the failure handoff to hunt) — the dead end
-  is part of the auditable history, not silently dropped.
+- A `failed`/`blocked` stage still appends an entry (status + the failure handoff to hunt).
 
 ## Coordinated mode (optional, feature-authorized) — a coordinator types, human gates unchanged
 
 **Default remains human-relayed.** A feature MAY opt in to an external coordinator that replaces the
 human's TYPING between stages — never a judgment that belongs to a stage or to the human. **v1 is a
-CC session running the `pipeline-coordinate` playbook skill** (this repo); a deterministic dispatcher was evaluated and REJECTED (pipeline-driver PR #14 closed unmerged;
-pivot recorded in coordinator-design.md v1.3 §25, pinned:
-https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md —
-`coordinate.sh` ships only the read-only `doctor`/`status` preflight). The coordinator observes remote Git as the only business truth, routes on the journal
+CC session running the `pipeline-coordinate` playbook skill** (this repo; `pipeline-driver`'s
+`coordinate.sh` is a read-only `doctor`/`status` preflight, not a dispatcher — history in DESIGN.md
+§Provenance). The coordinator observes remote Git as the only business truth, routes on the journal
 tail's transition forms below, and types the next `pipeline-*` command into the right agent pane. As
 COORDINATOR it writes no target artifacts and no journal entries and performs no stage work belonging
 to another role; the CC-playbook session may separately execute the CC-role stages (arch/task/hunt)
@@ -393,10 +363,7 @@ reports pane topology, or asks the human to let IT dispatch or coordinate — `p
 mode recommendation, which asks the operator to CHOOSE the run's mode, is that stage's own work and is
 untouched. Encountering coordinated metadata, an unexpected journal tail, or an apparent second
 coordinator: continue ONLY when your stage's own guards accept the state; otherwise STOP for the
-human — never self-promote. (Field-observed 2026-08-07: a second implementer session,
-handed an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing
-into each other's panes is the failure this forecloses; it is the node-side complement to the
-playbook's one-pane-per-role preflight.)
+human — never self-promote.
 
 ### Dispatch envelope (arrives as command arguments)
 
@@ -421,9 +388,8 @@ Run it immediately after shim step 1 (`git pull --rebase`), **before ANY file wr
 4. Any mismatch ⇒ print `STALE_DISPATCH <field> observed=<value> expected=<envelope value>` and
    **STOP — zero writes, zero commits.** The guard refuses CONSUMED seqs, which protects dispatches
    whose effect is already observed in Git — it does NOT make blind redelivery safe: an unconsumed
-   dispatch is ambiguous among never-delivered / delivered-not-started / ran-without-delivering (the
-   two delivered-but-unrecorded windows recorded in `coordinator-design.md` v1.2), and a coordinator
-   without a delivery ledger must STOP for human inspection instead of re-sending.
+   dispatch is ambiguous among never-delivered / delivered-not-started / ran-without-delivering, and a
+   coordinator without a delivery ledger must STOP for human inspection instead of re-sending.
 
 Exact-match and fail-closed — a natural-language "check git first" is not a substitute. No envelope
 (human-relay) ⇒ the guard does not apply; nothing else about the shim loop changes.
@@ -432,8 +398,7 @@ Exact-match and fail-closed — a natural-language "check git first" is not a su
 
 The coordinator routes ONLY on the journal tail's `<from>→<to> · <status>` plus the `>>> NEXT` first
 line — never on prose. A coordinated feature therefore MUST emit the stage-specific forms; the
-load-bearing one is impl's next-card continuation, which human-relay journals wrote as
-`impl→review · completed` even mid-feature:
+load-bearing one is impl's next-card continuation:
 
 - impl card green, **todo cards remain** ⇒ `impl→impl · completed`, NEXT `Run pipeline-impl`.
 - impl card green, **every card `review`** ⇒ `impl→review · completed`, NEXT `Run pipeline-review`.
@@ -481,8 +446,7 @@ Keyed on `git config --get remote.origin.url`:
 The PR is the **preferred** review surface (auditable thread + clean merge gate); where no forge
 exists, the `git diff base..branch` review is its **sanctioned equivalent** — the same gate still holds
 (semantic review + freeze gate + full-suite green + human-confirmed, only-`pipeline-review`-merges).
-This fail-open degrade is deliberate: a *mandatory* PR would fail closed in air-gapped/intranet/non-forge
-contexts (see DESIGN.md §Rejected). The no-forge path loses only the forge's PR thread, never the review
+This degrade is fail-open by design (see DESIGN.md §Rejected). The no-forge path loses only the forge's PR thread, never the review
 gate — reviewable code still never reaches trunk except through a `feat/<feature>` branch that this gate
 has passed.
 
@@ -490,8 +454,7 @@ Merge is always human-confirmed. The pipeline performs no destructive forge oper
 
 ## Self-improvement — skills propose, review gates (never self-edit)
 
-A running bot must **NEVER edit a live/installed skill in place** — that mutates the contract
-mid-flight, untracked and ungated, and can silently break every future run. A bot's pipeline clone is
+A running bot must **NEVER edit a live/installed skill in place**. A bot's pipeline clone is
 a **read-only consumer**: `git fetch && git reset --hard origin/main` each run; it does not carry local
 skill edits. When shims are installed as **copies** rather than loaded from the clone, the maintenance
 command `pipeline-update` re-applies this same refresh to those copies (pull-only — it opens no PR and
@@ -524,5 +487,4 @@ human-confirm, and reviewer-only squash-merge; the proposer never merges. For a 
 preservation check reads against that repo's own documented hard rules and guarantees.
 
 The **frozen invariants** (state machine · only-reviewer-merges · the freeze gate · never-force-push)
-are **not auto-improvable** — a proposal touching them is STOPPED for explicit human decision. Skills are
-markdown + git: a bad edit only mis-guides the next run (caught by review), and is one `git revert` away.
+are **not auto-improvable** — a proposal touching them is STOPPED for explicit human decision.
