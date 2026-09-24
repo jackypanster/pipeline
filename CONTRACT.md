@@ -21,10 +21,10 @@ they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
    3, 4 — and, with an envelope, the stale-dispatch guard — are DONE: take their values from its printed
    lines. Exit `3` ⇒ everything ELSE passed and the line names the check(s) it could not make
    (`install-check` — verify the slot skill is installed and STOP if it is not; `remote-identity` — confirm
-   the remote really is the one `current.json.repo` names): do exactly those yourself. Exit `4` ⇒ the script
-   could not run at all (e.g. `python3-missing`) and changed nothing — execute steps 1–4 as written, exactly
-   as if it were absent. Any other non-zero ⇒ STOP and report the reason it printed. Script absent on this
-   install ⇒ likewise execute steps 1–4 as written. Step 2 stays yours: the script only REPORTS the dotenv
+   the remote really is the one `current.json.repo` names): do exactly those yourself. Script absent, or any
+   exit other than `0`/`3` ⇒ STOP and report the reason it printed (absent = install incomplete: every
+   machine that runs a stage installs the full `pipeline-*` set). Steps 1–4 above remain the spec; the
+   script is their only executor. Step 2 stays yours: the script only REPORTS the dotenv
    file and how many keys it defines — never a name, never a value — and exports nothing. The script also
    prints one advisory `UPSTREAM …` line (a once-a-day `git ls-remote` of the pipeline repo compared to the
    installed version): `UPSTREAM newer` ⇒ add one line to your final report/handoff telling the operator to

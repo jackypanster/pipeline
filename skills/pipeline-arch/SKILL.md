@@ -7,11 +7,9 @@ description: "Pipeline stage 2 — turn a PRD into an architecture. Uses grill-w
 
 Stage 2. Follow the **shim loop in CONTRACT.md** with slot = `arch`.
 
-**Coordinated dispatch guard:** if your invocation carries a dispatch envelope
-(`repo= branch= feature= expected_seq= expected_commit=`), run CONTRACT §Coordinated mode's pre-write
-stale-dispatch guard immediately after step 1, BEFORE any write; any mismatch ⇒ print
+**Coordinated dispatch guard:** with a dispatch envelope (`repo= branch= feature= expected_seq= expected_commit=`),
+step 0 runs CONTRACT §Coordinated mode's pre-write stale-dispatch guard, BEFORE any write; a mismatch ⇒
 `STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
-`preflight.sh` run with those envelope fields executes this guard.
 
 **Skill:** `arch` slot resolves to `grill-with-docs` — it walks each branch of the design tree,
 challenges the plan against the repo's existing domain model, sharpens terminology, and updates
@@ -20,11 +18,11 @@ challenges the plan against the repo's existing domain model, sharpens terminolo
 ## Steps
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage arch` (+ the five envelope
-   fields verbatim when one is present). `0` ⇒ step 1's pull + `current.json` read and all of step 2 are DONE — use its printed lines
-   (`PRD.md` stays yours); `3` ⇒ do the check(s) it names yourself (STOP if one fails); `4` or script absent ⇒ run the steps as written
-   (CONTRACT §shim loop); other non-zero ⇒ STOP with its printed reason; `UPSTREAM newer` in its output ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. `git pull --rebase`. Read `.pipeline/current.json` (STOP if missing) and `<feature>/PRD.md`.
-2. Resolve `arch` slot from `roles.yaml`; verify installed (else STOP).
+   fields verbatim when one is present). `0` ⇒ pull, `current.json` read, slot resolve + install check DONE — use its printed lines;
+   `3` ⇒ do the check(s) it names yourself, STOP if one fails; anything else or script absent ⇒ STOP with its printed reason.
+   `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
+1. Read `<feature>/PRD.md`.
+2. (Pull, `current.json`, slot resolve and install check: step 0.)
 3. **grill-with-docs** against the PRD + codebase: resolve cross-decision dependencies one at a
    time, record irreversible/surprising choices as ADRs, sharpen the domain language in CONTEXT.md.
    **Code-first verification — check every PRD claim against real code BEFORE asking the human:**

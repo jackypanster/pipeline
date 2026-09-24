@@ -503,7 +503,7 @@ run "$WORK" --stage task "repo=$WORK" branch=main "feature=$FEATURE" \
   expected_seq=1 "expected_commit=$COMMIT"
 expect "24-remote-advanced" 2 "STALE_DISPATCH expected_commit" "PREFLIGHT STOP stale-dispatch"
 
-# --- 25. python3 missing ⇒ exit 4 SKIPPED: nothing ran, the caller does steps 1–4 -----
+# --- 25. python3 missing ⇒ exit 2 STOP: an incomplete install, the caller STOPs --------
 NOPY="$ROOT/nopy-bin"
 mkdir -p "$NOPY"
 nopy_ok=1
@@ -522,12 +522,12 @@ else
   build 25
   RUN_PATH="$NOPY"
   run "$WORK" --stage task
-  if [ "$RC" = 4 ]; then
-    expect "25-python3-missing" 4 "PREFLIGHT SKIPPED python3-missing"
+  if [ "$RC" = 2 ]; then
+    expect "25-python3-missing" 2 "PREFLIGHT STOP python3-missing"
   elif printf '%s\n' "$OUT" | grep -q 'git:.*not found\|command not found'; then
     skip "25-python3-missing" "the stripped PATH cannot run git on this machine: $OUT"
   else
-    expect "25-python3-missing" 4 "PREFLIGHT SKIPPED python3-missing"
+    expect "25-python3-missing" 2 "PREFLIGHT STOP python3-missing"
   fi
 fi
 
