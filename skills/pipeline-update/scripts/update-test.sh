@@ -72,6 +72,13 @@ git -C "$CLONE" checkout --quiet -b side
 check 5c-not-main 1 "STOP:" "not main"
 git -C "$CLONE" checkout --quiet main; git -C "$CLONE" branch --quiet -D side
 
+# 5d. a clean main carrying a LOCAL-ONLY commit ⇒ STOP, local history preserved.
+echo local > "$CLONE/skills/pipeline-impl/SKILL.md"; git -C "$CLONE" commit --quiet -am local-only
+local_head="$(git -C "$CLONE" rev-parse HEAD)"
+check 5d-local-ahead 1 "STOP:" "commits not on origin/main"
+[ "$(git -C "$CLONE" rev-parse HEAD)" = "$local_head" ] || { echo "FAIL 5d2-local-preserved"; fails=$((fails+1)); }
+git -C "$CLONE" reset --quiet --hard HEAD~1   # test cleanup only
+
 # 6. a real directory (copy install) ⇒ LEGACY, non-zero, left byte-for-byte untouched.
 rm "$SKILLS/pipeline-preflight"; mkdir "$SKILLS/pipeline-preflight"; echo copy > "$SKILLS/pipeline-preflight/SKILL.md"
 check 6-legacy 1 "LEGACY pipeline-preflight" "ok pipeline-impl"

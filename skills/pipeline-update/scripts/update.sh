@@ -19,8 +19,12 @@ branch="$(git -C "$clone" symbolic-ref --quiet --short HEAD)" || stop "$clone is
 [ "$branch" = main ] || stop "$clone is on branch $branch, not main — inspect by hand"
 
 before="$(git -C "$clone" rev-parse HEAD)"
-# Explicit source: reviewed main only, never whatever upstream the branch happens to track.
-git -C "$clone" pull --ff-only --quiet origin main || stop "git pull --ff-only origin main failed in $clone (see git's message above; never reset)"
+# Explicit source: reviewed origin/main only, never whatever upstream the branch happens to track;
+# local-only commits (HEAD not an ancestor of origin/main) are unreviewed content ⇒ STOP, kept as-is.
+git -C "$clone" fetch --quiet origin main || stop "git fetch origin main failed in $clone (see git's message above)"
+git -C "$clone" merge-base --is-ancestor HEAD FETCH_HEAD \
+  || stop "$clone has commits not on origin/main — a consumer clone carries no local history; inspect by hand (never reset)"
+git -C "$clone" merge --ff-only --quiet FETCH_HEAD || stop "fast-forward to origin/main failed in $clone (never reset)"
 after="$(git -C "$clone" rev-parse HEAD)"
 
 legacy=0

@@ -146,6 +146,7 @@ bind), the setup-side twin of `pipeline-update`.
 Every machine that runs a pipeline stage (including a remote agent reached over herdr) must install the full `pipeline-*` set — stage skills locate preflight as a sibling dir, and an absent preflight is a STOP.
 
 ```bash
+( set -e   # ANY failure (clone, mkdir, ln — e.g. a dangling attachment) aborts every later step, incl. the bind
 # 1. A READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
 [ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
 
@@ -156,16 +157,16 @@ for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
 done
 
 # 3. Runtime attachments → the canonical entries, for each runtime installed on this machine
-#    (its home dir exists). Its skills/ dir is created if missing; any ln failure is a STOP.
+#    (its home dir exists); its skills/ dir is created if missing.
 for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
   if [ -d ~/.claude ]; then mkdir -p ~/.claude/skills                                # claude: relative
-    [ -e ~/.claude/skills/$n ] || ln -s ../../.agents/skills/$n ~/.claude/skills/$n || echo "STOP: claude $n"; fi
+    [ -e ~/.claude/skills/$n ] || ln -s ../../.agents/skills/$n ~/.claude/skills/$n; fi
   if [ -d ~/.codex ]; then mkdir -p ~/.codex/skills                                  # codex: absolute
-    [ -e ~/.codex/skills/$n ] || ln -s ~/.agents/skills/$n ~/.codex/skills/$n || echo "STOP: codex $n"; fi
+    [ -e ~/.codex/skills/$n ] || ln -s ~/.agents/skills/$n ~/.codex/skills/$n; fi
 done
 if [ -d ~/.pi/agent ]; then mkdir -p ~/.pi/agent/skills                              # pi: impl + preflight only
   for n in pipeline-impl pipeline-preflight; do
-    [ -e ~/.pi/agent/skills/$n ] || ln -s ../../../.agents/skills/$n ~/.pi/agent/skills/$n || echo "STOP: pi $n"
+    [ -e ~/.pi/agent/skills/$n ] || ln -s ../../../.agents/skills/$n ~/.pi/agent/skills/$n
   done
 fi
 
@@ -173,11 +174,13 @@ fi
 #    project wipes its bindings and restores the unresolved <autonomous-coding-skill> placeholder.
 #    When newly created, set the impl slot to your runtime's real installed skill name.
 cd <target-repo>
-mkdir -p .pipeline && [ -e .pipeline/roles.yaml ] || [ -L .pipeline/roles.yaml ] || cp ~/.agents/pipeline/roles.yaml .pipeline/roles.yaml
+mkdir -p .pipeline
+[ -e .pipeline/roles.yaml ] || [ -L .pipeline/roles.yaml ] || cp ~/.agents/pipeline/roles.yaml .pipeline/roles.yaml
 
 # 5. (optional; coordinated mode needs it) The companion driver provides `coordinate.sh doctor/status`.
 #    Runs in place, no install step. Absent ⇒ clone; present ⇒ keep it (§Update pulls it).
 [ -e ~/workspace/pipeline-driver ] || git clone https://github.com/jackypanster/pipeline-driver.git ~/workspace/pipeline-driver
+echo "install OK" )
 ```
 
 **Migrate from a copy install** (one time; `pipeline-update` reports `LEGACY <name>` until done). The
