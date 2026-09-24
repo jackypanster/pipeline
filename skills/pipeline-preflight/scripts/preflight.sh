@@ -45,7 +45,7 @@
 #   GUARD ok seq=<n> commit=<sha>[ remote=<url>]      | GUARD n/a (human-relay)
 #   UPSTREAM ok head=<sha>[ cached]                       # installed == pipeline main (or ahead of it)
 #   UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]
-#   UPSTREAM unverified <no-install-stamp|network>        # advisory only — never affects exit code
+#   UPSTREAM unverified <not-a-clone|network>             # advisory only — never affects exit code
 #     …printed AFTER the guard (CONTRACT §Pre-write stale-dispatch guard: no write before it,
 #     zero writes on a mismatch) — a STOP prints no UPSTREAM line and writes no cache.
 #   STALE_DISPATCH <field> observed=<v> expected=<v>
@@ -187,34 +187,25 @@ fi
 # CALLED as `upstream_check || true` in section 5c — AFTER the guard, never before it — because the
 # throttle cache below is a file write, and CONTRACT §Pre-write stale-dispatch guard requires the
 # guard to run before ANY write and a mismatch to leave zero writes.
-# Installed version: the clone's HEAD when the skills live in a pipeline clone (a runtime loading
-# them straight from the clone), else the install stamp `pipeline-update` writes
-# (`<skills-dir>/.pipeline-update.head`). No stamp ⇒ nothing was ever verified ⇒ say so, don't guess.
+# Installed version: HEAD of the git toplevel holding this script's REAL path (the canonical entries
+# are symlinks into a read-only consumer clone — README §Install). Not inside a clone whose origin is
+# the pipeline repo ⇒ nothing to compare ⇒ `UPSTREAM unverified not-a-clone`, never a guess.
 # Throttle: ONE network call per 24h, guarded by a cache stamp that is written even when the fetch
 # FAILS — a GitHub outage then costs one 8s wait per day, not one per stage run.
 UPSTREAM_URL="${PIPELINE_UPSTREAM_URL:-https://github.com/jackypanster/pipeline.git}"
 UPSTREAM_REMOTE_RE='(^|[@/])github\.com[:/]jackypanster/pipeline(\.git)?/?$'   # same as update.sh
 upstream_check() {
-  local self_dir skills_dir top installed mode2 cache stamp now c_epoch c_sha c_rest cached remote suffix
-  # Self-locate with symlinks resolved: …/pipeline-preflight/scripts → the skills dir holding the
-  # pipeline-* copies (a symlinked attachment resolves to its real target, like the install check).
+  local self_dir top installed cache now c_epoch c_sha c_rest cached remote suffix
+  # Self-locate with symlinks resolved: …/pipeline-preflight/scripts → its real dir inside the clone
+  # (the attachment → canonical-entry → clone chain resolves like the install check).
   self_dir="$(cd -P "$(dirname "$0")" && pwd -P)"
-  skills_dir="$(cd -P "$self_dir/../.." && pwd -P)"
-  mode2=0
   installed=""
-  top="$(git -C "$skills_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  top="$(git -C "$self_dir" rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -n "$top" ] && git -C "$top" remote get-url origin 2>/dev/null | grep -Eq "$UPSTREAM_REMOTE_RE"; then
-    mode2=1
     installed="$(git -C "$top" rev-parse HEAD 2>/dev/null || true)"
-  else
-    stamp=""
-    if [ -r "$skills_dir/.pipeline-update.head" ]; then
-      stamp="$(tr -d '[:space:]' < "$skills_dir/.pipeline-update.head" 2>/dev/null || true)"
-    fi
-    if printf '%s' "$stamp" | grep -Eq '^[0-9a-f]{40}$'; then installed="$stamp"; fi
   fi
   if [ -z "$installed" ]; then
-    echo "UPSTREAM unverified no-install-stamp"
+    echo "UPSTREAM unverified not-a-clone"
     return 0
   fi
 
@@ -255,8 +246,7 @@ PY
     echo "UPSTREAM unverified network"
   elif [ "$remote" = "$installed" ]; then
     echo "UPSTREAM ok head=$remote$suffix"
-  elif [ "$mode2" = 1 ] \
-       && git -C "$top" cat-file -e "$remote" 2>/dev/null \
+  elif git -C "$top" cat-file -e "$remote" 2>/dev/null \
        && git -C "$top" merge-base --is-ancestor "$remote" HEAD 2>/dev/null; then
     echo "UPSTREAM ok head=$remote$suffix"          # local clone is AHEAD of main — not stale
   else

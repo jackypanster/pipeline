@@ -146,122 +146,71 @@ bind), the setup-side twin of `pipeline-update`.
 Every machine that runs a pipeline stage (including a remote agent reached over herdr) must install the full `pipeline-*` set — stage skills locate preflight as a sibling dir, and an absent preflight is a STOP.
 
 ```bash
-# 1. Get the repo as a READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
-git clone https://github.com/jackypanster/pipeline.git ~/workspace/pipeline   # or: git -C ~/workspace/pipeline fetch && git -C ~/workspace/pipeline reset --hard origin/main
+# 1. A READ-ONLY consumer clone (never edit skills here — see CONTRACT §Self-improvement).
+[ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
 
-# 2. Install the command shims into the runtime that will RUN them (any capable agent — the pipeline
-#    is framework-agnostic). Install where THAT runtime loads skills; two concrete examples follow —
-#    substitute your own runtime:
-#    - a runtime that loads skills from a directory (e.g. ~/.claude/skills):
-cp -r ~/workspace/pipeline/skills/pipeline-* ~/.claude/skills/
-git -C ~/workspace/pipeline rev-parse HEAD > ~/.claude/skills/.pipeline-update.head   # install stamp: preflight's once-a-day upstream check compares it to main
-#    - a runtime configured via a skills.external_dirs list: add "~/workspace/pipeline/skills" as a
-#      YAML LIST item (NOT a JSON-encoded string, which fails silently), then reload the gateway.
+# 2. Canonical entries: one RELATIVE symlink per skill into the clone (existing entries are left alone).
+mkdir -p ~/.agents/skills
+for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
+  [ -e ~/.agents/skills/$n ] || [ -L ~/.agents/skills/$n ] || ln -s ../pipeline/skills/$n ~/.agents/skills/$n
+done
 
-# 3. Per target project, bind the slots. Create roles.yaml ONLY if absent; never clobber an existing one
-#    (regular file OR symlink) — overwriting a configured project wipes its bindings and restores the
-#    unresolved <autonomous-coding-skill> placeholder. Stage complete content in a private temp dir whose
-#    cleanup trap is armed BEFORE the dir exists (so no interval is unprotected and no stray temp can
-#    survive a caught signal), then publish with link(2) via the `link` utility: ONE atomic no-clobber
-#    syscall that fails EEXIST on ANY pre-existing destination — regular file, symlink-to-file, even a
-#    symlink-to-DIRECTORY — WITHOUT dereferencing it. roles.yaml is thus never partial (absent until the
-#    link, complete after it, never a zero-byte stub), and it is the only per-project artifact. (Do NOT use
-#    the `ln` CLI: it treats a symlinked directory as a directory operand, links inside the referent, and
-#    falsely returns success. Do NOT use `cp -n`: BSD/macOS returns non-zero on an existing target.) All
-#    trap handling is confined to the subshell, so the caller's own INT/TERM/HUP handlers are untouched.
-mkdir -p <target-repo>/.pipeline
-roles=<target-repo>/.pipeline/roles.yaml
-src=~/workspace/pipeline/roles.yaml
-if [ -e "$roles" ] || [ -L "$roles" ]; then
-  echo "roles.yaml already present — preserved; reconcile any new slots by hand"    # steady state, rc 0
-else
-  (
-    td="$(dirname "$roles")/.roles.tmp.$$"
-    trap 'rm -rf "$td"; exit 143' INT TERM HUP            # caught signal: best-effort cleanup, still nonzero
-    mkdir "$td" || { echo "ERROR: cannot create temp dir under $(dirname "$roles")" >&2; exit 1; }
-    # Report the OPERATION outcome and the CLEANUP outcome truthfully and separately. Cleanup is CHECKED
-    # on EVERY path (created / race-lost / copy-error / link-error) — never left to a status-swallowing
-    # EXIT trap. `finish 1` = a real bind success; `finish 0` = the bind failed; either way a cleanup
-    # failure downgrades to nonzero and names the exact leftover to remove, never a faked clean success.
-    finish() {  # $1: ok(1)/fail(0)   $2: truthful operation context
-      if rm -rf "$td"; then
-        if [ "$1" = 1 ]; then echo "$2"; exit 0; else echo "ERROR: $2" >&2; exit 1; fi
-      fi
-      echo "ERROR: $2 — AND temp cleanup failed; remove $td by hand" >&2; exit 6
-    }
-    if ! cp "$src" "$td/roles"; then
-      finish 0 "cannot read $src — roles.yaml not written"
-    elif link "$td/roles" "$roles" 2>/dev/null; then       # published complete content atomically
-      finish 1 "roles.yaml created — now set the impl slot to your real skill name"
-    elif [ -e "$roles" ] || [ -L "$roles" ]; then          # EEXIST: destination belongs to the racer
-      finish 1 "roles.yaml appeared concurrently — preserved, not overwritten (bind wrote nothing)"
-    else
-      finish 0 "could not publish roles.yaml — link failed and the destination is absent"
-    fi
-  ) || exit $?
-fi
+# 3. Runtime attachments → the canonical entries (skip a runtime this machine does not have).
+for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
+  [ -e ~/.claude/skills/$n ] || ln -s ../../.agents/skills/$n ~/.claude/skills/$n   # claude: relative
+  [ -e ~/.codex/skills/$n ]  || ln -s ~/.agents/skills/$n ~/.codex/skills/$n        # codex: absolute
+done
+for n in pipeline-impl pipeline-preflight; do                                        # pi: impl + preflight only
+  [ -e ~/.pi/agent/skills/$n ] || ln -s ../../../.agents/skills/$n ~/.pi/agent/skills/$n
+done
 
-# 4. (optional; coordinated mode needs it) The companion driver — a SIBLING of the pipeline clone —
-#    provides `coordinate.sh doctor/status` for coordinated mode. Runs in place, no install step. Idempotent:
-#    absent ⇒ clone; a USABLE driver clone (exact intended-repo origin AND a non-bare checkout whose
-#    HEAD resolves) ⇒ kept as-is; anything else at the path ⇒ STOP with remediation — never delete
-#    it, never clone into it.
-drv=~/workspace/pipeline-driver
-drv_usable() {
-  case "$(git -C "$drv" remote get-url origin 2>/dev/null)" in
-    https://github.com/jackypanster/pipeline-driver.git|\
-    https://github.com/jackypanster/pipeline-driver|\
-    git@github.com:jackypanster/pipeline-driver.git|\
-    git@github.com:jackypanster/pipeline-driver) ;;
-    *) return 1 ;;
-  esac
-  [ "$(git -C "$drv" rev-parse --is-bare-repository 2>/dev/null)" = false ] \
-    && git -C "$drv" rev-parse -q --verify HEAD >/dev/null
-}
-if [ ! -e "$drv" ] && [ ! -L "$drv" ]; then
-  git clone https://github.com/jackypanster/pipeline-driver.git "$drv"
-elif drv_usable; then
-  echo "driver already cloned at $drv — kept as-is"
-else
-  echo "ERROR: $drv exists but is not a usable driver clone (foreign/missing origin, bare, or no checked-out HEAD) — move it aside or repair it, then re-run step 4" >&2
-  exit 1
-fi
+# 4. Per target project, bind the slots. Never clobber an existing roles.yaml — overwriting a configured
+#    project wipes its bindings and restores the unresolved <autonomous-coding-skill> placeholder.
+#    When newly created, set the impl slot to your runtime's real installed skill name.
+cd <target-repo>
+mkdir -p .pipeline && [ -e .pipeline/roles.yaml ] || [ -L .pipeline/roles.yaml ] || cp ~/.agents/pipeline/roles.yaml .pipeline/roles.yaml
+
+# 5. (optional; coordinated mode needs it) The companion driver provides `coordinate.sh doctor/status`.
+#    Runs in place, no install step. Absent ⇒ clone; present ⇒ keep it (§Update pulls it).
+[ -e ~/workspace/pipeline-driver ] || git clone https://github.com/jackypanster/pipeline-driver.git ~/workspace/pipeline-driver
 ```
 
-### Canonical multi-runtime layout — ONE physical copy (adopted 2026-07-08)
+**Migrate from a copy install** (one time; `pipeline-update` reports `LEGACY <name>` until done). The
+runtime attachments keep working: they point at `~/.agents/skills/<name>`, which becomes a link.
 
-When several agent runtimes share one machine, install every skill into **one shared
-physical directory** and attach each runtime to it — never maintain per-runtime copies.
-(Field lesson: scattered copies meant the impl runtime had neither its shim nor its
-slot skill; the run survived only on the journal/handoff fallback. A skill is just a
-directory — `<name>/SKILL.md` + optional `references/` — so one copy serves everyone.)
+```bash
+bak=~/.agents/skill-backups/$(date +%Y%m%d)-copy-install
+[ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
+mkdir -p "$bak" && mv ~/.agents/skills/pipeline-* "$bak"/
+mv ~/.agents/skills/.pipeline-update* "$bak"/ 2>/dev/null || true   # old update stamp/leftovers, if any
+# then run the step-2 link loop above
+```
+
+### Canonical multi-runtime layout — one clone, links all the way down
+
+Every runtime on the machine loads the same files through a two-level symlink chain — never
+maintain per-runtime copies. (Field lesson: scattered copies meant the impl runtime had neither its
+shim nor its slot skill. Verified 2026-09-24: Claude, Codex and Pi fresh sessions all discover a skill
+through `~/.codex/skills/X -> ~/.agents/skills/X -> ../pipeline/skills/X`.)
 
 ```text
-~/.agents/skills/                ← THE single physical install dir; all sources land here
-  pipeline-*/                    ← step 2 above targets THIS dir
-  think/ check/ hunt/ grill-*/   ← delegated skills from their source repos
-  goal-driven-implementation/    ← the impl-slot skill
+~/.agents/pipeline/                ← read-only git clone of this repo (pipeline-update pulls it)
+~/.agents/skills/
+  pipeline-* -> ../pipeline/skills/pipeline-*   ← canonical entries (step 2)
+  think/ check/ hunt/ grill-*/     ← delegated skills from their source repos
+  goal-driven-implementation/      ← the impl-slot skill
+~/.claude/skills/pipeline-*        -> ../../.agents/skills/pipeline-*
+~/.codex/skills/pipeline-*         -> ~/.agents/skills/pipeline-*  (invoke as `$<skill-name>`, not `/<name>`)
+~/.pi/agent/skills/pipeline-{impl,preflight} -> ../../../.agents/skills/…
 ```
 
-Attach each runtime to that one copy:
-
-| runtime style | attachment |
-|---|---|
-| reads `~/.agents/skills` directly | nothing to do |
-| per-skill symlink dir (pi-style `~/.pi/agent/skills`) | `ln -s ../../../.agents/skills/<name>` per skill |
-| own skills dir (claude-style `~/.claude/skills`) | symlink entries in (or copy — then keep it fresh via `pipeline-update`) |
-| own skills dir, `$`-invoked (codex ≥0.144 `~/.codex/skills`) | symlink entries in (field-verified 2026-07-12); invoke as `$<skill-name>`, NOT `/<name>` — quote `$` in shell configs. The old `~/.codex/prompts` thin-wrapper row is obsolete |
+A runtime that reads `~/.agents/skills` directly needs no attachment.
 
 **Names resolve by frontmatter `name:`, not directory name** (field-verified on Claude Code
 2026-07-12: a symlinked directory under a different name does NOT register). When a runtime needs
 the canonical slot name to resolve to a runtime-local twin, attach a 10-line name-shim wrapper
 skill (frontmatter `name:` = the canonical name; body = "invoke the twin skill with all arguments") — same
 pattern for every runtime whose skill registry is frontmatter-keyed.
-
-**Existing installs keep working — do not force-migrate.** Use this layout for every NEW
-install and whenever attaching a new runtime; `pipeline-update` refreshes whatever
-copies exist. Source repos (this repo, your skill collections) are the update origin,
-never a load path.
 
 ### Verify + supplement dependencies (do this BEFORE running any command)
 
@@ -302,51 +251,24 @@ contract. Never copy a specific tool/framework/agent/LLM name into the onboardin
 
 ## Update
 
-Refresh the installed shims to the latest `main` **without re-reading the Install steps**: run
-`pipeline-update` against the **canonical skills dir** — the one holding the real copies. It is a
-**maintenance command, NOT one of the stages** — it runs no shim loop and touches no project
-`.pipeline/` state. It self-locates from its own path, pulls `github.com/jackypanster/pipeline` main,
-re-applies the `pipeline-*` shims, re-verifies the delegated deps below, and reports what moved.
-
-**Target the canonical dir, not whichever runtime you are in.** Under the canonical layout
-(§Install → *Canonical multi-runtime layout*) exactly one dir holds real copies and every runtime
-attaches by symlink, so one run refreshes them all:
+Refresh the installed skills to the latest `main` **without re-reading the Install steps**: run
+`pipeline-update`. It is a **maintenance command, NOT one of the stages** — it runs no shim loop and
+touches no project `.pipeline/` state. Run it between stages, never mid-stage.
 
 ```bash
-bash <canonical-skills-dir>/pipeline-update/scripts/update.sh        # self-locates; e.g. ~/.agents/skills/…
-bash <any-pipeline-update>/scripts/update.sh <canonical-skills-dir>  # or point any copy at it
+bash ~/.agents/skills/pipeline-update/scripts/update.sh   # default clone ~/.agents/pipeline
 ```
 
-The script only ever touches the dir you point it at — it does not follow symlinks into other
-locations. Pointed at a symlink-attached runtime dir it skips each attached entry
-(`skipped: <name> (symlink attachment -> <target>)`) and each absent one (`… (not installed …)`); a
-mixed dir (some links, some real copies) still refreshes its own real copies. The line
-`nothing to refresh in <dir> (N skipped: attachment/absent; not verified against <sha>)` is the certain
-signal that NO entry in that dir was compared against the new `main` — it is honest (never claims
-"latest") but is not an update. When you see it, re-run with the **absolute** path of the canonical
-skills dir as `$1` (`$1` is consumed verbatim and a `readlink` target is printed raw, so a relative
-attachment is only valid from one cwd — do not derive the path from it).
-
-Legacy layout (more than one dir of real copies): **ONE run per physical copy**, each with its own
-explicit dir argument.
-
-An unresolved `.pipeline-update.txn.*` in an update destination blocks either mode before replacement.
-Its files may be the only recovery copy: inspect and recover them, then move the resolved transaction
-out of that namespace before retrying. A failed update may report an incomplete rollback; do not
-interpret every non-zero exit as proof that the install is intact.
-
-```bash
-# Mode B — the runtime loads skills straight from a clone (external_dirs). Run the script FROM that
-# clone with NO argument: it self-locates to <clone>/skills, detects Mode 2, fetches + resets the
-# clone, then sweeps the canonical dir.
-bash <pipeline-clone>/skills/pipeline-update/scripts/update.sh
-# Mode 2 runs `git reset --hard origin/main` on that clone — never point it at a clone you develop in;
-# it will discard in-flight work.
-```
+It checks that the clone's origin is this repo and that it has no tracked-file edits (either ⇒
+`STOP`), runs `git pull --ff-only` (git gives atomicity; a refusal ⇒ `STOP`, never a reset), then
+walks `skills/pipeline-*`: a missing canonical entry is linked (`LINKED <name>` — add its runtime
+attachments by hand, Install step 3), a correct link is `ok`, and a real directory is
+`LEGACY <name>` (non-zero exit, left untouched — see *Migrate from a copy install*). It ends with
+`HEAD <sha>` and `updated …` / `already latest`.
 
 Runtime-shared skills only. A project's `.pipeline/roles.yaml` (your slot bindings) is never touched —
 if a new version adds a slot, reconcile it by hand. Sibling repos (`pipeline-dashboard`,
-`pipeline-driver`) update themselves — for the usually co-installed driver (§Install step 4) that is
+`pipeline-driver`) update themselves — for the usually co-installed driver (Install step 5) that is
 one guarded pull. Refresh the whole toolchain:
 
 ```bash

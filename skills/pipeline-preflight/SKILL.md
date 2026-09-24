@@ -27,7 +27,7 @@ The exit-3 checks: **`install-check`** — verify the slot skill is installed on
 
 Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` · `ENV file=<n> keys=<N>` / `ENV none` ·
 `CURRENT ok repo=… branch=… feature=… stage=…[ pr=…]` / `CURRENT absent (prd creates it)` · `SLOT <stage>=<n1>[,<n2>]` ·
-`UPSTREAM ok head=<sha>[ cached]` (installed == pipeline main, or ahead of it) / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <no-install-stamp|network>` ·
+`UPSTREAM ok head=<sha>[ cached]` (installed == pipeline main, or ahead of it) / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <not-a-clone|network>` ·
 `INSTALLED <n> path=<dir>/<n>` (verified) / `INSTALLED <n> found=<dir>/<n> UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…` ·
 `FETCH fail <remote>/<branch>` · `REMOTE unverified observed=… current.json.repo=…` ·
 `GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)` ·
@@ -38,7 +38,7 @@ Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` 
 
 **`PIPELINE_SKILL_DIRS`** (colon-separated, per runtime) declares which dirs THIS runtime actually loads skills from. A hit there is a **verified** install (`path=`). Without it the script still searches the default dirs, but a hit is evidence only (`found=… UNVERIFIED`) — a readable `SKILL.md` on disk never proves the running agent loads it — so the exit is 3 and the stage verifies the slot itself.
 
-**`UPSTREAM …`** is advisory, printed after the guard, just before the final verdict (so a STOP never writes its cache): at most one `git ls-remote` of the pipeline repo per 24h, throttled through `${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head` (a failed fetch is throttled too), with `PIPELINE_UPSTREAM_URL` overriding the URL (tests/mirrors). It compares that sha against the installed version — the clone's HEAD when the skills live in a pipeline clone, else the install stamp `<skills-dir>/.pipeline-update.head` written by `pipeline-update` (no stamp ⇒ `no-install-stamp`). `UPSTREAM newer` ⇒ the stage adds one line to its final report telling the operator to run `pipeline-update` between stages. It never changes the exit code and never STOPs.
+**`UPSTREAM …`** is advisory, printed after the guard, just before the final verdict (so a STOP never writes its cache): at most one `git ls-remote` of the pipeline repo per 24h, throttled through `${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head` (a failed fetch is throttled too), with `PIPELINE_UPSTREAM_URL` overriding the URL (tests/mirrors). It compares that sha against the installed version — the HEAD of the pipeline clone holding this script's real path (canonical entries symlink into the consumer clone; not in such a clone ⇒ `not-a-clone`). `UPSTREAM newer` ⇒ the stage adds one line to its final report telling the operator to run `pipeline-update` between stages. It never changes the exit code and never STOPs.
 
 **`CARDS …`** = the card-invariant check (`scripts/check-cards.py`, read-only, python3 stdlib): on
 `impl`/`review`/`hunt` entry, when `.pipeline/<current feature>/tasks/*.md` exists, it executes the card
