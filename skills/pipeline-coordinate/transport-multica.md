@@ -184,8 +184,8 @@ repo=<the absolute path of the clone you just made> (the only field you fill in)
 preflight with all five fields; a STALE_DISPATCH line means stop with zero writes and say so in one
 comment here. You are the pipeline IMPL node only: implement exactly ONE card, never edit
 spec-paths, never review, never merge, never create or assign issues. The deliverable is in Git —
-the code on feat/<feature> and the stage's ONE metadata commit on trunk with its journal entry —
-not in this thread." Record the returned `id` and `identifier`. A create error (including a
+the code on feat/<feature> and the stage's final metadata commit on trunk with its journal entry
+— not in this thread." Record the returned `id` and `identifier`. A create error (including a
 duplicate refusal) ⇒ stop; never retry with `--allow-duplicate` on your own. Writes to the issue
 after the create: §Write ban.
 
