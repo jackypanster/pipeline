@@ -57,6 +57,10 @@ Each a command; any miss = stop and ask.
   against an agent whose instructions forbid merging, forbid the feature-mode metadata push, or
   allow dispatching.
 
+On Profile B the reviewer pushes metadata to trunk and merges: push access and the forge token on
+its runtime host are operator setup; a missing one surfaces as a run with no new journal entry
+(STOP), never as a coordinator workaround.
+
 ### send (review dispatch) — one dispatch = ONE NEW issue
 
 Profile A: take the edge-triggered verdict snapshot BEFORE dispatch exactly as SKILL.md Profile A
@@ -139,10 +143,11 @@ issue `<identifier>` (web UI, mobile, or their own CLI). The write ban already f
 so nothing extra freezes; while the gate is armed the forge's PR state is the ONLY wait instrument,
 exactly as SKILL.md step 6 says. On merge, clean up and report as usual.
 
-On Profile B, while the gate is armed the forge's PR state stays the only wait instrument. After the
-merge, the reviewer's post-merge metadata commit (`review→done · completed`, cards `done`) must
-appear on trunk: pull and verify it before reporting the feature complete; its absence ⇒ STOP and
-report.
+On Profile B, while the gate is armed the forge's PR state stays the only wait instrument. Once the
+PR reads merged, the reviewer's post-merge metadata commit (`review→done · completed`, cards
+`done`) must appear on trunk: sample the merging run (`issue runs`, read-only) until it reads
+`completed`, then pull and verify the commit before reporting the feature complete; a `completed`
+merge run without it ⇒ STOP and report.
 
 ### Reviewer failover
 
