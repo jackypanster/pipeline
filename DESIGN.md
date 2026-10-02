@@ -146,8 +146,8 @@ meta-PR (the CONTRACT §Self-improvement lane): the review is still `pipeline-re
 mode, the verdict still lands on the PR, and the human-confirm + reviewer-only squash-merge gate is
 untouched — the relay automates the TYPING between verdicts under capped rounds and fail-closed
 halts, never a review judgment and never a merge. It is carried by the `pipeline-coordinate`
-playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes and reading
-verdicts off the PR — NOT by a driver script (one span, one implementation). The span
+playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes (the reviewer
+optionally as a multica issue) and reading verdicts off the PR — NOT by a driver script (one span, one implementation). The span
 begins and ends at a human read and is never chained to anything else. (2) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
 a coordinator MAY type every NORMAL stage handoff — v1 is a CC session running the

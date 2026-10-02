@@ -14,7 +14,7 @@ behind each command is a swappable `roles.yaml` slot.
 - `CONTRACT.md` — frozen protocol every command follows: shim loop · state machine · anti-cheat · handoff · forge adapter.
 - `roles.yaml` — per-target-repo slot→skill bindings (copy into the target repo's `.pipeline/`).
 - `skills/pipeline-*/SKILL.md` — the 7 command shims.
-- `skills/pipeline-coordinate/SKILL.md` — playbook (**not** a stage, no `roles.yaml` slot): a CC session coordinates Pi/Codex panes through a feature or meta-PR (see §Operating modes). Needs `herdr` + `python3` ≥3.9 — see §Verify + supplement dependencies.
+- `skills/pipeline-coordinate/SKILL.md` — playbook (**not** a stage, no `roles.yaml` slot): a CC session coordinates Pi/Codex panes through a feature or meta-PR (see §Operating modes). Needs `herdr` + `python3` ≥3.9 — see §Verify + supplement dependencies. Opt-in, meta-PRs only: the reviewer role may instead be reached through multica issues (`transport-multica.md`; human confirm = a direct `go` comment on the review issue) — the Herdr / human-relayed paths keep working without it.
 - `skills/pipeline-install/SKILL.md` — maintenance command (**not** a stage): stand up the shims on a runtime + bind a target project's `roles.yaml`, by executing README §Install. The setup-side twin of `pipeline-update`. See [§Install](#install-agent-execute-this-it-is-written-for-you-not-a-human).
 - `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update-agent-execute-this-on-the-machine-being-updated).
 
@@ -27,7 +27,7 @@ behind each command is a swappable `roles.yaml` slot.
 | pipeline-review | check | diff/PR → review + merge (only stage that merges) |
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
-| pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR — see §Operating modes |
+| pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR (opt-in: reviewer via multica issues, meta-PRs only) — see §Operating modes |
 | pipeline-preflight | (helper script, not a stage) | deterministic executor of shim steps 1/3/4 + the stale-dispatch guard + the card-invariant check (impl/review/hunt entry, task 6b); stage skills call `scripts/preflight.sh` at step 0 — never invoke by hand; set `PIPELINE_SKILL_DIRS` per runtime for a verified install check, otherwise exit 3 and the stage verifies it |
 
 ## Operating modes — the three-track SOP (base decision 2026-07-08; duty track added 2026-08-19)
@@ -46,7 +46,9 @@ stages; Pi implements; Codex reviews — three roles on three different models s
 own work), routing ONLY on the journal tail, halting fail-closed on anything else. Judgment stays
 where it was: stages do their own work, review still verdicts, and the **merge confirm is still a
 direct operator token in the same reviewer session** — the coordinator has no merge path and the
-GO-gate rejects relayed tokens. (`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; see
+GO-gate rejects relayed tokens. (The playbook's opt-in multica reviewer transport — confirm = a
+direct `go` comment on the review issue — covers Profile A meta-PRs only, never this track.)
+(`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; see
 DESIGN.md §Provenance.)
 
 **Third track — duty mode (值守: queued timed re-entry of coordinated mode; pilot 2026-08-19,
@@ -247,6 +249,7 @@ before the first run that needs them, or the install reports green and the comma
 |---|---|---|---|
 | `gh` / `gitee-cli` | impl, improve, review, coordinate | only when the target repo has a forge | the forge's own CLI. Review degrades to a plain `git diff` without one (CONTRACT §Forge adapter); opening a PR does not — `pipeline-impl` step 4 falls back only on a missing **token**, and `pipeline-improve` step 5 has no CLI-less path |
 | `herdr` | pipeline-coordinate | only for coordinated runs (pane transport) | `https://herdr.dev` |
+| `multica` | pipeline-coordinate, pipeline-review | only when the reviewer transport is multica (opt-in) | `https://github.com/multica-ai/multica` |
 | `python3` ≥3.9 | pipeline-coordinate | only for coordinated runs (`scripts/watch-pane.py`, stdlib only) | base system package on macOS/Linux |
 
 **Brand names are install examples only.** The concrete agent/runtime/skill names in this Install

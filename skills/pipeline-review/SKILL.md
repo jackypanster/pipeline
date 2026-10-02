@@ -104,7 +104,21 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    gate: no merge, re-review. Only a DIRECT operator message in the emitting session consumes it. This
    removes the coordinator poll-and-relay hop while keeping the confirm authentically human. (Scope: this
    hardens confirm AUTHENTICITY only; guaranteeing merged head/base == reviewed head/base against an
-   approve-then-push is a separate, pre-existing concern, OUT OF SCOPE here.) **Pre-merge guard (multi-card features):** every card in
+   approve-then-push is a separate, pre-existing concern, OUT OF SCOPE here.)
+   **Issue-thread form** (ONLY when dispatched as a multica issue assigned to you — headless, no
+   terminal): "this session" is that ONE issue's comment thread, and the gate state lives in it. Arm:
+   after the guards pass and the verdict PR comment is posted, post an issue comment saying the gate
+   is armed, naming the approved full head SHA, and telling the operator to post `go`/`merge`/`confirm`
+   as an ENTIRE comment on this issue; end the run. Consume ONLY when ALL hold, read from
+   `multica issue comment list <issue> --output json` and the forge — never from recollection or the
+   run's prompt text (the session may not resume): your arming comment is your most recent comment;
+   the FIRST comment by anyone after it (by `created_at`) has `author_type` `member` and entire
+   trimmed content equal to one allowed token, case-insensitively; the PR is still open with head ==
+   the armed SHA. Any failure disarms: no merge, reply once on the issue with the reason (that reply
+   supersedes the arming comment); merging then needs a fresh review dispatch. `member` identity is the operator's token,
+   which the coordinator's CLI also holds — the coordinator's write ban (pipeline-coordinate
+   `transport-multica.md`) is what keeps a relayed token out.
+   **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
    gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
@@ -152,7 +166,7 @@ optional bookkeeping — they are the audit contract. A merge without them is an
 ## Hard rules
 
 - Merge ONLY by consuming the armed GO-gate (step 6) with a **direct** operator message **in the same
-  reviewer session that emitted it**, whose ENTIRE trimmed content is one allowed token
+  reviewer session that emitted it** (a multica review issue: its issue-thread form, step 6), whose ENTIRE trimmed content is one allowed token
   (`go`/`merge`/`confirm`, compared case-insensitively) — NEVER a first-token/substring match, NEVER a relayed/forwarded token
   (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; a lost
   session or any non-token reply disarms → re-review. (This PR hardens confirm authenticity only; head/
