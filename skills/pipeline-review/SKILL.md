@@ -109,15 +109,20 @@ only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature 
    terminal): "this session" is that ONE issue's comment thread, and the gate state lives in it. Arm:
    after the guards pass and the verdict PR comment is posted, post an issue comment saying the gate
    is armed, naming the approved full head SHA, and telling the operator to post `go`/`merge`/`confirm`
-   as an ENTIRE comment on this issue; end the run. Consume ONLY when ALL hold, read from
-   `multica issue comment list <issue> --output json` and the forge — never from recollection or the
-   run's prompt text (the session may not resume): your arming comment is your most recent comment;
-   the FIRST comment by anyone after it (by `created_at`) has `author_type` `member` and entire
-   trimmed content equal to one allowed token, case-insensitively; the PR is still open with head ==
-   the armed SHA. Any failure disarms: no merge, reply once on the issue with the reason (that reply
-   supersedes the arming comment); merging then needs a fresh review dispatch. `member` identity is the operator's token,
-   which the coordinator's CLI also holds — the coordinator's write ban (pipeline-coordinate
-   `transport-multica.md`) is what keeps a relayed token out.
+   as an ENTIRE comment on this issue; end the run. Consume ONLY when ALL hold, read from the forge
+   and ONE complete, unfolded read — `multica issue comment list <issue> --full --output json`, no
+   other mode flag (the default read folds a resolved thread to root + conclusion, hiding intervening
+   comments) — never from recollection or the run's prompt text (the session may not resume). An
+   INCOMPLETE read disarms: the command fails, prints a `Next … cursor` notice (more history than
+   returned), or lacks your arming comment. Order ALL returned comments — roots and replies alike —
+   by `created_at`; a tie involving the arming comment or the comment after it disarms. Then: your
+   arming comment is your most recent comment; the FIRST comment by anyone after it has `author_type`
+   `member` and entire trimmed content equal to one allowed token, case-insensitively; the PR is
+   still open with head == the armed SHA. Any failure disarms: no merge, reply once on the issue with
+   the reason (that reply supersedes the arming comment); merging then needs a fresh review dispatch.
+   `author_type: member` proves only that the operator's token wrote the comment — the coordinator's
+   CLI holds that token too, so the coordinator's write ban (pipeline-coordinate
+   `transport-multica.md`), not this check, is what keeps a relayed token out.
    **Pre-merge guard (multi-card features):** every card in
    the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
    do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
