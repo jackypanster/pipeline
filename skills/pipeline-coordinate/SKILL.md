@@ -183,10 +183,10 @@ repo outside the set, or no forge ⇒ STOP for the human and fall back to plain-
    dispatched head SHA — NECESSARY, never sufficient: the verdict also carries the reviewer's
    explicit decision (approve / changes requested) for that head. A status, dispatch, or relay
    comment is not the verdict even when it names the head; failing any condition ⇒ not your verdict:
-   do not route on it, and rejecting a candidate changes no other rule. The PR already carries
-   earlier verdict comments, so a count- or presence-based poll re-armed on re-dispatch returns the
-   OLD verdict and routes you on stale evidence. Never rely on an operator relay or a reviewer pane
-   write-back to wake you: git/the forge is the bus, panes are command transport.
+   do not route on it, and rejecting a candidate changes no other rule. After round 1 the PR already
+   carries earlier verdict comments, so a count- or presence-based poll re-armed on re-dispatch
+   returns the OLD verdict and routes you on stale evidence. Never rely on an operator relay or a
+   reviewer pane write-back to wake you: git/the forge is the bus, panes are command transport.
 5. **Relay loop** (the heart of the flow):
    - Verdict = changes requested → save it VERBATIM to a file; write a fix handoff for Pi: the
      verdict file path + per-finding evidence requirements + the standing constraints. Evidence is
