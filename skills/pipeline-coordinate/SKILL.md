@@ -41,10 +41,10 @@ The human is the fourth, final gate.
 
 ## Preflight (once per session)
 
-**Invocation names `review=multica:<agent>` (Profile A) or `impl=multica:<agent>` (Profile B)?**
-Then that role uses multica issues, not a Herdr pane: read `transport-multica.md` in this skill's
-base dir IN FULL before preflight — for the named role ONLY it replaces the parts that file lists;
-everything else binds unchanged. Not named ⇒ Herdr.
+**Invocation names `review=multica:<agent>` (either profile) or `impl=multica:<agent>`
+(Profile B)?** Then that role uses multica issues, not a Herdr pane: read `transport-multica.md`
+in this skill's base dir IN FULL before preflight — for the named role ONLY it replaces the parts
+that file lists; everything else binds unchanged. Not named ⇒ Herdr.
 
 1. `herdr pane list` — identify your OWN pane (exclude it from every dispatch), the Pi pane, and the
    Codex pane by agent + cwd. Exactly one pane per role; zero or many = stop and ask.

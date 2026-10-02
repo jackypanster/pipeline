@@ -4,16 +4,18 @@
 `pipeline-coordinate` invocation, never inferred; either may be used alone; absent ⇒ Herdr exactly
 as SKILL.md describes:
 
-- `review=multica:<agent name>` — REVIEWER role, Profile A (meta-PR flow) only. Replaces only
-  Preflight 1–3, send/readiness, and the merge-gate wording for the reviewer role.
+- `review=multica:<agent name>` — REVIEWER role, Profile A (meta-PR flow) AND Profile B (pipeline
+  feature flow). Replaces only Preflight 1–3, send/readiness, watch/wait, and the merge-gate wording
+  for the reviewer role, plus — on Profile B — Preflight 4's `doctor` (§Preflight 4 with a role on
+  multica).
 - `impl=multica:<agent name>` — IMPLEMENTER role, Profile B (pipeline feature flow) only. Replaces
   only Preflight 1–3, send/readiness, and watch for the implementer role, plus Preflight 4's
-  `doctor` (§Preflight 4 with the implementer on multica).
+  `doctor` (§Preflight 4 with a role on multica).
 
 Optional `multica-profile=<name>`: run EVERY `multica` command below as
-`multica --profile <name> …`. Profile A's implementer and Profile B's reviewer stay on Herdr / the
-existing paths; a selector named for the other profile ⇒ stop and ask. Every SKILL.md hard rule
-binds unchanged. Git and forge state stay the only truth.
+`multica --profile <name> …`. Profile A's implementer stays on Herdr / the existing paths;
+`impl=multica:` named on Profile A ⇒ stop and ask. Every SKILL.md hard rule binds unchanged. Git
+and forge state stay the only truth.
 
 ## Write ban (absolute, both roles)
 
@@ -26,9 +28,21 @@ uniformity and auditability: the next card, or a retry after a failed card, is a
 from a fresh observation. Read-only commands (`issue runs`, `issue get`, `issue comment list`) are
 allowed any time. Needing to abort a run ⇒ stop and ask the human.
 
-## Reviewer — `review=multica:<agent name>` (Profile A only)
+## Reviewer — `review=multica:<agent name>`
 
-### Reviewer preflight (replaces Preflight 1–3 for the reviewer; Pi and your pane still run them)
+Provenance (Profile B): 2026-10-02, a target repo's feature run, the reviewer dispatched as a
+multica issue in feature mode with the five-field envelope. On the v2 instructions it reviewed and
+posted an approval as PR and issue comments but refused the review artifact + journal commit
+("never push commits"), set the issue `blocked`, never armed the GO-gate; the journal tail did not
+move, so the coordinator's wait saw `completed` with no new journal entry and STOPPED — hence the
+journal-tail verdict and v3 below. With a narrow metadata-push exception in its instructions, a NEW
+issue for the same head ran end to end: clone into the empty working directory, `repo=` filled by
+the reviewer, stage preflight passed, the atomic outcome as ONE trunk commit
+(`review→review · completed`, the merge-confirmation marker as the handoff's first line), the
+verdict PR comment naming the full head SHA, the issue-thread GO-gate armed; the operator's `go` on
+the issue ⇒ squash-merge + the post-merge metadata commit (`review→done · completed`).
+
+### Reviewer preflight (replaces Preflight 1–3 for the reviewer; the other panes still run them)
 
 Each a command; any miss = stop and ask.
 
@@ -37,33 +51,50 @@ Each a command; any miss = stop and ask.
 - `multica runtime list --output json`: the entry whose `id` == that `runtime_id` has
   `status: online`.
 - **Model identity:** the agent's `model` is non-empty (empty = runtime default, unknown) and
-  DISTINCT from both the Pi pane's model and this coordinator session's model. Empty or duplicate ⇒
-  stop and ask the human to attest.
-- The agent's `instructions` contain the marker line `pipeline-review-agent v2` (§Setup) — guards
-  against an agent whose instructions forbid merging or allow dispatching.
+  DISTINCT from both the implementer's model (the Pi pane's, or the `impl=multica:` agent's) and
+  this coordinator session's model. Empty or duplicate ⇒ stop and ask the human to attest.
+- The agent's `instructions` contain the marker line `pipeline-review-agent v3` (§Setup) — guards
+  against an agent whose instructions forbid merging, forbid the feature-mode metadata push, or
+  allow dispatching.
 
 ### send (review dispatch) — one dispatch = ONE NEW issue
 
-Take the edge-triggered verdict snapshot BEFORE dispatch exactly as SKILL.md Profile A step 4. No
-per-send readiness check (the server queues); the Herdr send/readiness rules do not apply here.
-Description = the step-4 dispatch line in slashless prose (no slash command can be delivered — a
-preamble always precedes the text):
+Profile A: take the edge-triggered verdict snapshot BEFORE dispatch exactly as SKILL.md Profile A
+step 4. Profile B: build the five-field envelope from ONE fresh observation of the remote trunk
+exactly as SKILL.md Profile B requires; cannot build it ⇒ stop. No per-send readiness check (the
+server queues); the Herdr send/readiness rules do not apply here. Description = the dispatch line
+in slashless prose (no slash command can be delivered — a preamble always precedes the text):
 
     printf '%s\n' "<description>" | multica issue create --title "review <repo>#<n> @<short sha>" \
       --description-stdin --assignee-id <agent id> --output json
 
-`<description>`: "Read ~/.agents/skills/pipeline-review/SKILL.md in full and run it in meta-PR
-mode on <pr-url> — toolchain meta-PR, no .pipeline state. base=<b> head=<full sha>. Your working
-directory starts empty: clone the repo into it with the forge CLI and git fetch origin first.
-<two or three review axes>. Verdict as a PR comment ONLY. This dispatch is a multica issue-thread
-session: arm and consume the GO-gate in pipeline-review step 6's issue-thread form." Record the
-returned `id` and `identifier`. A create error (including a duplicate refusal) ⇒ stop; never retry
-with `--allow-duplicate` on your own. Writes to the issue after the create: §Write ban.
+**Profile A (meta-PR) form.** `<description>`: "Read ~/.agents/skills/pipeline-review/SKILL.md in
+full and run it in meta-PR mode on <pr-url> — toolchain meta-PR, no .pipeline state. base=<b>
+head=<full sha>. Your working directory starts empty: clone the repo into it with the forge CLI and
+git fetch origin first. <two or three review axes>. Verdict as a PR comment ONLY. This dispatch is a
+multica issue-thread session: arm and consume the GO-gate in pipeline-review step 6's issue-thread
+form."
+
+**Profile B (feature) form.** `<description>`: "Read ~/.agents/skills/pipeline-review/SKILL.md in
+full and run it in FEATURE mode (a target-repo feature PR with .pipeline state — not meta-PR mode)
+on <pr-url> for feature <f>. base=<trunk> head=<full PR head sha>. Your working directory starts
+empty: clone the repo into it and git fetch origin first. Dispatch envelope: branch=<b> feature=<f>
+expected_seq=<N> expected_commit=<full sha>, and repo=<the absolute path of the clone you just
+made> (the only field you fill in). Run the stage preflight with all five fields; a STALE_DISPATCH
+line means stop with zero writes and say so in one comment here. <two or three review axes>.
+Publish the atomic review outcome per CONTRACT — ONE commit on trunk — and post the verdict as a PR
+comment naming the full head SHA. This dispatch is a multica issue-thread session: arm and consume
+the GO-gate in pipeline-review step 6's issue-thread form."
+
+Either form: record the returned `id` and `identifier`. A create error (including a duplicate
+refusal) ⇒ stop; never retry with `--allow-duplicate` on your own. Writes to the issue after the
+create: §Write ban.
 
 ### wait (reviewer)
 
-The forge verdict watcher (SKILL.md step 4) remains THE wait instrument. Each poll also takes ONE
-sample of `multica issue runs <issue> --output json` and reads the run with the latest `created_at`:
+**Profile A (meta-PR) form.** The forge verdict watcher (SKILL.md step 4) remains THE wait
+instrument. Each poll also takes ONE sample of `multica issue runs <issue> --output json` and reads
+the run with the latest `created_at`:
 
 - `failed`/`cancelled` ⇒ STOP, report its `error` (reviewer death; never auto-redispatch — the
   server may itself retry up to the run's `max_attempts`; that changes nothing for you).
@@ -85,12 +116,33 @@ CLI error still STOP exactly as written; rejection never resets or extends anyth
 A run status is never completion evidence by itself — the verdict PR comment bound to the dispatched
 head SHA is.
 
+**Profile B (feature) form.** The remote journal tail is THE wait instrument: the verdict is the
+tail at seq `expected_seq + 1` with one of the review transition forms of CONTRACT §Coordinated
+mode — `review→review · completed` whose handoff's first line after `>>> NEXT` is exactly
+`Await human-direct merge confirmation in this reviewer session.` (approved; gate armed),
+`review→impl · failed`, or `review→hunt · blocked`. A PR comment or issue comment alone is NOT the
+verdict here, even an explicit approval naming the head (the first dispatch in the provenance note)
+— route only on the journal. Each poll takes the same ONE run sample with the same STOP rules:
+`failed`/`cancelled`; `completed` with no new journal entry; still `queued` five minutes after the
+create; a CLI error or unparsable output. The watcher rule of §wait (implementer) — report EVERY
+terminal state and the watcher's own death — binds here too. A run status is never completion
+evidence by itself — the new journal tail is.
+
+**Re-review (Profile B).** After `review→impl · failed` the route is the journal's: impl fixes the
+named card, then a fresh review. Every review dispatch is a NEW issue built from a fresh
+observation (§Write ban).
+
 ### Merge gate
 
 On an approved verdict, tell the human: post `go` (or `merge`/`confirm`) as the ENTIRE comment on
 issue `<identifier>` (web UI, mobile, or their own CLI). The write ban already forbids every write,
 so nothing extra freezes; while the gate is armed the forge's PR state is the ONLY wait instrument,
 exactly as SKILL.md step 6 says. On merge, clean up and report as usual.
+
+On Profile B, while the gate is armed the forge's PR state stays the only wait instrument. After the
+merge, the reviewer's post-merge metadata commit (`review→done · completed`, cards `done`) must
+appear on trunk: pull and verify it before reporting the feature complete; its absence ⇒ STOP and
+report.
 
 ### Reviewer failover
 
@@ -117,14 +169,18 @@ dispatch history.
 Canonical instructions:
 
 ```text
-pipeline-review-agent v2
+pipeline-review-agent v3
 You are a pipeline REVIEWER node. Act only on an issue whose description tells you to run
 pipeline-review; otherwise reply that it is out of scope and stop. Read the SKILL.md path named in
 the issue in full and follow it exactly. If the named PR is not open, or its head is not the
 dispatched head, say so in one issue comment and stop. Review only: never modify product code or
-tests, never push commits. Merge ONLY by consuming pipeline-review's GO-gate in its issue-thread
-form. Never create or assign issues and never @mention another agent (CONTRACT: a stage node never
-dispatches). Change issue status only on the ONE issue assigned to you, and only when its
+tests. Never push commits, with ONE exception: when the issue dispatches pipeline-review in FEATURE
+mode (a target-repo feature PR with .pipeline state), push pipeline-review's own metadata commits to
+the trunk branch exactly as that SKILL.md prescribes — only files under .pipeline/ (reviews/,
+journal.md, card status and notes under tasks/, current.json) — never product code, never tests,
+never any other branch, never a force-push. Merge ONLY by consuming pipeline-review's GO-gate in its
+issue-thread form. Never create or assign issues and never @mention another agent (CONTRACT: a stage
+node never dispatches). Change issue status only on the ONE issue assigned to you, and only when its
 description tells you to run pipeline-review; leave an out-of-scope issue untouched and never change
 any other issue. When you start the review, set the issue to in_progress. On an approve verdict, set
 in_review BEFORE posting the comment that arms the GO-gate; while the gate is armed, change nothing
@@ -137,6 +193,7 @@ you actually ran.
 ```
 
 Apply: `multica agent update <agent id> --instructions "$(cat <file>)"`, then rerun the preflight.
+An agent still on v2 fails the marker check by design: the operator re-applies this block.
 Run transcripts, including tool inputs and outputs, are stored on the multica server.
 
 *Accepted limitation:* token provenance is not mechanically enforced — the operator's token is also
@@ -151,7 +208,7 @@ through a multica agent (pi runtime). Two cards ran green, one issue per card, o
 journal tail plus `multica issue runs`. A detached background poll hung silently during the first
 wait (the journal had advanced; nothing woke the coordinator) — hence the watcher rule below.
 
-### Implementer preflight (replaces Preflight 1–3 for Pi; Codex and your pane still run them)
+### Implementer preflight (replaces Preflight 1–3 for Pi; the other panes still run them)
 
 Each a command; any miss = stop and ask.
 
@@ -160,8 +217,8 @@ Each a command; any miss = stop and ask.
 - `multica runtime list --output json`: the entry whose `id` == that `runtime_id` has
   `status: online`.
 - **Model identity:** the agent's `model` is non-empty (empty = runtime default, unknown) and
-  DISTINCT from both the Codex pane's model and this coordinator session's model. Empty or
-  duplicate ⇒ stop and ask the human to attest.
+  DISTINCT from both the reviewer's model (the Codex pane's, or the `review=multica:` agent's) and
+  this coordinator session's model. Empty or duplicate ⇒ stop and ask the human to attest.
 - No instruction marker is required: a generic executor instruction set was observed to work, and
   the dispatch description carries the role limits.
 
@@ -214,26 +271,6 @@ completion evidence by itself — the new journal tail is. After completion your
 unchanged (SKILL.md hard rule 3): rerun the card's verify, check the freeze diff and diff scope
 yourself.
 
-### Preflight 4 with the implementer on multica
-
-`pipeline-driver`'s `coordinate.sh doctor` resolves a Herdr pane for all three roles and has no
-multica mode, so it cannot pass when the implementer has no pane. With `impl=multica:` run its
-read-only checks yourself instead, exempting ONLY the implementer's pane and clone — every other
-`doctor` guard still binds; any miss = stop:
-
-- The observer, CC and Codex clones are INDEPENDENT: each is its own repo top-level
-  (`git -C <clone> rev-parse --show-toplevel` is the clone itself) and no two share a git
-  common-dir (`git -C <clone> rev-parse --path-format=absolute --git-common-dir`) — one shared
-  clone, subdirectories of it, or linked worktrees fail.
-- Those three clones name the SAME remote (`remote.origin.url`), and each is checked out on the
-  trunk branch.
-- `git fetch` succeeds in the observer clone and `origin/<trunk>` resolves.
-- `.pipeline/<feature>/control.json` at the trunk head carries the complete coordinated tuple.
-- The journal tail parses: seq + its `>>> NEXT` first line.
-- The forge CLI works.
-
-A multica-aware `doctor` is a separate `pipeline-driver` change.
-
 ### Implementer failover and fallback
 
 Quota exhausted or repeated `failed` ⇒ STOP. The operator may name another registered agent; rerun
@@ -244,3 +281,24 @@ re-invokes `pipeline-coordinate` WITHOUT `impl=multica:…`: a Herdr Pi pane, or
 handoff. Leave a created-but-unrun impl issue alone (write ban) and name it in the stop report so
 the operator can cancel it; a late run against a moved trunk is refused by the stale-dispatch guard
 with zero writes. multica is an optional transport, never a pipeline dependency.
+
+## Preflight 4 with a role on multica (Profile B)
+
+`pipeline-driver`'s `coordinate.sh doctor` resolves a Herdr pane for all three roles and has no
+multica mode, so it cannot pass when ANY role has no pane. With `review=multica:` or `impl=multica:`
+on Profile B run its read-only checks yourself instead, exempting ONLY the pane and clone of each
+role that is on multica — every other `doctor` guard still binds; any miss = stop:
+
+- The clones that stay local — the observer and CC clones always, plus the Pi or Codex clone when
+  that role stays on Herdr — are INDEPENDENT: each is its own repo top-level
+  (`git -C <clone> rev-parse --show-toplevel` is the clone itself) and no two share a git
+  common-dir (`git -C <clone> rev-parse --path-format=absolute --git-common-dir`) — one shared
+  clone, subdirectories of it, or linked worktrees fail.
+- Those clones name the SAME remote (`remote.origin.url`), and each is checked out on the trunk
+  branch.
+- `git fetch` succeeds in the observer clone and `origin/<trunk>` resolves.
+- `.pipeline/<feature>/control.json` at the trunk head carries the complete coordinated tuple.
+- The journal tail parses: seq + its `>>> NEXT` first line.
+- The forge CLI works.
+
+A multica-aware `doctor` is a separate `pipeline-driver` change.
