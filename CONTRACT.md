@@ -330,8 +330,8 @@ CC session running the `pipeline-coordinate` playbook skill** (this repo; `pipel
 `coordinate.sh` is a read-only `doctor`/`status` preflight, not a dispatcher — history in DESIGN.md
 §Provenance). The coordinator observes remote Git as the only business truth, routes on the journal
 tail's transition forms below, and delivers the next `pipeline-*` command to the right agent — typed
-into its pane or, for the reviewer role under the playbook's multica transport, as an issue assigned
-to it. As COORDINATOR it writes no target artifacts and no journal entries
+into its pane or, for a role under the playbook's multica transport, as an issue assigned to it.
+As COORDINATOR it writes no target artifacts and no journal entries
 and performs no stage work belonging
 to another role; the CC-playbook session may separately execute the CC-role stages (arch/task/hunt)
 under their own write-sets — the three-role/three-model separation (CC coordinates+reasons, Pi
