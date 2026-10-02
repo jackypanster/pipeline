@@ -41,6 +41,11 @@ The human is the fourth, final gate.
 
 ## Preflight (once per session)
 
+**Invocation names `review=multica:<agent>`?** Then the REVIEWER role uses multica issues, not a
+Herdr pane: read `transport-multica.md` in this skill's base dir IN FULL before preflight — it
+replaces preflight 1–3, send/readiness, and the merge-gate wording for the reviewer role ONLY;
+everything else binds unchanged. Not named ⇒ Herdr.
+
 1. `herdr pane list` — identify your OWN pane (exclude it from every dispatch), the Pi pane, and the
    Codex pane by agent + cwd. Exactly one pane per role; zero or many = stop and ask.
 2. `herdr agent explain <pane> --json` per role pane — require an AUTHORITATIVE state source
