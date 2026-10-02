@@ -60,6 +60,16 @@ sample of `multica issue runs <issue> --output json` and reads the run with the 
 - still `queued` five minutes after the create ⇒ the runtime is not claiming ⇒ STOP.
 - a CLI error or unparsable output ⇒ fail closed, STOP.
 
+On this transport the verdict comment may have no distinct author: the reviewer posts under the
+forge account of its runtime's host, which may be the operator's own — the same author as the PR and
+as your own comments. SKILL.md step 4's author filter therefore cannot reliably identify the
+reviewer here; use it only to exclude bots. NEWER than the pre-dispatch snapshot, non-bot, and
+naming the dispatched full head SHA are NECESSARY conditions, never sufficient: the verdict also
+carries the reviewer's explicit decision (approve / changes requested) for that head. A status or
+dispatch comment is not the verdict even when it names the head. A rejected candidate leaves every
+rule above in force — `failed`/`cancelled`, `completed` with no verdict, `queued` five minutes, and
+CLI error still STOP exactly as written; rejection never resets or extends anything.
+
 A run status is never completion evidence by itself — the verdict PR comment bound to the dispatched
 head SHA is.
 
