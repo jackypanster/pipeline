@@ -217,10 +217,17 @@ yourself.
 ### Preflight 4 with the implementer on multica
 
 `pipeline-driver`'s `coordinate.sh doctor` resolves a Herdr pane for all three roles and has no
-multica mode, so it cannot pass when the implementer has no pane. With `impl=multica:` run these
-read-only checks yourself instead; any miss = stop:
+multica mode, so it cannot pass when the implementer has no pane. With `impl=multica:` run its
+read-only checks yourself instead, exempting ONLY the implementer's pane and clone — every other
+`doctor` guard still binds; any miss = stop:
 
-- `git fetch` succeeds in an observer clone this session may fetch in.
+- The observer, CC and Codex clones are INDEPENDENT: each is its own repo top-level
+  (`git -C <clone> rev-parse --show-toplevel` is the clone itself) and no two share a git
+  common-dir (`git -C <clone> rev-parse --path-format=absolute --git-common-dir`) — one shared
+  clone, subdirectories of it, or linked worktrees fail.
+- Those three clones name the SAME remote (`remote.origin.url`), and each is checked out on the
+  trunk branch.
+- `git fetch` succeeds in the observer clone and `origin/<trunk>` resolves.
 - `.pipeline/<feature>/control.json` at the trunk head carries the complete coordinated tuple.
 - The journal tail parses: seq + its `>>> NEXT` first line.
 - The forge CLI works.
