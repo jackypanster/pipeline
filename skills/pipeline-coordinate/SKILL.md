@@ -177,13 +177,16 @@ repo outside the set, or no forge ⇒ STOP for the human and fall back to plain-
    write-back is redundant and is often blocked by the unsent-text guard anyway). Arm the GO-gate;
    merge ONLY on a direct human token in this session.`
    **Immediately after dispatching, arm your own verdict watcher — EDGE-TRIGGERED per dispatch:**
-   snapshot the latest matching comment's ID/timestamp (filter by the reviewer's author; forge bots
-   comment too) IMMEDIATELY BEFORE the dispatch, and accept only a comment NEWER than the snapshot —
-   after round 1 the same author already has verdict comments on the PR, and a count- or
-   presence-based poll re-armed on re-dispatch returns the OLD verdict and routes you on stale
-   evidence. Bind the accepted verdict to the head SHA you dispatched (the verdict text names its
-   reviewed head; mismatch = not your verdict). Never rely on an operator relay or a reviewer pane
-   write-back to wake you: git/the forge is the bus, panes are command transport.
+   snapshot the latest NON-BOT comment's ID/timestamp IMMEDIATELY BEFORE the dispatch; the author
+   filter excludes bots only and cannot identify the reviewer (reviewer, operator, and you may share
+   one forge account). Accept only a comment NEWER than the snapshot, non-bot, and naming the
+   dispatched head SHA — NECESSARY, never sufficient: the verdict also carries the reviewer's
+   explicit decision (approve / changes requested) for that head. A status, dispatch, or relay
+   comment is not the verdict even when it names the head; failing any condition ⇒ not your verdict:
+   do not route on it, and rejecting a candidate changes no other rule. After round 1 the PR already
+   carries earlier verdict comments, so a count- or presence-based poll re-armed on re-dispatch
+   returns the OLD verdict and routes you on stale evidence. Never rely on an operator relay or a
+   reviewer pane write-back to wake you: git/the forge is the bus, panes are command transport.
 5. **Relay loop** (the heart of the flow):
    - Verdict = changes requested → save it VERBATIM to a file; write a fix handoff for Pi: the
      verdict file path + per-finding evidence requirements + the standing constraints. Evidence is
