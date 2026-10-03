@@ -147,7 +147,7 @@ mode, the verdict still lands on the PR, and the human-confirm + reviewer-only s
 untouched — the relay automates the TYPING between verdicts under capped rounds and fail-closed
 halts, never a review judgment and never a merge. It is carried by the `pipeline-coordinate`
 playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes (the reviewer
-optionally as a multica issue) and reading verdicts off the PR
+as a Herdr pane or a multica issue) and reading verdicts off the PR
 — NOT by a driver script (one span, one implementation). The span
 begins and ends at a human read and is never chained to anything else. (2) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
 (`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
@@ -225,6 +225,15 @@ reasons live here, grouped by CONTRACT section.
   and rejected: pipeline-driver PR #14 closed unmerged; the pivot is recorded in coordinator-design.md
   v1.3 §25, pinned at <https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md>. `coordinate.sh` ships only the read-only `doctor`/`status`
   preflight.
+- **pipeline-coordinate — multica as the configured default transport (2026-10-03).** The operator
+  ran both roles over multica on every run; retyping the selectors was friction, and a forgotten one
+  silently landed the role on Herdr. Hence resolution invocation → operator machine file
+  (`~/.config/pipeline/transport`) → Herdr. The binding lives on the machine, not in this repo: the
+  repo stays machine- and model-agnostic while the agents and the models behind them change
+  continuously. An outage still STOPS instead of failing over: the merge-confirm location differs
+  between transports (issue comment vs reviewer terminal), and a created-but-unclaimed issue may run
+  late and duplicate the fallback path — so the operator re-invokes with `review=herdr` /
+  `impl=herdr`.
 - **§The coordinator role is ASSIGNED.** Field-observed 2026-08-07: a second implementer session, handed
   an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing into each
   other's panes is the failure this forecloses. It is the node-side complement to the playbook's
