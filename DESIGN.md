@@ -235,8 +235,9 @@ reasons live here, grouped by CONTRACT section.
   late and duplicate the fallback path — so the operator re-invokes with `review=herdr` /
   `impl=herdr`. The implementer transport was extended to Profile A the same day. Because a remote
   implementer cannot share a local worktree, the handoff travels as the issue description and the
-  deliverable as a pushed topic branch. Verification therefore moves from before-push to before-PR,
-  which keeps unverified work out of any PR and off trunk.
+  deliverable as a pushed topic branch. The implementer pushes to a delivery ref (`impl/<branch>`)
+  and the coordinator promotes only a verified commit to the PR ref: a PR already open during fix
+  rounds would otherwise receive unverified commits (review finding, PR #93).
 - **§The coordinator role is ASSIGNED.** Field-observed 2026-08-07: a second implementer session, handed
   an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing into each
   other's panes is the failure this forecloses. It is the node-side complement to the playbook's
