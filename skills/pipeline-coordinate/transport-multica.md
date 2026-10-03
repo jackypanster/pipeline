@@ -61,6 +61,14 @@ the reviewer, stage preflight passed, the atomic outcome as ONE trunk commit
 verdict PR comment naming the full head SHA, the issue-thread GO-gate armed; the operator's `go` on
 the issue ⇒ squash-merge + the post-merge metadata commit (`review→done · completed`).
 
+Provenance (cd into the clone): 2026-10-03, a second target-repo feature run. The Profile B form
+above, then without its "cd INTO the clone" sentence, ended with zero writes — the reviewer cloned
+into a subdirectory but ran the stage preflight from the parent working directory
+(`PREFLIGHT STOP not-a-git-repo`; `repo=` names the clone, it does not change directory), set the
+issue `blocked`, and the coordinator's wait STOPPED on `completed` with no new journal entry. A NEW
+issue carrying the sentence ran end to end. The implementer form carries the same sentence
+preventively (its one observed run on that feature did not hit it).
+
 ### Reviewer preflight (replaces Preflight 1–3 for the reviewer; the other panes still run them)
 
 Each a command; any miss = stop and ask.
@@ -101,7 +109,9 @@ form."
 **Profile B (feature) form.** `<description>`: "Read ~/.agents/skills/pipeline-review/SKILL.md in
 full and run it in FEATURE mode (a target-repo feature PR with .pipeline state — not meta-PR mode)
 on <pr-url> for feature <f>. base=<trunk> head=<full PR head sha>. Your working directory starts
-empty: clone the repo into it and git fetch origin first. Dispatch envelope: branch=<b> feature=<f>
+empty: clone the repo into it and git fetch origin first, then cd INTO the clone — run every stage
+command, the stage preflight included, with the clone as the current directory (repo= does not
+select the execution directory). Dispatch envelope: branch=<b> feature=<f>
 expected_seq=<N> expected_commit=<full sha>, and repo=<the absolute path of the clone you just
 made> (the only field you fill in). Run the stage preflight with all five fields; a STALE_DISPATCH
 line means stop with zero writes and say so in one comment here. <two or three review axes>.
@@ -295,7 +305,9 @@ server queues); the Herdr send/readiness rules do not apply here.
 
 `<description>` (slashless prose): "Read ~/.agents/skills/pipeline-impl/SKILL.md in full and run
 that stage exactly. Your working directory starts empty: clone the repo into it and git fetch origin
-first. Dispatch envelope: branch=<b> feature=<f> expected_seq=<N> expected_commit=<full sha>, and
+first, then cd INTO the clone — run every stage command, the stage preflight included, with the
+clone as the current directory (repo= does not select the execution directory). Dispatch envelope:
+branch=<b> feature=<f> expected_seq=<N> expected_commit=<full sha>, and
 repo=<the absolute path of the clone you just made> (the only field you fill in). Run the stage
 preflight with all five fields; a STALE_DISPATCH line means stop with zero writes and say so in one
 comment here. You are the pipeline IMPL node only: implement exactly ONE card, never edit
