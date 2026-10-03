@@ -146,7 +146,7 @@ meta-PR (the CONTRACT §Self-improvement lane): the review is still `pipeline-re
 mode, the verdict still lands on the PR, and the human-confirm + reviewer-only squash-merge gate is
 untouched — the relay automates the TYPING between verdicts under capped rounds and fail-closed
 halts, never a review judgment and never a merge. It is carried by the `pipeline-coordinate`
-playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes (the reviewer
+playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes (either role
 as a Herdr pane or a multica issue) and reading verdicts off the PR
 — NOT by a driver script (one span, one implementation). The span
 begins and ends at a human read and is never chained to anything else. (2) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
@@ -233,7 +233,10 @@ reasons live here, grouped by CONTRACT section.
   continuously. An outage still STOPS instead of failing over: the merge-confirm location differs
   between transports (issue comment vs reviewer terminal), and a created-but-unclaimed issue may run
   late and duplicate the fallback path — so the operator re-invokes with `review=herdr` /
-  `impl=herdr`.
+  `impl=herdr`. The implementer transport was extended to Profile A the same day. Because a remote
+  implementer cannot share a local worktree, the handoff travels as the issue description and the
+  deliverable as a pushed topic branch. Verification therefore moves from before-push to before-PR,
+  which keeps unverified work out of any PR and off trunk.
 - **§The coordinator role is ASSIGNED.** Field-observed 2026-08-07: a second implementer session, handed
   an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing into each
   other's panes is the failure this forecloses. It is the node-side complement to the playbook's

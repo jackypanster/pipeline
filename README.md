@@ -14,7 +14,7 @@ behind each command is a swappable `roles.yaml` slot.
 - `CONTRACT.md` — frozen protocol every command follows: shim loop · state machine · anti-cheat · handoff · forge adapter.
 - `roles.yaml` — per-target-repo slot→skill bindings (copy into the target repo's `.pipeline/`).
 - `skills/pipeline-*/SKILL.md` — the 7 command shims.
-- `skills/pipeline-coordinate/SKILL.md` — playbook (**not** a stage, no `roles.yaml` slot): a CC session coordinates Pi/Codex panes through a feature or meta-PR (see §Operating modes). Needs `herdr` + `python3` ≥3.9 — see §Verify + supplement dependencies. Meta-PRs and coordinated features: the reviewer role is reached through multica issues by default when the operator's `~/.config/pipeline/transport` names it, or the invocation does (`review=herdr` overrides; `transport-multica.md`; human confirm = a direct `go` comment on the review issue) — the Herdr / human-relayed paths remain the fallback and work without it. Profile B features only: the implementer role likewise (`impl=multica:<agent>` in that file or the invocation; `impl=herdr` overrides; same file).
+- `skills/pipeline-coordinate/SKILL.md` — playbook (**not** a stage, no `roles.yaml` slot): a CC session coordinates Pi/Codex panes through a feature or meta-PR (see §Operating modes). Needs `herdr` + `python3` ≥3.9 — see §Verify + supplement dependencies. Meta-PRs and coordinated features: the reviewer role is reached through multica issues by default when the operator's `~/.config/pipeline/transport` names it, or the invocation does (`review=herdr` overrides; `transport-multica.md`; human confirm = a direct `go` comment on the review issue) — the Herdr / human-relayed paths remain the fallback and work without it. The implementer role likewise on Profile A meta-PRs and the feature track (`impl=multica:<agent>` in that file or the invocation; `impl=herdr` overrides; same file).
 - `skills/pipeline-install/SKILL.md` — maintenance command (**not** a stage): stand up the shims on a runtime + bind a target project's `roles.yaml`, by executing README §Install. The setup-side twin of `pipeline-update`. See [§Install](#install-agent-execute-this-it-is-written-for-you-not-a-human).
 - `skills/pipeline-update/SKILL.md` — maintenance command (**not** a stage): pull the latest shims from GitHub onto this runtime. See [§Update](#update-agent-execute-this-on-the-machine-being-updated).
 
@@ -27,7 +27,7 @@ behind each command is a swappable `roles.yaml` slot.
 | pipeline-review | check | diff/PR → review + merge (only stage that merges) |
 | pipeline-hunt | hunt | blocked card → root cause → re-route |
 | pipeline-improve | think | skill gap → reviewed PR on THIS repo (never self-edits, never auto-merges) |
-| pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR (multica issues by default when `~/.config/pipeline/transport` or the invocation names them: reviewer on meta-PRs and feature track, implementer on feature track only; Herdr / human-relayed fallback) — see §Operating modes |
+| pipeline-coordinate | (playbook, not a stage) | a CC session coordinates Pi/Codex panes through a feature or meta-PR (multica issues by default when `~/.config/pipeline/transport` or the invocation names them: reviewer and implementer on meta-PRs and the feature track; Herdr / human-relayed fallback) — see §Operating modes |
 | pipeline-preflight | (helper script, not a stage) | deterministic executor of shim steps 1/3/4 + the stale-dispatch guard + the card-invariant check (impl/review/hunt entry, task 6b); stage skills call `scripts/preflight.sh` at step 0 — never invoke by hand; set `PIPELINE_SKILL_DIRS` per runtime for a verified install check, otherwise exit 3 and the stage verifies it |
 
 ## Operating modes — the three-track SOP (base decision 2026-07-08; duty track added 2026-08-19)
@@ -48,9 +48,9 @@ where it was: stages do their own work, review still verdicts, and the **merge c
 direct operator token in the same reviewer session** — the coordinator has no merge path and the
 GO-gate rejects relayed tokens. (The playbook's multica reviewer transport — confirm = a direct
 `go` comment on the review issue — covers Profile A meta-PRs AND this track; the multica IMPLEMENTER
-transport — `impl=multica:<agent>` — covers this track only. Either is the default when the
-operator's `~/.config/pipeline/transport` or the invocation names it; Herdr / human-relayed paths
-remain the fallback and work without it.)
+transport — `impl=multica:<agent>` — covers Profile A meta-PRs and this track as well. Either is
+the default when the operator's `~/.config/pipeline/transport` or the invocation names it; Herdr /
+human-relayed paths remain the fallback and work without it.)
 (`pipeline-driver`'s `coordinate.sh` ships read-only `doctor`/`status` preflight only; see
 DESIGN.md §Provenance.)
 

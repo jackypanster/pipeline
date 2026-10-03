@@ -8,15 +8,17 @@ either may be used alone; unresolved ⇒ Herdr exactly as SKILL.md describes:
   feature flow). Replaces only Preflight 1–3, send/readiness, watch/wait, and the merge-gate wording
   for the reviewer role, plus — on Profile B — Preflight 4's `doctor` (§Preflight 4 with a role on
   multica).
-- `impl=multica:<agent name>` — IMPLEMENTER role, Profile B (pipeline feature flow) only. Replaces
-  only Preflight 1–3, send/readiness, and watch for the implementer role, plus Preflight 4's
-  `doctor` (§Preflight 4 with a role on multica).
+- `impl=multica:<agent name>` — IMPLEMENTER role, Profile A (meta-PR flow) AND Profile B (pipeline
+  feature flow). Replaces only Preflight 1–3, send/readiness, and watch for the implementer role,
+  plus — on Profile B — Preflight 4's `doctor` (§Preflight 4 with a role on multica). On Profile A
+  it additionally replaces, for the implementer role only: the handoff carrier and the local worktree
+  of SKILL.md Profile A step 1; the step 2 dispatch and watch; the push ordering of step 3 (see
+  §Verify, PR, and fix rounds); the fix-handoff carrier of step 5. Profile B's replaced parts stay as
+  written.
 
 Optional `multica-profile=<name>`: run EVERY `multica` command below as
-`multica --profile <name> …`. Profile A's implementer stays on Herdr / the existing paths: an
-INVOCATION-named `impl=multica:` on Profile A ⇒ stop and ask; a FILE-sourced one simply does not
-apply there (no stop — say so at preflight). Every SKILL.md hard rule binds unchanged. Git and forge
-state stay the only truth.
+`multica --profile <name> …`. Every SKILL.md hard rule binds unchanged. Git and forge state stay the
+only truth.
 
 ## Resolution (each role, and `multica-profile`)
 
@@ -224,13 +226,18 @@ Run transcripts, including tool inputs and outputs, are stored on the multica se
 on the coordinator's CLI. Mitigations: the write ban, the issue timeline as audit trail, and the
 reviewer's own issue-thread checks — the same class as the Herdr limitation in SKILL.md step 6.
 
-## Implementer — `impl=multica:<agent name>` (Profile B only)
+## Implementer — `impl=multica:<agent name>`
 
-Provenance: 2026-10-02, a target repo's feature run with no Pi pane — the operator directed impl
-through a multica agent (pi runtime). Two cards ran green, one issue per card, one run attempt each
-(12.6 and 16.8 min), dispatched as the slashless prose below; the coordinator waited on the origin
-journal tail plus `multica issue runs`. A detached background poll hung silently during the first
-wait (the journal had advanced; nothing woke the coordinator) — hence the watcher rule below.
+Provenance (Profile B): 2026-10-02, a target repo's feature run with no Pi pane — the operator
+directed impl through a multica agent (pi runtime). Two cards ran green, one issue per card, one run
+attempt each (12.6 and 16.8 min), dispatched as the slashless prose below; the coordinator waited
+on the origin journal tail plus `multica issue runs`. A detached background poll hung silently during
+the first wait (the journal had advanced; nothing woke the coordinator) — hence the watcher rule
+below.
+
+Provenance (Profile A): 2026-10-03, this repo's own meta-PR — the operator directed the implementer
+through a multica agent; the handoff travelled as the issue description and the deliverable was
+commits pushed to a coordinator-named topic branch.
 
 ### Implementer preflight (replaces Preflight 1–3 for Pi; the other panes still run them)
 
@@ -249,11 +256,33 @@ Each a command; any miss = stop and ask.
 Push access to origin and the forge token on the runtime host are operator setup; a missing one
 surfaces as a failed stage (STOP), never as a coordinator workaround.
 
-### send (impl dispatch) — one dispatch = ONE NEW issue = ONE card
+### send (impl dispatch) — one dispatch = ONE NEW issue
 
-Build the five-field envelope from ONE fresh observation of the remote trunk (journal tail seq +
-the full 40-hex trunk commit) exactly as SKILL.md Profile B requires; cannot build it ⇒ stop. No
-per-send readiness check (the server queues); the Herdr send/readiness rules do not apply here.
+**Profile A (meta-PR) form.** One dispatch = ONE NEW issue. The issue description IS the handoff:
+everything SKILL.md Profile A step 1 requires of the handoff file — context, files it may touch,
+files it must NOT touch, deliverables, done-when — goes in the description as prose. There is no
+local handoff file and no local implementer worktree on this transport. The coordinator names the
+topic branch and the full 40-hex base sha. Snapshot IMMEDIATELY BEFORE the create with
+`git ls-remote origin refs/heads/<branch>`: on the first dispatch the branch must NOT exist (it
+exists ⇒ stop and ask) and the snapshot is the base sha; on a fix round the snapshot is the branch
+head the coordinator last verified. No per-send readiness check (the server queues); the Herdr
+send/readiness rules do not apply here.
+
+    printf '%s\n' "<description>" | multica issue create --title "impl <repo> <branch> @<short sha>" \
+      --description-stdin --assignee-id <agent id> --output json
+
+`<description>` (slashless prose): "You are the IMPLEMENTER of a toolchain meta-PR on `<repo url>`.
+Your working directory starts empty: clone the repo into it and `git fetch origin` first. Create
+branch `<branch>` from `<full base sha>` (fix round: check out `<branch>` at `<full old head sha>`).
+The handoff body — context, files you may touch, files you must NOT touch, deliverables, done-when —
+goes here as prose. Commit as you go and push to origin `<branch>` ONLY — never push trunk, never
+force-push, do NOT open a PR, never review, never merge, never create or assign issues. The
+deliverable is in Git — the commits on `origin/<branch>` — not in this thread."
+
+**Profile B (feature) form.** One dispatch = ONE NEW issue = ONE card. Build the five-field envelope
+from ONE fresh observation of the remote trunk (journal tail seq + the full 40-hex trunk commit)
+exactly as SKILL.md Profile B requires; cannot build it ⇒ stop. No per-send readiness check (the
+server queues); the Herdr send/readiness rules do not apply here.
 
     printf '%s\n' "<description>" | multica issue create --title "impl <repo> <feature> @<short sha>" \
       --description-stdin --assignee-id <agent id> --output json
@@ -266,16 +295,19 @@ preflight with all five fields; a STALE_DISPATCH line means stop with zero write
 comment here. You are the pipeline IMPL node only: implement exactly ONE card, never edit
 spec-paths, never review, never merge, never create or assign issues. The deliverable is in Git —
 the code on feat/<feature> and the stage's final metadata commit on trunk with its journal entry
-— not in this thread." Record the returned `id` and `identifier`. A create error (including a
-duplicate refusal) ⇒ stop; never retry with `--allow-duplicate` on your own. Writes to the issue
-after the create: §Write ban.
+— not in this thread."
+
+Either form: record the returned `id` and `identifier`. A create error (including a duplicate
+refusal) ⇒ stop; never retry with `--allow-duplicate` on your own. Writes to the issue after the
+create: §Write ban.
 
 ### wait (implementer)
 
-The remote journal tail is THE wait instrument: completion = the tail's seq is `expected_seq + 1`
-with one of the impl transition forms of CONTRACT §Coordinated mode (`impl→impl · completed`,
-`impl→review · completed`, `impl→impl · failed`, `impl→hunt · blocked`). Each poll also takes ONE
-sample of `multica issue runs <issue> --output json` and reads the run with the latest `created_at`:
+**Profile B (feature) form.** The remote journal tail is THE wait instrument: completion = the
+tail's seq is `expected_seq + 1` with one of the impl transition forms of CONTRACT §Coordinated
+mode (`impl→impl · completed`, `impl→review · completed`, `impl→impl · failed`, `impl→hunt ·
+blocked`). Each poll also takes ONE sample of `multica issue runs <issue> --output json` and reads
+the run with the latest `created_at`:
 
 - `failed`/`cancelled` ⇒ STOP, report its `error` (SKILL.md hard rule 2, implementer death; never
   auto-redispatch, never take over).
@@ -295,17 +327,55 @@ completion evidence by itself — the new journal tail is. After completion your
 unchanged (SKILL.md hard rule 3): rerun the card's verify, check the freeze diff and diff scope
 yourself.
 
+**Profile A (meta-PR) form.** Each poll takes ONE sample of `multica issue runs <issue> --output
+json` and reads the run with the latest `created_at`. Completion = that run is `completed` AND,
+after `git fetch origin`, `origin/<branch>` exists, differs from the snapshot, and the snapshot is
+its ancestor (`git merge-base --is-ancestor <snapshot> origin/<branch>`). STOP cases:
+
+- `failed`/`cancelled` ⇒ STOP, report its `error` (SKILL.md hard rule 2, implementer death; never
+  auto-redispatch, never take over).
+- `completed` with the branch missing or not advanced past the snapshot ⇒ the stage ended without
+  delivering ⇒ STOP.
+- the snapshot is NOT an ancestor of the branch head ⇒ history was rewritten ⇒ STOP
+  (never-force-push).
+- still `queued` five minutes after the create ⇒ the runtime is not claiming ⇒ STOP.
+- a failed `git fetch origin`, a CLI error, or unparsable output ⇒ fail closed, STOP.
+
+The watcher rule of this section (report EVERY terminal state and the watcher's own death) binds
+here too. A run status is never completion evidence by itself — the advanced branch head is; and
+the branch head is only the trigger for the coordinator's own verification, never acceptance.
+
+### Verify, PR, and fix rounds (Profile A)
+
+On this transport the implementer pushes the topic branch, so the coordinator's verification
+(SKILL.md hard rule 3 and Profile A step 3) runs before it OPENS THE PR instead of before the push.
+Nothing reaches a PR unverified; trunk is never written by the implementer.
+
+The coordinator fetches the branch into its OWN clone or worktree, reruns every test itself, checks
+`git diff --stat` against the base and that no forbidden file moved. Broken ⇒ a correction handoff
+as a NEW issue (acceptance rejection, not review). Green ⇒ the coordinator opens the PR from that
+branch via the CONTRACT forge adapter with an honest authorship note. The coordinator pushes nothing
+to that branch.
+
+Fix rounds (SKILL.md Profile A step 5): a NEW issue whose description carries the verdict VERBATIM,
+the per-finding evidence requirements, the standing constraints, the branch, and the old head sha;
+snapshot = that old head; the same wait and verify rules; the three-round cap is unchanged.
+
 ### Implementer failover and fallback
 
 Quota exhausted or repeated `failed` ⇒ STOP. The operator may name another registered agent; rerun
-the implementer preflight for it (still three distinct models), then dispatch a NEW issue from a
-fresh observation. The coordinator never picks a replacement on its own. multica unavailable (the
-same triggers as the reviewer fallback) ⇒ STOP; never switch transport on your own. The operator
-re-invokes `pipeline-coordinate` WITH `impl=herdr` (the stop report prints that exact override to
-paste): a Herdr Pi pane, or the human-relayed handoff. Leave a created-but-unrun impl issue alone
-(write ban) and name it in the stop report so the operator can cancel it; a late run against a moved
-trunk is refused by the stale-dispatch guard with zero writes. multica may be the configured default
-but is never a pipeline dependency — the Herdr / human-relayed paths work without it.
+the implementer preflight for it (still three distinct models), then dispatch a NEW issue built from
+a fresh observation (Profile B: the journal tail; Profile A: the branch-head snapshot). The
+coordinator never picks a replacement on its own. multica unavailable (the same triggers as the
+reviewer fallback) ⇒ STOP; never switch transport on your own. The operator re-invokes
+`pipeline-coordinate` WITH `impl=herdr` (the stop report prints that exact override to paste): a
+Herdr Pi pane, or the human-relayed handoff. Leave a created-but-unrun impl issue alone (write ban)
+and name it in the stop report so the operator can cancel it; on Profile B a late run against a
+moved trunk is refused by the stale-dispatch guard with zero writes, and on Profile A a late run
+after the fallback started is harmless only because the coordinator verifies the branch head before
+any PR — name the created-but-unrun issue in the stop report; do not invent a new guard. multica may
+be the configured default but is never a pipeline dependency — the Herdr / human-relayed paths work
+without it.
 
 ## Preflight 4 with a role on multica (Profile B)
 
