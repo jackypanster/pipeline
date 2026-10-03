@@ -274,10 +274,10 @@ send/readiness rules do not apply here.
 `<description>` (slashless prose): "You are the IMPLEMENTER of a toolchain meta-PR on `<repo url>`.
 Your working directory starts empty: clone the repo into it and `git fetch origin` first. Create
 branch `<branch>` from `<full base sha>` (fix round: check out `<branch>` at `<full old head sha>`).
-The handoff body — context, files you may touch, files you must NOT touch, deliverables, done-when —
-goes here as prose. Commit as you go and push to origin `<branch>` ONLY — never push trunk, never
-force-push, do NOT open a PR, never review, never merge, never create or assign issues. The
-deliverable is in Git — the commits on `origin/<branch>` — not in this thread."
+<the handoff body: context, files you may touch, files you must NOT touch, deliverables, done-when>.
+Commit as you go and push to origin `<branch>` ONLY — never push trunk, never force-push, do NOT
+open a PR, never review, never merge, never create or assign issues. The deliverable is in Git —
+the commits on `origin/<branch>` — not in this thread."
 
 **Profile B (feature) form.** One dispatch = ONE NEW issue = ONE card. Build the five-field envelope
 from ONE fresh observation of the remote trunk (journal tail seq + the full 40-hex trunk commit)
@@ -303,6 +303,24 @@ create: §Write ban.
 
 ### wait (implementer)
 
+**Profile A (meta-PR) form.** Each poll takes ONE sample of `multica issue runs <issue> --output
+json` and reads the run with the latest `created_at`. Completion = that run is `completed` AND,
+after `git fetch origin`, `origin/<branch>` exists, differs from the snapshot, and the snapshot is
+its ancestor (`git merge-base --is-ancestor <snapshot> origin/<branch>`). STOP cases:
+
+- `failed`/`cancelled` ⇒ STOP, report its `error` (SKILL.md hard rule 2, implementer death; never
+  auto-redispatch, never take over).
+- `completed` with the branch missing or not advanced past the snapshot ⇒ the stage ended without
+  delivering ⇒ STOP.
+- the snapshot is NOT an ancestor of the branch head ⇒ history was rewritten ⇒ STOP
+  (never-force-push).
+- still `queued` five minutes after the create ⇒ the runtime is not claiming ⇒ STOP.
+- a failed `git fetch origin`, a CLI error, or unparsable output ⇒ fail closed, STOP.
+
+The watcher rule below (report EVERY terminal state and the watcher's own death) binds here too. A
+run status is never completion evidence by itself — the advanced branch head is; and the branch
+head is only the trigger for the coordinator's own verification, never acceptance.
+
 **Profile B (feature) form.** The remote journal tail is THE wait instrument: completion = the
 tail's seq is `expected_seq + 1` with one of the impl transition forms of CONTRACT §Coordinated
 mode (`impl→impl · completed`, `impl→review · completed`, `impl→impl · failed`, `impl→hunt ·
@@ -326,24 +344,6 @@ silently is not a wait instrument (the detached poll in the provenance note). A 
 completion evidence by itself — the new journal tail is. After completion your own verification is
 unchanged (SKILL.md hard rule 3): rerun the card's verify, check the freeze diff and diff scope
 yourself.
-
-**Profile A (meta-PR) form.** Each poll takes ONE sample of `multica issue runs <issue> --output
-json` and reads the run with the latest `created_at`. Completion = that run is `completed` AND,
-after `git fetch origin`, `origin/<branch>` exists, differs from the snapshot, and the snapshot is
-its ancestor (`git merge-base --is-ancestor <snapshot> origin/<branch>`). STOP cases:
-
-- `failed`/`cancelled` ⇒ STOP, report its `error` (SKILL.md hard rule 2, implementer death; never
-  auto-redispatch, never take over).
-- `completed` with the branch missing or not advanced past the snapshot ⇒ the stage ended without
-  delivering ⇒ STOP.
-- the snapshot is NOT an ancestor of the branch head ⇒ history was rewritten ⇒ STOP
-  (never-force-push).
-- still `queued` five minutes after the create ⇒ the runtime is not claiming ⇒ STOP.
-- a failed `git fetch origin`, a CLI error, or unparsable output ⇒ fail closed, STOP.
-
-The watcher rule of this section (report EVERY terminal state and the watcher's own death) binds
-here too. A run status is never completion evidence by itself — the advanced branch head is; and
-the branch head is only the trigger for the coordinator's own verification, never acceptance.
 
 ### Verify, PR, and fix rounds (Profile A)
 
@@ -371,11 +371,11 @@ reviewer fallback) ⇒ STOP; never switch transport on your own. The operator re
 `pipeline-coordinate` WITH `impl=herdr` (the stop report prints that exact override to paste): a
 Herdr Pi pane, or the human-relayed handoff. Leave a created-but-unrun impl issue alone (write ban)
 and name it in the stop report so the operator can cancel it; on Profile B a late run against a
-moved trunk is refused by the stale-dispatch guard with zero writes, and on Profile A a late run
-after the fallback started is harmless only because the coordinator verifies the branch head before
-any PR — name the created-but-unrun issue in the stop report; do not invent a new guard. multica may
-be the configured default but is never a pipeline dependency — the Herdr / human-relayed paths work
-without it.
+moved trunk is refused by the stale-dispatch guard with zero writes, and on Profile A there is no
+stale-dispatch guard, so a late run may still push to the topic branch — the coordinator's
+verification of the branch head before any PR is what catches it, and a branch head that moved
+after the fallback began is a STOP for the human. multica may be the configured default but is
+never a pipeline dependency — the Herdr / human-relayed paths work without it.
 
 ## Preflight 4 with a role on multica (Profile B)
 
