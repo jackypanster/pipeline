@@ -1,6 +1,6 @@
 ---
 name: pipeline-coordinate
-description: "Coordinator playbook — a CC session dispatches Pi (implementation) and Codex (review) through Herdr panes to run a pipeline feature or a toolchain meta-PR end to end. NOT a pipeline stage and NOT a scheduler daemon: CC is the requirements/coordination role of a three-role, three-model team; it never implements product code, never reviews, never merges. Args: repo, what to coordinate (a feature idea, or a meta-PR task)."
+description: "Coordinator playbook — a CC session dispatches Pi (implementation) and Codex (review) through multica issues or Herdr panes to run a pipeline feature or a toolchain meta-PR end to end. NOT a pipeline stage and NOT a scheduler daemon: CC is the requirements/coordination role of a three-role, three-model team; it never implements product code, never reviews, never merges. Args: repo, what to coordinate (a feature idea, or a meta-PR task)."
 ---
 
 # pipeline-coordinate — the coordinator playbook
@@ -41,10 +41,10 @@ The human is the fourth, final gate.
 
 ## Preflight (once per session)
 
-**Invocation names `review=multica:<agent>` (either profile) or `impl=multica:<agent>`
-(Profile B)?** Then that role uses multica issues, not a Herdr pane: read `transport-multica.md`
-in this skill's base dir IN FULL before preflight — for the named role ONLY it replaces the parts
-that file lists; everything else binds unchanged. Not named ⇒ Herdr.
+**Role transport:** invocation selector, else the operator's `~/.config/pipeline/transport` (read,
+never write), else Herdr; `review=herdr`/`impl=herdr` force Herdr; state each role's transport and
+source. File present or a role on multica ⇒ read `transport-multica.md` (base dir) IN FULL before
+preflight — for that role ONLY it replaces the parts it lists; everything else binds unchanged.
 
 1. `herdr pane list` — identify your OWN pane (exclude it from every dispatch), the Pi pane, and the
    Codex pane by agent + cwd. Exactly one pane per role; zero or many = stop and ask.

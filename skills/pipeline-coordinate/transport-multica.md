@@ -1,8 +1,8 @@
-# pipeline-coordinate — multica transport (opt-in, per role)
+# pipeline-coordinate — multica transport (per role)
 
-**Scope.** Two independent per-invocation selectors, each named ONLY by the operator's
-`pipeline-coordinate` invocation, never inferred; either may be used alone; absent ⇒ Herdr exactly
-as SKILL.md describes:
+**Scope.** Two independent per-role selectors, each named by the operator — in the
+`pipeline-coordinate` invocation or in the operator's machine file (§Resolution) — never inferred;
+either may be used alone; unresolved ⇒ Herdr exactly as SKILL.md describes:
 
 - `review=multica:<agent name>` — REVIEWER role, Profile A (meta-PR flow) AND Profile B (pipeline
   feature flow). Replaces only Preflight 1–3, send/readiness, watch/wait, and the merge-gate wording
@@ -13,9 +13,26 @@ as SKILL.md describes:
   `doctor` (§Preflight 4 with a role on multica).
 
 Optional `multica-profile=<name>`: run EVERY `multica` command below as
-`multica --profile <name> …`. Profile A's implementer stays on Herdr / the existing paths;
-`impl=multica:` named on Profile A ⇒ stop and ask. Every SKILL.md hard rule binds unchanged. Git
-and forge state stay the only truth.
+`multica --profile <name> …`. Profile A's implementer stays on Herdr / the existing paths: an
+INVOCATION-named `impl=multica:` on Profile A ⇒ stop and ask; a FILE-sourced one simply does not
+apply there (no stop — say so at preflight). Every SKILL.md hard rule binds unchanged. Git and forge
+state stay the only truth.
+
+## Resolution (each role, and `multica-profile`)
+
+First match wins, per role and for the profile independently: (1) the invocation's selector —
+`review=multica:<agent name>`, `impl=multica:<agent name>`, `multica-profile=<name>`, or the
+override `review=herdr` / `impl=herdr`, which forces that role onto Herdr regardless of the file;
+(2) the operator's machine file `~/.config/pipeline/transport`; (3) Herdr (no profile). No file and
+no selector ⇒ Herdr exactly as SKILL.md describes.
+
+File format: one selector per line, the invocation's syntax (`review=multica:<agent name>`,
+`impl=multica:<agent name>`, `multica-profile=<name>`); the agent name is the rest of the line after
+`multica:` (it may contain spaces). Blank lines and `#` comment lines are ignored; any other line,
+or the same key twice, ⇒ stop and ask. The file is the operator's: the coordinator reads it and
+NEVER creates or edits it — a missing or wrong binding is the operator's fix, never yours. At
+preflight state which transport each role resolved to, and the profile if any, each with its source
+(invocation / file / default).
 
 ## Write ban (absolute, both roles)
 
@@ -159,15 +176,17 @@ a NEW issue. The coordinator never picks a replacement on its own.
 
 Trigger: a `multica` command fails with a network/auth error, the preflight cannot reach the
 server, or an issue is never claimed (the `queued` rule). Each already STOPS you; never switch
-transport on your own. The operator re-invokes `pipeline-coordinate` WITHOUT `review=multica:…`,
-putting the reviewer back on the local path: a Herdr reviewer pane when Herdr can authoritatively
-monitor it, otherwise the default human-relayed handoff (CONTRACT §Coordinated mode) in which the
-operator pastes the review dispatch line into the Codex terminal. Either way the GO token is typed
-in the reviewer's terminal per SKILL.md step 6 and pipeline-review step 6 — nothing touches multica.
-Leave a created-but-unrun review issue alone (write ban) and name it in the stop report so the
-operator can cancel it; if it runs after the PR merged, the reviewer finds the PR not open and
-stops. multica is an optional transport, never a pipeline dependency — removing it loses only
-dispatch history.
+transport on your own. The operator re-invokes `pipeline-coordinate` WITH `review=herdr` (omitting
+the selector would resolve from the file again) — print that exact override in the stop report for
+the operator to paste — putting the reviewer back on the local path: a Herdr reviewer pane when
+Herdr can authoritatively monitor it, otherwise the default human-relayed handoff (CONTRACT
+§Coordinated mode) in which the operator pastes the review dispatch line into the Codex terminal.
+Either way the GO token is typed in the reviewer's terminal per SKILL.md step 6 and pipeline-review
+step 6 — nothing touches multica. Leave a created-but-unrun review issue alone (write ban) and name
+it in the stop report so the operator can cancel it; if it runs after the PR merged, the reviewer
+finds the PR not open and stops. multica may be the configured default but is never a pipeline
+dependency — the Herdr / human-relayed paths work without it; removing it loses only dispatch
+history.
 
 ### Setup (operator, once per reviewer agent)
 
@@ -282,10 +301,11 @@ Quota exhausted or repeated `failed` ⇒ STOP. The operator may name another reg
 the implementer preflight for it (still three distinct models), then dispatch a NEW issue from a
 fresh observation. The coordinator never picks a replacement on its own. multica unavailable (the
 same triggers as the reviewer fallback) ⇒ STOP; never switch transport on your own. The operator
-re-invokes `pipeline-coordinate` WITHOUT `impl=multica:…`: a Herdr Pi pane, or the human-relayed
-handoff. Leave a created-but-unrun impl issue alone (write ban) and name it in the stop report so
-the operator can cancel it; a late run against a moved trunk is refused by the stale-dispatch guard
-with zero writes. multica is an optional transport, never a pipeline dependency.
+re-invokes `pipeline-coordinate` WITH `impl=herdr` (the stop report prints that exact override to
+paste): a Herdr Pi pane, or the human-relayed handoff. Leave a created-but-unrun impl issue alone
+(write ban) and name it in the stop report so the operator can cancel it; a late run against a moved
+trunk is refused by the stale-dispatch guard with zero writes. multica may be the configured default
+but is never a pipeline dependency — the Herdr / human-relayed paths work without it.
 
 ## Preflight 4 with a role on multica (Profile B)
 
