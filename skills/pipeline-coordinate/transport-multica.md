@@ -150,10 +150,11 @@ A run status is never completion evidence by itself — the verdict PR comment b
 head SHA is.
 
 **Profile B (feature) form.** The remote journal tail is THE wait instrument: the verdict is the
-tail at seq `expected_seq + 1` with one of the review transition forms of CONTRACT §Coordinated
-mode — `review→review · completed` whose handoff's first line after `>>> NEXT` is exactly
+tail at seq `expected_seq + 1` with one of the review transition forms of CONTRACT §Handoff block —
+`plan-review→impl · completed` / `plan-review→plan · failed` / `plan-review→human · blocked`
+(Step 2), or `review→review · completed` whose handoff's first line after `>>> NEXT` is exactly
 `Await human-direct merge confirmation in this reviewer session.` (approved; gate armed),
-`review→impl · failed`, or `review→hunt · blocked`. A PR comment or issue comment alone is NOT the
+`review→impl · failed`, or `review→human · blocked` (Step 4). A PR comment or issue comment alone is NOT the
 verdict here, even an explicit approval naming the head (the first dispatch in the provenance note)
 — route only on the journal. Each poll takes the same ONE run sample with the same STOP rules:
 `failed`/`cancelled`; `completed` with no new journal entry; still `queued` five minutes after the
@@ -162,7 +163,7 @@ terminal state and the watcher's own death — binds here too. A run status is n
 evidence by itself — the new journal tail is.
 
 **Re-review (Profile B).** After `review→impl · failed` the route is the journal's: impl fixes the
-named card, then a fresh review. Every review dispatch is a NEW issue built from a fresh
+feature on `feat/<feature>`, then a fresh review. Every review dispatch is a NEW issue built from a fresh
 observation (§Write ban).
 
 ### Merge gate
@@ -207,13 +208,14 @@ Canonical instructions:
 ```text
 pipeline-review-agent v3
 You are a pipeline REVIEWER node. Act only on an issue whose description tells you to run
-pipeline-review; otherwise reply that it is out of scope and stop. Read the SKILL.md path named in
-the issue in full and follow it exactly. If the named PR is not open, or its head is not the
-dispatched head, say so in one issue comment and stop. Review only: never modify product code or
-tests. Never push commits, with ONE exception: when the issue dispatches pipeline-review in FEATURE
-mode (a target-repo feature PR with .pipeline state), push pipeline-review's own metadata commits to
-the trunk branch exactly as that SKILL.md prescribes — only files under .pipeline/ (reviews/,
-journal.md, card status and notes under tasks/, current.json) — never product code, never tests,
+pipeline-plan-review or pipeline-review; otherwise reply that it is out of scope and stop. Read the
+SKILL.md path named in the issue in full and follow it exactly. For pipeline-review, if the named PR
+is not open, or its head is not the dispatched head, say so in one issue comment and stop. Review
+only: never modify product code or tests (except a temporary uncommitted mutation spot-check reverted
+immediately). Never push commits, with ONE exception: when the issue dispatches pipeline-plan-review
+or pipeline-review in FEATURE mode (a target-repo feature with .pipeline state), push the reviewer's
+own metadata commits to the trunk branch exactly as that SKILL.md prescribes — only files under
+.pipeline/ (reviews/, journal.md, current.json) — never product code, never tests, never plan.md,
 never any other branch, never a force-push. Merge ONLY by consuming pipeline-review's GO-gate in its
 issue-thread form. Never create or assign issues and never @mention another agent (CONTRACT: a stage
 node never dispatches). Change issue status only on the ONE issue assigned to you, and only when its
@@ -310,10 +312,11 @@ clone as the current directory (repo= does not select the execution directory). 
 branch=<b> feature=<f> expected_seq=<N> expected_commit=<full sha>, and
 repo=<the absolute path of the clone you just made> (the only field you fill in). Run the stage
 preflight with all five fields; a STALE_DISPATCH line means stop with zero writes and say so in one
-comment here. You are the pipeline IMPL node only: implement exactly ONE card, never edit
-spec-paths, never review, never merge, never create or assign issues. The deliverable is in Git —
-the code on feat/<feature> and the stage's final metadata commit on trunk with its journal entry
-— not in this thread."
+comment here. You are the pipeline IMPL node only: implement .pipeline/<f>/plan.md AND its T1-T10
+unit/integration tests on feat/<f>, pass every verify command green, never edit plan.md or any
+forbid-paths, never review, never merge, never create or assign issues. The deliverable is in Git —
+the code+tests on feat/<feature> and the stage's final metadata commit on trunk (impl-report.md,
+current.json, journal.md) — not in this thread."
 
 Either form: record the returned `id` and `identifier`. A create error (including a duplicate
 refusal) ⇒ stop; never retry with `--allow-duplicate` on your own. Writes to the issue after the
@@ -350,9 +353,8 @@ run status is never completion evidence by itself — the advanced delivery-ref 
 delivery-ref head is only the trigger for the coordinator's own verification, never acceptance.
 
 **Profile B (feature) form.** The remote journal tail is THE wait instrument: completion = the
-tail's seq is `expected_seq + 1` with one of the impl transition forms of CONTRACT §Coordinated
-mode (`impl→impl · completed`, `impl→review · completed`, `impl→impl · failed`, `impl→hunt ·
-blocked`). Each poll also takes ONE sample of `multica issue runs <issue> --output json` and reads
+tail's seq is `expected_seq + 1` with one of the impl transition forms of CONTRACT §Handoff block
+(`impl→review · completed`, `impl→human · blocked`). Each poll also takes ONE sample of `multica issue runs <issue> --output json` and reads
 the run with the latest `created_at`:
 
 - `failed`/`cancelled` ⇒ STOP, report its `error` (SKILL.md hard rule 2, implementer death; never

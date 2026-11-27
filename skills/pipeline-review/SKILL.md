@@ -1,187 +1,71 @@
 ---
 name: pipeline-review
-description: "Pipeline stage 5 — semantic review of a card's diff/PR, enforce the spec freeze, and merge after a human confirm. Wraps the check skill. Only this command merges. Use after pipeline-impl. Args: repo, base, branch, optional pr."
+description: "Pipeline Step 4 (reviewer role, independent frontier model B) — semantic + anti-cheat review of feat/<feature> (forbid-paths, verify, T1-T10 coverage, mutation spot-check), structured VERDICT | CAUSE, 3rd-reject breaker, and human-direct GO-gate squash-merge. Only this command merges. Args: repo, base, branch, optional pr."
 ---
 
 # pipeline-review
 
-Stage 5. Follow the **shim loop in CONTRACT.md** with slot = `review`. **This is the only command
-that merges, and only after an explicit human confirm.**
+Step 4 of the 3-Agent 4-Step pipeline. Follow the **shim loop in CONTRACT.md** with slot = `review`.
+**This is the ONLY command that merges, and ONLY after an explicit direct human confirm.**
 
-**Coordinated dispatch guard:** with a dispatch envelope (`repo= branch= feature= expected_seq= expected_commit=`),
-step 0 runs CONTRACT §Coordinated mode's pre-write stale-dispatch guard, BEFORE any write; a mismatch ⇒
-`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it.
+**Coordinated dispatch guard:** with a five-field envelope, step 0 runs CONTRACT §Pre-write
+stale-dispatch guard BEFORE any write; a mismatch ⇒ `STALE_DISPATCH` and STOP (zero writes).
+Preserve `control.json`; never modify it.
 
-**Skill:** `review` slot resolves to `check` — semantic review of the diff. The forge adapter and
-the freeze gate are YOUR I/O, not check's.
+**Skill:** `review` slot resolves to `check` — semantic + adversarial review of the diff.
 
-## Meta-PR mode (pipeline self-improvement) — decide this BEFORE step 1
+## Meta-PR mode (pipeline self-improvement) — decide this BEFORE step 0
 
-If the PR is a **toolchain meta-PR** — a diff to *this pipeline repo's* **own files** (`skills/*`,
-`CONTRACT.md`, and equally `DESIGN.md` / `README.md` / any other file of this repo), **or to a sibling
-toolchain repo** (`pipeline-driver` / `pipeline-dashboard` / `pipeline-dispatch`), in each case with
-**no `.pipeline/` feature state** (no `current.json`, cards, or `spec-rev`) — you are
-in **meta-PR mode**: **SKIP steps 1, 3, the cards/freeze-gate, and the final full-suite gate** (none of
-that exists here). Do ONLY: (a) `check` the diff — is it a **real improvement, not a weakening**?
-does it **preserve every existing hard rule + the frozen invariants** (for a sibling repo: its own
-documented hard rules and guarantees)? **Size-budget axis** — for each `skills/*/SKILL.md` where
-`git diff <base>..<head> --numstat` shows net growth (added − deleted) > 0 AND the file's post-merge
-`wc -l` > 120, the PR description MUST carry an explicit size-budget justification (why this growth
-can't be net-neutral; why it can't live in CONTRACT.md / a reference file); triggered + no
-justification ⇒ changes requested — the axis judges presence and plausibility, never forbids growth.
-Net ≤ 0 or ≤ 120 lines never triggers (shrinking and net-0 rewrites are free; a file already over 120
-flags only on further growth). **Evidence tier** — tag every blocking finding `observed` (a repro
-command, or a cited journal/log/issue where it actually happened) or `hypothetical` (reasoned-only:
-concurrency, pid reuse, TOCTOU, other platforms/users). The toolchain has ONE operator, so a
-`hypothetical` finding does NOT block — list it as a non-blocking follow-up in the verdict. Exception:
-a finding against a hard rule or frozen invariant blocks regardless of tier. (b) write the verdict as a PR
-comment; (c) on the human's explicit confirm via the same self-terminating exact-token GO-gate (step 6 —
-direct operator, same reviewer session), **squash-merge**. Everything else still holds:
-only-reviewer-merges, human-confirm-before-merge, never-force-push. The feature steps below are for a
-**target-repo feature PR**; do not run them against a toolchain meta-PR.
+If the PR is a **toolchain meta-PR** — a diff to *this pipeline repo's* own files (`skills/*`,
+`CONTRACT.md`, `DESIGN.md`, `README.md`, `roles.yaml`, etc.), or a sibling toolchain repo
+(`pipeline-driver` / `pipeline-dashboard` / `pipeline-dispatch`) with **no `.pipeline/` feature
+state** — run **meta-PR mode ONLY** (skip feature steps 0–6):
+1. Run `check` on the diff: is it a real improvement (not a weakening)? Does it preserve every hard
+   rule and frozen invariant (explicit human approval required to change frozen invariants)?
+2. **Size-budget axis:** for each `skills/*/SKILL.md` with net growth `(added - deleted) > 0` AND
+   post-merge `wc -l > 120`, the PR body MUST carry an explicit size-budget justification (why not
+   net-neutral, why not in `CONTRACT.md` / reference file), else request changes.
+3. **Evidence tier:** tag every blocking finding `observed` (repro/citation) or `hypothetical`
+   (reasoned-only). For this single-operator toolchain, `hypothetical` does NOT block unless it
+   violates a hard rule or frozen invariant.
+4. Post the verdict as a PR comment, then on direct human confirm via the same GO-gate (step 6),
+   **squash-merge**. Only-reviewer-merges, human-confirm, never-force-push all still bind.
 
-## Steps
+## Feature mode steps
 
-0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage review` (+ the five envelope
-   fields verbatim when one is present), skipped in meta-PR mode. `0` ⇒ pull, `current.json` read, slot resolve + install check DONE
-   — use its printed lines; `3` ⇒ do the check(s) it names yourself, STOP if one fails; anything else or script absent ⇒ STOP with its
-   printed reason. `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. Read **all of the feature's cards** (this stage runs on a
-   COMPLETE feature — expect every card `status: review`; see the pre-merge guard in step 6).
-2. (Pull, `current.json`, slot resolve and install check: step 0.)
-3. **Freeze gate (deterministic, run FIRST):** the **two-commit** diff
-   `git diff <card.spec-rev> <review-tip> -- <card.spec-paths>`, where `<review-tip>` is the PR head
-   (forge: `gh pr view --json headRefOid` / the `gitee-cli` equivalent; no forge: the `feat/<feature>`
-   tip). Diff two commits, never the working tree. Non-empty ⇒ the coder edited the frozen spec ⇒
-   **reject**: `attempts++`, append the reason to the card **+ a `journal.md` entry** (CONTRACT §Run
-   journal — `status=failed`, the freeze-violation is run history), and **flip that card
-   `status: todo`** (`attempts >= 3` ⇒ `blocked` instead) so `pipeline-impl` — which picks the oldest
-   `todo` — has an actionable retry target, and **name that card in the handoff** so impl re-picks
-   exactly it; **commit all**; route to pipeline-impl (or pipeline-hunt if `blocked`). Do not proceed to
-   review. **Coordinated mode:** this freeze rejection funnels through the SAME atomic disposition as
-   step 5 — the single commit MUST also include `reviews/review-NN.md` (verdict: freeze violation +
-   the offending `spec-paths` diff summary) alongside the card flip and the `review→impl · failed`
-   (or `review→hunt · blocked`) journal entry, so the watcher observes one routable outcome — never a
-   card/journal commit without its review artifact.
-4. Get the change via the **forge adapter** (github→`gh pr diff`; gitee→`gitee-cli pr diff`; else
-   `git diff base..branch`). Run **check** for correctness/design issues CI can't see. Read each
-   card's `## Assumptions` section (the card copy, never a PR-body mirror) and enforce CONTRACT
-   §Impl assumptions.
-5. Write `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings) **and append a `journal.md`
-   entry** (CONTRACT §Run journal — transition `…→review`, status **`completed`** [the run-status enum
-   `completed|failed|blocked`, NOT a stage name]; body: "review verdict written; awaiting human confirm").
-   **Commit both together** — so this durable commit is explained by the journal, never orphaned (the
-   merge→done or reject disposition appends its own later entry).
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage review` (+ five envelope fields if present). `0` ⇒ pull, `current.json`, slot resolve, guard, and `plan.md` check DONE; `3` ⇒ verify named check(s) yourself, STOP on failure; else ⇒ STOP.
+1. **Inputs:** read `.pipeline/<feature>/plan.md`, `.pipeline/<feature>/impl-report.md`, and the diff via the forge adapter (`gh pr diff` / `gitee-cli` / `git diff <base>..feat/<feature>`). Verify model independence (`reviewer != implementer` and `reviewer != planner`).
+2. **Deterministic gates (run FIRST — fail immediately on violation):**
+   - **`forbid-paths` gate:** diff `git diff --name-only <base>..<review-tip>` MUST NOT touch any path in `plan.md` `forbid-paths:` nor `plan.md` itself ⇒ else `REJECT | CAUSE: scope`.
+   - **`impl-report.md` assumptions check:** missing `## Assumptions` section ⇒ `REJECT | CAUSE: scope`; assumption contradicting `plan.md` ⇒ `REJECT`.
+   - **`verify` re-run gate:** run EVERY command in `plan.md` `verify:` on `feat/<feature>` HEAD — all MUST exit 0 ⇒ else `REJECT | CAUSE: impl_bug`.
+3. **Anti-cheat & semantic review (`check`):**
+   - **T1–T10 coverage audit:** verify every `T1–T10` row in `plan.md` maps to a real test in the diff.
+   - **Mandatory mutation / revert spot-check:** deliberately break 1–2 core logic branches (in a temporary uncommitted edit, reverted immediately after running) and re-run the targeted test — if tests stay green ⇒ immediate **`VERDICT: REJECT | CAUSE: weak_test`**. *(In a strict read-only sandbox where file writes are blocked, perform an adversarial assertion audit proving each T1–T10 test fails under concrete logic inversion and flag `weak_test` on any tautological or mocked-away assertion.)*
+   - **Semantic review:** real bugs, edge cases, regressions, security/rollback boundaries.
+4. **Strict binary verdict — line 1 MUST match:**
+   `VERDICT: <ACCEPT|REJECT> | CAUSE: <none|impl_bug|weak_test|scope|plan_fact|plan_design|env>`
+   (`ACCEPT` pairs only with `CAUSE: none`; no `ACCEPT WITH NITS` on code). Write `.pipeline/<feature>/reviews/code-review-NN.md`.
+5. **Atomic trunk outcome (ONE commit on trunk: `code-review-NN.md` + `current.json` + `journal.md`):**
+   - **`ACCEPT`:** set `current.json.stage = "review"`, append `review→review · completed` whose first line after `>>> NEXT` is exactly `Await human-direct merge confirmation in this reviewer session.`, commit, push, then arm the GO-gate (step 6) and STOP.
+   - **`REJECT` with `CAUSE: plan_fact | plan_design | env` (short-circuit):** set `current.json.stage = "blocked"`, append `review→human · blocked` (plan/env defect — do NOT loop Step 3), commit, push, STOP.
+   - **`REJECT` with `CAUSE: impl_bug | weak_test | scope`:** increment `current.json.review_rejects`:
+     - `review_rejects < 3` ⇒ set `current.json.stage = "review"`, append `review→impl · failed` (NEXT `Run pipeline-impl`), commit, push.
+     - **`review_rejects >= 3` ⇒ circuit breaker!** Set `current.json.stage = "blocked"`, append `review→human · blocked` (3rd code review rejection — human intervention required), commit, push, STOP.
+6. **GO-gate & squash-merge (ONLY on `ACCEPT`):**
+   - **Terminal session:** print `APPROVED head=<full 40-hex SHA> — reply IN THIS session with ENTIRE trimmed text 'go' (or 'merge'/'confirm', case-insensitive) to squash-merge; anything else disarms.` STOP. Consume ONLY on that exact direct operator reply in this same session (never relayed/forwarded, never substring) AND after re-verifying the PR/branch head still equals the exact armed 40-hex SHA (moved head ⇒ disarm, re-review). When taking over after a headless `run-loop.py phase2` `ACCEPT`, read the full 40-hex SHA from the `journal.md` tail, confirm it matches `code-review-NN.md` (`VERDICT: ACCEPT` + `Reviewed-Head`) and the live PR/branch head, then arm this GO-gate.
+   - **Multica issue-thread form (headless):** post the arming comment naming the approved full head SHA and telling the operator to comment `go`/`merge`/`confirm`. Consume ONLY after ONE complete unfolded `multica issue comment list <issue> --full --output json` (no cursor truncation, ordered by `created_at` with no tie) proving your arming comment is your latest, the first comment after it is `author_type: member` with exact trimmed token, and PR head == armed SHA; any failure disarms and replies once with the reason.
+   - **On confirm:** squash-merge the exact armed SHA via forge adapter (`gh pr merge --squash --match-head-commit <sha40>` where supported; delete `feat/<feature>`), set `current.json.stage = "done"`, append `review→done · completed` to `journal.md`, commit + push trunk.
 
-   **Coordinated mode is stricter (CONTRACT §Coordinated mode · atomic review outcome):** when the
-   feature's `control.json` says `mode: coordinated`, the verdict and its disposition are ONE commit —
-   never the two-step above (an intermediate "verdict written; disposition follows" commit is a state
-   the coordinator can observe but not route). **Approved** ⇒ FIRST run every step-6 pre-merge guard —
-   the every-card-is-`review` completeness guard AND the final full-suite gate (GREEN on the
-   `feat/<feature>` HEAD, via `current.json.full-verify`) — and only when ALL pass, publish one
-   commit: `review-NN.md` + a `review→review · completed` journal entry whose handoff FIRST line
-   after `>>> NEXT` is exactly
-   `Await human-direct merge confirmation in this reviewer session.` — then arm the GO-gate (step 6)
-   and STOP; the merge→done entry rides the later merge commit as usual. The marker promises
-   merge-ready-but-for-the-human-token: publishing it over an incomplete or red feature is a contract
-   violation (the watcher would enter `WAITING_HUMAN_MERGE` on a feature that must not merge). If a
-   guard fails, the outcome is NOT approved — emit the matching rejection form instead.
-   **Changes requested, single-owner** ⇒ one commit: `review-NN.md` + the offending card's
-   `status`/`attempts` flip + the `review→impl · failed` (name exactly that one card in the handoff)
-   or `review→hunt · blocked` (at `attempts >= 3`) journal entry. **Cross-card integration failure,
-   no single owner** ⇒ one commit: `review-NN.md` + `reviews/integration-NN.md` + the
-   `review→hunt · blocked` journal entry (output = the report path) — NO card is mutated (never
-   blind-flip a real card; the report is the hunt target).
-6. **Approved** ⇒ do NOT merge yet: end your turn at a self-terminating, fail-closed **GO-gate**. After
-   the pre-merge guards below pass, print an unmistakable prompt the operator acts on **in YOUR
-   terminal** — e.g. `APPROVED — reply IN THIS session with a message whose ENTIRE trimmed text is
-   'go' (or 'merge'/'confirm', any letter case) to squash-merge; anything else = no merge.` — then STOP.
-   **Consume the gate ONLY when** the operator's NEXT message **in THIS SAME reviewer session**, trimmed,
-   equals one allowed token compared CASE-INSENSITIVELY (`go`/`GO`/`Go` all qualify — letter case
-   carries no authenticity; the whole-message, same-session, direct-operator requirements are what
-   do) — whole message, no other content (`go do not merge` / `go; …` do NOT qualify). ANY other input — extra content, a lost/different session, a **coordinator-relayed/forwarded
-   token** (indistinguishable from automation — NOT a human confirm), or a non-token reply — disarms the
-   gate: no merge, re-review. Only a DIRECT operator message in the emitting session consumes it. This
-   removes the coordinator poll-and-relay hop while keeping the confirm authentically human. (Scope: this
-   hardens confirm AUTHENTICITY only; guaranteeing merged head/base == reviewed head/base against an
-   approve-then-push is a separate, pre-existing concern, OUT OF SCOPE here.)
-   **Issue-thread form** (ONLY when dispatched as a multica issue assigned to you — headless, no
-   terminal): "this session" is that ONE issue's comment thread, and the gate state lives in it. Arm:
-   after the guards pass and the verdict PR comment is posted, post an issue comment saying the gate
-   is armed, naming the approved full head SHA, and telling the operator to post `go`/`merge`/`confirm`
-   as an ENTIRE comment on this issue; end the run. Consume ONLY when ALL hold, read from the forge
-   and ONE complete, unfolded read — `multica issue comment list <issue> --full --output json`, no
-   other mode flag (the default read folds a resolved thread to root + conclusion, hiding intervening
-   comments) — never from recollection or the run's prompt text (the session may not resume). An
-   INCOMPLETE read disarms: the command fails, prints a `Next … cursor` notice (more history than
-   returned), or lacks your arming comment. Order ALL returned comments — roots and replies alike —
-   by `created_at`; a tie involving the arming comment or the comment after it disarms. Then: your
-   arming comment is your most recent comment; the FIRST comment by anyone after it has `author_type`
-   `member` and entire trimmed content equal to one allowed token, case-insensitively; the PR is
-   still open with head == the armed SHA. Any failure disarms: no merge, reply once on the issue with
-   the reason (that reply supersedes the arming comment); merging then needs a fresh review dispatch.
-   `author_type: member` proves only that the operator's token wrote the comment — the coordinator's
-   CLI holds that token too, so the coordinator's write ban (pipeline-coordinate
-   `transport-multica.md`), not this check, is what keeps a relayed token out.
-   **Pre-merge guard (multi-card features):** every card in
-   the feature must be `status: review` — if any is still `todo`/`in-progress`, the feature is INCOMPLETE;
-   do NOT merge or set `done`, hand back to **pipeline-impl** for the remaining card(s). **Final full-suite
-   gate (CONTRACT §State authority):** card `verify`s are card-scoped, so they never proved cross-card
-   integration — run **`current.json.full-verify`** (the exact whole-suite command task recorded; if it is
-   absent, STOP and ask the operator — do NOT guess by dropping a filter) once on the `feat/<feature>`
-   branch HEAD (it carries all frozen tests inherited from trunk + every card's code). **GREEN required**;
-   red ⇒ cross-card integration broke ⇒ do NOT merge. Flip a card back **only if** the failing test(s)/diff
-   attribute the break to a specific card (then `attempts++`, that card → `todo`/`blocked`, name it in the
-   handoff, route impl/hunt). If no single card owns the failure, write a **feature-level integration
-   incident report** `.pipeline/<feature>/reviews/integration-NN.md` (your OWN write-set — body = the
-   failing `full-verify` output + which tests broke + "cross-card integration, no single owner"), **append
-   a `journal.md` entry** (CONTRACT §Run journal — `status=blocked`, transition `review→hunt`, output =
-   the report path), **commit both**, and route **pipeline-hunt** to that report (name its path in the
-   handoff). Do NOT create a `tasks/` card for it — a lingering `blocked` card would deadlock every future
-   merge guard; the report is evidence, not an impl card. Never blind-flip a real card. On confirm (cards
-   all `review` AND suite green):
-   **squash-merge** the `feat/<feature>` PR via the forge adapter (delete the merged branch; no local
-   non-PR merges), set **every** card in the feature `status: done` and `current.json.stage: done` (only
-   now is the whole feature done), commit/push `main`. **Rejected** ⇒ `attempts++`, append required fixes
-   to the **offending** card **+ a `journal.md` entry** (CONTRACT §Run journal — `status=failed`, the
-   rejection is run history), and **flip that card `status: todo`** (`attempts >= 3` ⇒ `blocked`) — on a
-   multi-card feature every card is `review`, so without this flip impl has no `todo` to pick; **name the
-   card in the handoff** so impl re-picks exactly it; **commit**; then hand off to **pipeline-impl** (or
-   hunt at ≥3).
+## Completion checklist (do ALL in order on merge)
 
-## Completion checklist (cold bots skip these — do ALL, in order)
-
-Merge is NOT the end. After the human's go and the merge, you MUST, in order:
-
-- [ ] freeze gate ran (the two-commit `git diff <spec-rev> <review-tip> -- <spec-paths>`, review-tip = PR head — empty before you proceeded)
-- [ ] **final full-suite gate ran GREEN** on the `feat/<feature>` branch HEAD before the merge (card `verify`s are card-scoped — this is the only cross-card integration check)
-- [ ] wrote `.pipeline/<feature>/reviews/review-NN.md` (verdict + findings — even one line)
-- [ ] every merged card's `status` → `done`
-- [ ] set `.pipeline/current.json` `stage: done` — **only when EVERY card in the feature is `done`**
-      (multi-card guard, step 6); the top-level pointer = most-recently-completed stage per CONTRACT.
-      Cold bots flip the cards but leave `stage` stale at an earlier value, misleading the next node
-- [ ] **appended the journal entry** to `.pipeline/<feature>/journal.md` (CONTRACT §Run journal —
-      `review→done`, the feature's final entry; it closes the auditable run)
-- [ ] committed + pushed the above to the trunk branch
-
-Observed: cold review bots have TWICE done only the merge and skipped `review-NN.md` + the card→done
-flip; one also left `current.json.stage` stale at `task` after completing the review. These are NOT
-optional bookkeeping — they are the audit contract. A merge without them is an incomplete review.
+- [ ] `forbid-paths` clean + `verify:` green + T1–T10 covered + mutation/assertion spot-check passed
+- [ ] wrote `.pipeline/<feature>/reviews/code-review-NN.md` with exact `VERDICT | CAUSE` line 1
+- [ ] squash-merged PR and deleted `feat/<feature>`
+- [ ] set `current.json.stage = "done"`, appended `review→done · completed` to `journal.md`, pushed trunk
 
 ## Hard rules
 
-- Merge ONLY by consuming the armed GO-gate (step 6) with a **direct** operator message **in the same
-  reviewer session that emitted it** (a multica review issue: its issue-thread form, step 6),
-  whose ENTIRE trimmed content is one allowed token
-  (`go`/`merge`/`confirm`, compared case-insensitively) — NEVER a first-token/substring match, NEVER a relayed/forwarded token
-  (indistinguishable from automation — not a human confirm), NEVER inferred from arbitrary text; a lost
-  session or any non-token reply disarms → re-review. (This PR hardens confirm authenticity only; head/
-  base merge atomicity vs an approve-then-push is a separate, pre-existing open item.)
-- Never force-push trunk/shared refs (review never force-pushes at all; only `pipeline-impl` rebase-force-pushes its OWN in-flight `feat/<feature>` branch — CONTRACT §State machine scope). Deleting the merged `feat/<feature>` branch on merge is the only deletion allowed.
-- CI-green / freeze-pass is necessary, not sufficient — the semantic review still gates.
-- **Merge with no `review-NN.md` written AND no card→done flip = review NOT complete; not `done`.**
-- **The verdict you post to chat must be plain text the human can copy** — short bullets, **NO markdown
-  tables, NO ATX headings (`#`)**. Some chat bridges render tables/rich markdown as an *image*, which the
-  human cannot select, copy, or relay to the next node (only screenshot — lossy). Lead with the verdict
-  (approve / changes-requested) + each finding as `file:line — one line`; put any detailed table only in
-  `review-NN.md` / the forge PR comment (git is the durable record), never in the chat verdict.
+- Only `pipeline-review` merges, strictly on a direct human GO-gate token. Never force-push.
+- Chat verdict must be plain text (short bullets, NO markdown tables, NO ATX `#` headings).
+- A merge without `code-review-NN.md`, `stage: done`, and `review→done` journal entry is incomplete.

@@ -1,64 +1,31 @@
 ---
 name: pipeline-hunt
-description: "Pipeline escalation — root-cause a blocked target before re-queue. Wraps the hunt skill. Entry point for any card that hit attempts>=3 (blocked) / repeated review rejection, or a feature-level integration incident report. Use instead of blind retry. Args: repo, branch, target (a blocked card-id OR a reviews/integration-NN.md report path)."
+description: "Pipeline escalation — root-cause a blocked feature (plan_rejects >= 3, review_rejects >= 3, or Step 4 plan_fact/plan_design/env short-circuit) before re-queue. Wraps the hunt skill. Args: repo, branch."
 ---
 
 # pipeline-hunt
 
 Escalation stage (not on the happy path). Follow the **shim loop in CONTRACT.md** with slot = `hunt`.
-A `blocked` **card** — OR a feature-level **integration incident report** (`reviews/integration-NN.md`)
-— routes here; **never blind-retry**. (Both are "targets"; see step 1.)
+Entry point for any `blocked` feature — **never blind-retry**.
 
-**Coordinated dispatch guard:** with a dispatch envelope (`repo= branch= feature= expected_seq= expected_commit=`),
-step 0 runs CONTRACT §Coordinated mode's pre-write stale-dispatch guard, BEFORE any write; a mismatch ⇒
-`STALE_DISPATCH <field>` and STOP (zero writes). Preserve `control.json`; never modify it. Your
-journal entry MUST use the exact stage-consistent forms `hunt→task · completed` (re-split/re-spec) or
-`hunt→impl · completed` (diagnosed card reset to `todo, attempts: 0`) — the coordinator routes on them.
-`preflight.sh` run with those envelope fields executes this guard.
+**Coordinated dispatch guard:** with a five-field envelope, step 0 runs CONTRACT §Pre-write
+stale-dispatch guard BEFORE any write; a mismatch ⇒ `STALE_DISPATCH` and STOP (zero writes).
+Preserve `control.json`; never modify it.
 
-**Skill:** `hunt` slot resolves to `hunt` — systematic root-cause (confirm cause before any fix,
-especially "used to work / can't fix it after N tries").
+**Skill:** `hunt` slot resolves to `hunt` — systematic root-cause diagnosis before proposing fixes.
 
 ## Steps
 
-0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage hunt` (+ the five envelope
-   fields verbatim when one is present). `0` ⇒ pull, `current.json` read, slot resolve + install check DONE — use its printed lines;
-   `3` ⇒ do the check(s) it names yourself, STOP if one fails; anything else or script absent ⇒ STOP with its printed reason.
-   `UPSTREAM newer` ⇒ one line in your final report: run `pipeline-update` between stages (never mid-stage).
-1. Read your target. Usual target = the `blocked` **card**
-   (every `## Attempt N` note + the latest `verify:` failure / review rejection). **Alternative target:
-   a feature-level integration incident report** `reviews/integration-NN.md` that `pipeline-review`
-   routed for a cross-card full-suite failure with no single owner — it is evidence (failing-suite
-   output), NOT a card, and there is no `tasks/` card to flip (see the integration branch in step 3).
-2. (Pull, `current.json`, slot resolve and install check: step 0.)
-3. **hunt** to confirm the ROOT CAUSE (not symptoms). Classify it:
-   - **Card too big / not atomic** ⇒ re-split: hand back to **pipeline-task** to break it down.
-   - **Spec/red test wrong** ⇒ the test itself is the bug ⇒ hand back to **pipeline-task** to fix
-     the spec (architect owns tests; coder cannot) — **name the offending card/spec target in the
-     handoff** so task re-freezes only it and preserves sibling state (CONTRACT §Test ownership re-freeze).
-   - **Environment / dependency** ⇒ name the fix for the operator; once fixed, reset the card to
-     `status: todo`, `attempts: 0`.
-   - **Genuinely hard but well-scoped** ⇒ append the root-cause findings to the card, reset to
-     `status: todo` **and `attempts: 0`** (same as the environment branch) so the next impl run starts
-     informed with a fresh budget — hunt is the deliberate human-relayed diagnosis, NOT a blind retry,
-     and the new findings make this a genuinely new attempt; without the reset a requeued card re-blocks
-     on its first fail (`attempts` was already at the `>= 3` threshold). The card is the only memory.
-   - **Cross-card integration failure** (target = a `reviews/integration-NN.md` incident report) ⇒ the
-     cards each pass alone but break together. Diagnose the interaction, append findings to the report,
-     and hand back to **pipeline-task via its append-card mode** to author a proper fix — a new card with
-     its own frozen test (preserving the existing cards' state), or re-freeze the implicated cards. The
-     integration gap needs a real spec, not a blind re-queue; the task→impl handoff rebases the feature
-     branch onto trunk (CONTRACT §State authority). The
-     report is evidence under `reviews/`, **not** a `tasks/` card — nothing lingers to block the next
-     merge guard; the new fix card(s) carry the work forward through the normal flow.
-4. Write the root-cause findings into **your target** — if it is a blocked **card**, update/reset it per
-   the step-3 classification (e.g. `status: todo` + `attempts: 0`); if it is a **`reviews/integration-NN.md`
-   report**, append the findings there and **do NOT flip any card status** (there is no card). Either way
-   **append your handoff to `journal.md`** (CONTRACT §Run journal). Commit both **once** (the shim loop pushes).
-5. **Print the handoff** to whichever command the classification chose (task / impl) (already journaled
-   in step 4), with the cause + the decision in the `do:` line.
+0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage hunt` (+ five envelope fields if present). `0` ⇒ pull, `current.json`, slot resolve + guard DONE; `3` ⇒ verify named check(s) yourself, STOP on failure; else ⇒ STOP.
+1. **Read full evidence:** `.pipeline/<feature>/plan.md`, `impl-report.md`, all `.pipeline/<feature>/reviews/*.md`, and `journal.md` tail.
+2. **Invoke `hunt`** to establish the single confirmed root cause and classify the route:
+   - **Plan flaw (`plan_fact` / `plan_design` / oversized scope)** ⇒ reset `current.json.plan_rejects = 0`, set `stage = "hunt"`, route **`hunt→plan · completed`** (`Run pipeline-plan`) with exact corrections.
+   - **Implementer defect or weak tests (`impl_bug` / `weak_test` / `scope`) on a sound plan** ⇒ reset `current.json.review_rejects = 0`, set `stage = "hunt"`, route **`hunt→impl · completed`** (`Run pipeline-impl`) with the confirmed root cause and exact constraints.
+   - **Environment / dependency / external outage (`env`)** ⇒ document the operator fix; stay `blocked` until the operator confirms the environment is repaired, then re-queue.
+3. **Commit + push once to trunk:** write `.pipeline/<feature>/reviews/hunt-NN.md` (confirmed root cause + route decision), update `current.json`, append `hunt→plan · completed` or `hunt→impl · completed` (or `hunt→human · blocked` for unresolved `env`) to `journal.md`, commit once, push.
+4. **Print handoff** naming `hunt-NN.md` and the exact next stage.
 
 ## Hard rules
 
-- Confirm cause before proposing any fix. No speculative re-queue.
-- You diagnose and re-route; you do not implement or merge.
+- Confirm root cause before proposing any fix. No speculative re-queue.
+- You diagnose and re-route; you do NOT edit product code, edit `plan.md`, or merge.

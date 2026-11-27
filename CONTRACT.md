@@ -1,494 +1,256 @@
-# CONTRACT.md — the frozen pipeline protocol
+# CONTRACT.md — the frozen pipeline protocol (v2: 3-Agent 4-Step)
 
 Single source of truth for every `pipeline-*` skill. Commands carry **no logic of their own** —
-they follow this. (See [DESIGN.md](DESIGN.md) for rationale.)
+they follow this. (See [DESIGN.md](DESIGN.md) for rationale and v1→v2 provenance.)
 
-## The shim loop (every command runs exactly this)
+## Three roles, four steps (frozen — do not weaken)
+
+Work flows through **3 abstract roles** across **4 mainline steps**:
+
+| Step | Command | Role | Model tier | Output |
+|---|---|---|---|---|
+| 1 | `pipeline-plan` | `planner` | Frontier model A | `.pipeline/<feature>/plan.md` (+ optional `CONTEXT.md`, ADRs) |
+| 2 | `pipeline-plan-review` | `reviewer` | Independent frontier model B | `.pipeline/<feature>/reviews/plan-review-NN.md` |
+| 3 | `pipeline-impl` | `implementer` | Capable/cost-efficient coding CLI C | `feat/<feature>` code + T1–T10 unit/integration tests + `impl-report.md` |
+| 4 | `pipeline-review` | `reviewer` | Independent frontier model B | `.pipeline/<feature>/reviews/code-review-NN.md` + squash-merge on human confirm |
+
+Auxiliary commands: `pipeline-hunt` (root-cause escalation on `blocked`) and `pipeline-improve`
+(meta-PR self-improvement against this pipeline repo).
+
+**Model-separation invariant (frozen):** `model(reviewer) ≠ model(planner)` AND
+`model(reviewer) ≠ model(implementer)`. Three distinct model families are recommended; at minimum,
+the reviewer NEVER grades its own plan or its own code. Concrete model names NEVER belong in this
+contract, `roles.yaml`, or project onboarding snippets — they live only in operator-local machine
+config (`~/.config/pipeline/`).
+
+**Two-phase quota split:** Phase I (`Step 1 ↔ Step 2`) converges the plan using the frontier
+planner. Once Step 2 passes (`ACCEPT` / `ACCEPT WITH NITS`), **the planner exits** — Phase II
+(`Step 3 ↔ Step 4`) consumes **zero planner tokens**.
+
+## The shim loop (every stage command runs exactly this)
 
 1. **`git pull --rebase`** — always your first act (no shared memory; rebuild from git).
-2. **Load the repo's local config if present.** Most projects keep config/secrets in a dotenv-style
-   file (`.env`, sometimes `.env.local`/`.envrc`). If such a file exists, load its vars into the environment before step 5. Do NOT assume
-   a fixed name or casing — read what the repo actually uses and adapt (e.g. a lowercase `gitee_token`
-   may need exporting as the upper-case `GITEE_TOKEN` a tool expects). **Never print secret values.**
-3. **Read `.pipeline/current.json`** → `{repo, branch, pr?, feature, stage}`. Missing + you are
-   `pipeline-prd` ⇒ create it. Missing + any other command ⇒ STOP, ask the operator.
-4. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot. Verify the named skill is
-   installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
+2. **Load repo-local config if present** (`.env`, `.env.local`, `.envrc`). Adapt key casing as
+   required by the project. **Never print secret values.**
+3. **Read `.pipeline/current.json`** → `{repo, branch, pr?, feature, stage, plan_rejects?, review_rejects?, planner_model?}`.
+   Missing + you are `pipeline-plan` ⇒ create it. Missing + any other command ⇒ STOP, ask operator.
+4. **Resolve your skill**: read `.pipeline/roles.yaml`, look up your slot, verify the named skill
+   is installed on this runtime. Not installed ⇒ STOP and report (no silent fallback).
 
-   **Deterministic executor (steps 1, 3, 4 + the coordinated pre-write guard):** run
-   `bash <your skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage <stage>` first, adding
-   the five envelope fields verbatim when your invocation carries a dispatch envelope. Exit `0` ⇒ steps 1,
-   3, 4 — and, with an envelope, the stale-dispatch guard — are DONE: take their values from its printed
-   lines. Exit `3` ⇒ everything ELSE passed and the line names the check(s) it could not make
-   (`install-check` — verify the slot skill is installed and STOP if it is not; `remote-identity` — confirm
-   the remote really is the one `current.json.repo` names): do exactly those yourself. Script absent, or any
-   exit other than `0`/`3` ⇒ STOP and report the reason it printed (absent = install incomplete: every
-   machine that runs a stage installs the full `pipeline-*` set). Steps 1–4 above remain the spec; the
-   script is their only executor. Step 2 stays yours: the script only REPORTS the dotenv
-   file and how many keys it defines — never a name, never a value — and exports nothing. The script also
-   prints one advisory `UPSTREAM …` line (a once-a-day `git ls-remote` of the pipeline repo compared to the
-   installed version): `UPSTREAM newer` ⇒ add one line to your final report/handoff telling the operator to
-   run `pipeline-update` between stages; it never changes the exit code, and you never update mid-stage.
-5. **Invoke that skill** — it does the REASONING/interview; as a rule it does NOT write files (the shim
-   owns I/O). **Sanctioned exception:** `grill-with-docs` (arch) lands `CONTEXT.md`/ADRs **inline** by
-   design — even then the shim owns staging/commit/journal/write-set enforcement; only those files'
-   authorship is the skill's. The precise invariant is "**the shim owns commit + journal + handoff +
-   write-set enforcement**", not "no skill ever writes a file".
-6. **Write only within your stage's declared write-set** (see *State authority & write-sets* below) —
-   the I/O is YOURS, not the skill's — **and append your composed handoff block as an entry to
-   `.pipeline/<feature>/journal.md`** (it is part of your metadata write-set — see *Run journal*).
-   `git add` those paths **+ `journal.md`**, commit **once** (the journal entry rides this same commit —
-   never a separate/orphan commit, never an amend), **then `git push` your commit(s) to the remote.**
-   The push is mandatory: the next node is a COLD session that rebuilds all state from `git pull`, so an
-   un-pushed commit is invisible to it. (Metadata commits straight
-   to trunk as a fast-forward append; never force-push trunk — see *State machine*.) Writing outside your
-   write-set is a contract violation, symmetric to the freeze gate.
-7. **Print the handoff block** (already persisted to the journal in step 6) and stop. The human relays
-   the printed block to the next bot; the journal is what survives if the chat does not (see *Run
-   journal* below).
+   **Deterministic executor (steps 1, 3, 4 + coordinated pre-write guard + plan check):** run
+   `bash <your skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage <stage>` first,
+   adding the five envelope fields verbatim when an envelope is present.
+   - Exit `0` ⇒ steps 1, 3, 4 (and guard / plan check) DONE — use its printed lines.
+   - Exit `3` ⇒ everything ELSE passed; do ONLY the named unverified check(s) (`install-check`,
+     `remote-identity`) yourself and STOP on failure.
+   - Script absent, or any exit other than `0`/`3` ⇒ STOP and report its printed reason.
+   Step 2 (loading dotenv) stays yours (`preflight.sh` reports only file + key COUNT). If it prints
+   `UPSTREAM newer`, add one advisory line in your final report to run `pipeline-update` between
+   stages (never mid-stage).
+5. **Invoke the bound skill** — it does REASONING/interview; the shim owns staging, commit,
+   journal, handoff, and write-set enforcement.
+6. **Write ONLY within your stage's declared write-set**, append your handoff to
+   `.pipeline/<feature>/journal.md`, `git add` those paths + `journal.md`, commit **once** (never
+   orphan, never amend), and **`git push`** (unless running a local-only headless loop without
+   `--push`). Writing outside your write-set is a contract violation.
+7. **Print the handoff block** (already persisted in `journal.md`) and stop.
 
-## State machine (frozen — do not change)
+## State machine & circuit breakers (frozen — do not change)
 
-`status: todo → in-progress → review → done`; `blocked` = terminal.
-`attempts` starts at 0; on any failure or review rejection `attempts++`; `attempts >= 3 ⇒ blocked`,
-and a `blocked` card routes to `pipeline-hunt`, never blind retry.
-**A review rejection (freeze-gate or semantic) sends the offending card `review → todo`** — the retry
-edge, so `pipeline-impl` (which picks the oldest `todo`) has an actionable target — or `→ blocked` at
-`attempts >= 3`.
-**Only `pipeline-review` merges**, and only after an explicit human confirm.
-**Never force-push trunk or any shared/published ref; never delete anything beyond a task's own branch;
-never touch another card.** (Scope: an in-flight `feat/<feature>` branch is the coder's own — `pipeline-impl`
-MAY rebase it onto trunk + force-push to absorb new spec commits from a re-freeze / append-card — its own
-branch, NOT a trunk force-push; trunk/shared refs are never force-pushed.)
+Feature progression: `plan → plan-review → impl → review → done`; `blocked` = terminal (requires
+human intervention or `pipeline-hunt`).
 
-## Layout (`.pipeline/` lives in the TARGET repo)
+- **Circuit breaker at 3rd rejection (both gates):**
+  - `plan_rejects` starts at `0`. Each Step 2 `REJECT` increments `plan_rejects`.
+    - `plan_rejects < 3` ⇒ route back to Step 1 (`plan-review→plan · failed`).
+    - **`plan_rejects >= 3` ⇒ STOP for human (`plan-review→human · blocked`)**.
+  - `review_rejects` starts at `0`. Each Step 4 `REJECT` for `impl_bug | weak_test | scope`
+    increments `review_rejects`.
+    - `review_rejects < 3` ⇒ route back to Step 3 (`review→impl · failed`).
+    - **`review_rejects >= 3` ⇒ STOP for human (`review→human · blocked`)**.
+- **Step 2 → Step 3 default progression:** `ACCEPT` or `ACCEPT WITH NITS` in Step 2 proceeds
+  **directly to Step 3** (`plan-review→impl · completed`) by default. Only when `control.json`
+  explicitly sets `"pause_after_plan": true` does Step 2 halt for human plan sign-off before Step 3.
+- **Step 4 plan/env short-circuit:** a Step 4 `REJECT` with `CAUSE: plan_fact | plan_design | env`
+  bypasses the impl retry loop and **immediately stops for human** (`review→human · blocked`) —
+  never burn Step 3 retries against a broken plan or broken environment.
+- **Only `pipeline-review` merges**, and ONLY after explicit direct human confirmation in the
+  reviewer's own session (`go`/`merge`/`confirm` GO-gate). No runner, coordinator, or implementer
+  has a merge path.
+- **Never force-push trunk or any shared/published ref**; never delete anything beyond the
+  feature's own `feat/<feature>` branch on merge.
+
+## Structured verdict grammar (mandatory for Step 2 & Step 4)
+
+Every review artifact (`plan-review-NN.md` / `code-review-NN.md`) MUST open with line 1 matching
+the exact machine-parseable header:
+
+- **Step 2 (`plan-review`)**:
+  `VERDICT: <ACCEPT|ACCEPT WITH NITS|REJECT> | CAUSE: <none|plan_fact|plan_design|scope|env>`
+  - `ACCEPT` and `ACCEPT WITH NITS` MUST carry `CAUSE: none` (`ACCEPT WITH NITS` = 1–2 minor doc
+    nits that do not affect correctness/scope; passes without burning a planner rework round).
+  - `REJECT` MUST carry a non-`none` cause.
+- **Step 4 (`review`)**:
+  `VERDICT: <ACCEPT|REJECT> | CAUSE: <none|impl_bug|weak_test|scope|plan_fact|plan_design|env>`
+  - Strictly binary (`ACCEPT` or `REJECT` — no `ACCEPT WITH NITS` on code).
+  - `ACCEPT` MUST carry `CAUSE: none`; `REJECT` MUST carry a non-`none` cause.
+- Malformed or missing header ⇒ **fail closed, STOP for human** (never infer `ACCEPT`).
+
+## Layout (`.pipeline/` lives in the TARGET repo, on trunk)
 
 ```text
 .pipeline/
-  current.json            {repo, branch, pr?, feature, stage, full-verify?}  # fast pointer (cache — journal tail is authoritative); full-verify = [<build>, <whole-suite test>], set by task
+  roles.yaml                      per-repo slot→skill bindings (no model names)
+  current.json                    {repo, branch, pr?, feature, stage, plan_rejects?, review_rejects?, planner_model?, approved_plan_blob?}
   <feature>/
-    journal.md            append-only run log — one entry per completed stage (see Run journal)
-    PRD.md  arch.md  CONTEXT.md  docs/adr/*.md
-    tasks/NN.md           frontmatter: status / attempts / verify / spec-paths / impl-paths / spec-rev
-    reviews/review-NN.md
+    journal.md                    append-only run log — physically-last entry is authoritative
+    plan.md                       frontmatter (feature, verify[], forbid-paths[], planner_model?) + evidence + ≤10 specs + T1–T10
+    CONTEXT.md  docs/adr/*.md     optional domain/ADR docs when irreversible decisions exist
+    impl-report.md                implementer assumptions + tests run + verify output + Not run
+    reviews/plan-review-NN.md     Step 2 verdicts
+    reviews/code-review-NN.md     Step 4 verdicts
+    control.json                  optional coordinated-mode authorization
 ```
 
-One feature in flight at a time (the human serializes; `current.json` is a single pointer).
+One feature in flight at a time (`current.json` is a single pointer).
 
 ## State authority & write-sets
 
-**Trunk is the single state authority.** All `.pipeline/` metadata (`current.json`, `PRD.md`,
-`arch.md`, `CONTEXT.md`, ADRs, cards, reviews) AND the frozen red test live on trunk (`main`/`master`),
-committed straight there. Metadata is the orchestration audit log, not reviewed product code — it is
-never gated through PR review. `current.json` MUST be on trunk: it is the cold-node bootstrap pointer,
-read before the node knows any branch name.
+**Trunk is the single state authority.** All `.pipeline/` metadata lives on trunk (`main`/`master`).
+`feat/<feature>` carries **ONLY reviewable product code + unit/integration tests** — zero
+`.pipeline/` clutter in the PR diff.
 
-**Authoritative-state precedence (arbitration order).** When state sources disagree, decision authority
-descends: **pushed trunk (remote git) > local clone/working tree > running process state > model summary**
-(chat context, handoff prose, an agent's own "done" claim). This ranks cross-node authority, NOT temporal
-freshness: a stage trusts its own working tree while working, but nothing exists for any other node until
-pushed (step 6), and no claim outranks the artifact it describes — "done" is exactly as authoritative as
-the pushed commit + test output behind it.
+**Authoritative-state precedence:** **pushed trunk (remote git) > local clone/working tree >
+running process state > model summary**. Never trust a self-report without Git + verify evidence.
 
-**A feature branch carries ONLY the reviewable code diff.** Name it `feat/<feature>`. `pipeline-impl`
-cuts it from trunk, writes `src` + white-box tests there, opens the PR. `pipeline-review` squash-merges
-it (the only merge). One branch convention, one merge style — no `task/*` names, no local non-PR merges.
-
-**Reconcile an in-flight branch with advanced trunk spec.** If trunk's frozen spec advances after the
-branch was cut — a **re-freeze** (new shared `spec-rev`) or an **append-card** (a new card's red test) —
-the existing `feat/<feature>` carries the STALE spec. `pipeline-impl` must **rebase `feat/<feature>` onto
-trunk + force-push** before continuing, so the branch carries the current frozen tests. This rebase +
-force-push of the coder's own branch is the sanctioned exception to never-force-push (trunk is never
-force-pushed; see State machine scope).
-
-**The frozen red test is committed to trunk by `pipeline-task`**, so `spec-rev` is a trunk commit the
-branch inherits. Consequence: trunk's test suite is RED from the task commit until the impl merge.
-Accepted ONLY under two load-bearing assumptions — **no blocking CI gate on trunk, and one feature in
-flight at a time**. If either stops holding (CI added, or parallel features), move the red test onto the
-feature branch and make `spec-rev` a branch commit instead.
-
-**Multi-card consequence — a card's `verify` MUST be card-scoped, never the full suite.** `pipeline-task`
-freezes ALL of a feature's cards up front, so trunk's suite is RED across *every* not-yet-done card; a
-card's `verify` test command therefore runs **only that card's own frozen test(s)**. The mechanism
-is the task author's choice — a **test-name filter** (`cargo test smoke_login_help`, `pytest -k`,
-`go test -run`; preferred, works even when several cards share one test file) or a **dedicated test
-file** — the invariant is *card-scoped, not full-suite*. The cross-card integration check is a separate
-**final full-suite gate**: `pipeline-review` runs the WHOLE suite once on the `feat/<feature>` branch HEAD
-(which carries all frozen tests inherited from trunk + all cards' code) and must see it GREEN before the
-squash-merge. The whole-suite command is **not derived/guessed** — `pipeline-task` records it as
-`current.json.full-verify` (`[<build cmd>, <whole-suite test cmd>]`, the unfiltered runner) so a cold
-review node runs an exact command, never "drop the filter" or read project docs. Red ⇒ the feature is
-not done ⇒ do not merge; flip a card back ONLY if the failing test(s)/diff attribute the break to a
-specific card (then `attempts++`, that card → `todo`/`blocked`, route impl/hunt) — a cross-card
-integration failure with no single owner ⇒ `pipeline-review` writes a **feature-level integration
-incident report** `reviews/integration-NN.md` (its OWN write-set — evidence, **not** a `tasks/` card, so
-it never trips the "every card must be `review`" merge guard), appends a `journal.md` entry
-(`status=blocked`, transition `review→hunt`, output = the report path), commits, and routes
-`pipeline-hunt` to that report. Never blind-flip a real card; never route hunt with no target (hunt
-accepts a feature-level incident report, see its step 1). **No synthetic `tasks/` card** — a lingering
-`blocked` card would deadlock every future merge.
-
-**Each stage writes only its declared set.** Every stage also advances `current.json.stage` to name the
-**most recently completed stage** (`prd|arch|task|impl|review`, or `done` once the feature's PR is
-merged) — a cold node reads it to see where the pipeline last left off; the *next* node to run is named
-in the handoff, not inferred from `stage`. `current.json.stage` is a denormalized **cache** for fast
-bootstrap; the authoritative run position is the **tail entry of `journal.md`** — derive the live state
-from the tail, never trust a stored `stage` that disagrees with it. **"Disagrees" means the cache
-matches NEITHER valid-stage end of the tail's transition** (`stage ∉ {tail.from, tail.to}`): a
-compliant cache may read as the tail's *from* (the completing stage just wrote it) OR its *to* — the
-sanctioned to-end cases being `done` on the terminal `review→done` commit and a failed/re-routing
-review (e.g. `review→impl · failed`) that leaves `stage` at the routed-to stage rather than
-re-asserting `review`. Consumers (dashboard, driver, any observer) must treat only the neither-end
-case as stale. Beyond `stage`, the artifact write-sets are:
+`current.json.stage` is a fast bootstrap cache (`plan|plan-review|impl|review|hunt|done|blocked`); on
+disagreement the **journal tail wins**. "Disagrees" means `stage ∉ {tail.from, tail.to}`.
 
 | stage | write-set (may create/modify) | must NOT touch |
 |---|---|---|
-| prd | `PRD.md` | src, tests |
-| arch | `arch.md`, `CONTEXT.md`, `docs/adr/*` | src, tests |
-| task | spec-paths (the red test), `tasks/*` | src implementation |
-| impl | impl-paths, `src/**`, the card's `status` field, its `## Assumptions` section (§Impl assumptions), the card's `attempts` field + `## Attempt N` note (fail path, state machine / impl step 5) | **spec-paths** (the freeze gate) |
-| review | `reviews/*`, card `status`→done, card `status`→`todo`/`blocked` (on reject), the card's `attempts` field + appended rejection reason / required fixes on the offending card (state machine / review steps 3/5/6) | any product code (it merges, never authors) |
-| hunt | the routed **target** only — the blocked card (its body / `status` / `attempts`) OR the `reviews/integration-NN.md` report (append findings) | product code, unrelated cards, unrelated reviews |
+| `plan` | `plan.md`, optional `CONTEXT.md`, `docs/adr/*`, `current.json` (`plan_rejects` preserved, `stage: plan`), optional `control.json` (on explicit operator request) | product `src/**`, product tests |
+| `plan-review` | `reviews/plan-review-NN.md`, `current.json` (`stage`, `plan_rejects`) | `plan.md`, product `src/**`, tests |
+| `impl` | on `feat/<feature>`: product `src/**` + unit/integration tests covering T1–T10; on trunk: `impl-report.md`, `current.json` (`stage: impl`, `pr`) | `plan.md`, any path in `plan.md` `forbid-paths` |
+| `review` | `reviews/code-review-NN.md`, `current.json` (`stage`, `review_rejects`); squash-merge `feat/<feature>` on GO-gate | product code/tests (except temporary uncommitted mutation spot-check reverted immediately) |
+| `hunt` | diagnosis appended to `journal.md` / `reviews/hunt-NN.md`; reset `plan_rejects` or `review_rejects` to `0` on informed re-queue | product code, `plan.md` |
 
-The freeze gate is just the impl row enforced. Enforcement is a documented invariant + the
-deterministic two-commit diff `pipeline-review` runs (see §Test ownership) — NOT a hook, CI, or script.
+Every stage appends one entry to `.pipeline/<feature>/journal.md` in its single metadata commit.
 
-`hunt` on a **report target** appends findings to `reviews/integration-NN.md` but must **NOT flip any card
-status** (there is no card on that path) — `pipeline-task` authors the real fix card/spec afterward. On a
-**card target** it updates that card per its classification (re-queue / re-split / re-spec).
+## Anti-cheat & quality gates (replaces v1 pre-impl red-test freeze)
 
-Every stage additionally **appends one entry to `journal.md`** (append-only metadata, same class as
-`current.json` — not gated, rides the metadata commit). This is universal, so it is omitted from the
-per-stage rows above.
+1. **Zero-inference-space `plan.md` (Step 1 + Step 2):** `plan.md` declares structured YAML
+   frontmatter (`verify: [...]` non-empty, `forbid-paths: [...]`), codebase baseline evidence
+   (`file:line` citations), **≤10 atomic specs**, and a **T1–T10 behavioral acceptance matrix**
+   (observable behaviors, NOT hardcoded private function names). Step 2 spot-checks ≥3 baseline
+   citations against real files before approving.
+2. **Same-step implementation + tests + deterministic `verify` pre-gate (Step 3):** `pipeline-impl`
+   writes product code AND unit/integration tests covering every T1–T10 row on `feat/<feature>`.
+   ALL `verify` commands in `plan.md` MUST exit 0 BEFORE Step 4 is invoked. Red code never enters
+   Step 4.
+3. **`forbid-paths` check + mandatory mutation/revert spot-check (Step 4):** `pipeline-review`
+   verifies zero edits under `forbid-paths`, re-runs `plan.md`'s `verify` commands green, verifies
+   every T1–T10 row has a real test, and performs a **mutation/revert spot-check** — deliberately
+   breaking 1–2 core logic branches and re-running the targeted test (must fail; revert immediately).
+   If tests stay green ⇒ immediate `VERDICT: REJECT | CAUSE: weak_test`. (Inside a read-only
+   sandbox where edits are blocked, Step 4 performs an adversarial assertion audit proving each
+   T1–T10 test would fail on concrete logic inversion and flags `weak_test` on any tautological or
+   mocked-away test.)
+4. **Implementer `## Assumptions` (`impl-report.md`):** Step 3 records any un-pinned decision under
+   `## Assumptions` (or literally `none` when none exist) plus tests run, green verify output, and
+   `Not run`. Missing `## Assumptions` ⇒ `REJECT | CAUSE: scope`; contradicting `plan.md` ⇒ `REJECT`.
 
-## Test ownership (anti-cheat) — the spec-rev double-commit protocol
+## Handoff block & append-only run journal
 
-`pipeline-task` freezes the spec in **two ordered commits**:
-
-1. **Freeze commit** — write **all of the feature's** failing red tests, touching **only `spec-paths`**,
-   in **ONE** commit. Its hash = the **feature's single `spec-rev`**, recorded by *every* card. The tests
-   must compile and FAIL here. **One commit for the whole feature, NOT per-card** (so cards sharing a
-   test file share one baseline).
-2. **Record commit** — write **each card's** frontmatter (`spec-paths`, `impl-paths`, and the **shared
-   `spec-rev` from step 1**, all exact) and advance `current.json.stage`. This commit touches **metadata
-   only (the cards + `current.json`), never `spec-paths`** — so the freeze stays intact (the load-bearing
-   rule is "never `spec-paths`", not "card alone"; `current.json` is metadata and is safe to ride along).
-
-Invariant: `spec-paths ∩ impl-paths = ∅` (task asserts, review re-checks). `pipeline-impl` makes the
-test green via `src` + `impl-paths` only, and must NOT create/modify/delete anything under `spec-paths`.
-`pipeline-review` runs the **two-commit** diff `git diff <spec-rev> <review-tip> -- <spec-paths>`
-(deterministic, not working-tree) FIRST; **non-empty ⇒ reject** (`attempts++`, route to impl, or hunt
-at ≥3). If the spec itself is wrong, that is NOT an impl fix — re-route to `pipeline-task` to re-freeze
-(the re-route handoff MUST **name the offending spec target** so task doesn't guess): re-freeze the
-**whole feature's** tests in a NEW single commit and update **every** card's `spec-rev` to the new sha
-(never a partial re-freeze — keep the baseline shared). Re-freeze
-updates **only `spec-rev`** and **preserves each card's `status`/`attempts`/`verify`/`impl-paths`** (only
-the named re-spec'd card may change otherwise); it is NOT initial authoring, so it **never resets siblings
-to `todo`/`0`**. The coder never edits the
-frozen spec. Git-only, no CI.
-
-**Append-card** (hunt routes an integration fix, or a new card is needed on an in-flight feature) is a
-re-freeze **variant**: re-freeze the whole feature in a new single commit that ALSO includes the new
-card's red test (new shared `spec-rev` on every card), **create ONLY the new card** (`status: todo`,
-`attempts: 0`), and **preserve every existing card's `status`/`attempts`/`verify`/`impl-paths`**. Both
-re-freeze and append-card advance trunk's spec under any in-flight branch, so the handoff to impl must
-say **rebase `feat/<feature>` onto trunk + force-push** before continuing (see *State authority*).
-
-## Freeze coverage (recorded on the card, read by review)
-
-`spec-paths` can only freeze a testable surface. Some architectures cannot freeze the meaningful
-correctness test — e.g. a **pure binary crate** (no `lib.rs`): `tests/` can only black-box-invoke the
-binary, so formatter/utility logic lives inline in `src/` (= `impl-paths`, coder-owned, NOT frozen).
-In that case the freeze gate protects only the **CLI/black-box contract**, not the core logic.
-
-`pipeline-task` records what IS frozen vs what `pipeline-review` must verify **by reading**, in the
-card's `## Freeze coverage` section (e.g. "frozen: `--help`/CLI contract; review must read: formatter
-output logic + inline tests"). `pipeline-review` reads it to decide what to scrutinize beyond the
-deterministic gate.
-
-**"review must read" is a narrow exception, NOT a coverage escape hatch.** It is legitimate only for a
-surface a hermetic test genuinely cannot assert — interactive/TUI cosmetics, real network/package
-execution, or logic with no black-box handle (the binary-crate case above). It is NOT a licence to
-leave a **required** behaviour unfrozen: if a hermetic test could detect that behaviour's *absence*,
-freeze at least a **dry-run / command-construction assertion** (assert the step WOULD act — construct
-the command, hit the honest-degrade path — with no real side effect).
-
-**Before ruling any required behaviour "review must read", `pipeline-task` MUST first seek or design an
-honest test SEAM** — most "hard to freeze" surfaces are in fact hermetically testable: a
-**pseudo-terminal harness** (prompt/PTY-cancel/EOF), **a temp dir + an injected failure seam** (write
-atomicity, mid-write failure), a **symlinked/pre-created destination** (symlink/temp-race sinks), and
-**stubbed executables** (network/package steps). Where a command can be stubbed, freeze the
-**invocation AND its arguments**, not merely the command text or an honest-degrade message. "review must read" is admissible ONLY after the card
-records **why no such seam exists**. When a required behaviour is genuinely un-seamable **and** `arch`
-did not resolve it — or a feature is *dominated* by such risks — `pipeline-task` **FAILS CLOSED**: it
-does NOT proceed to the freeze commit (6a) or hand off to impl; it **stops and routes back through
-`arch`/design-review**, recording the risk in the artifact that legally exists at that stop — its
-**`task→arch` journal handoff** (the card does not exist until step 6b — never write partial card
-metadata pre-6a). The resumed task records the resolved `## Freeze coverage` on the card in the normal
-6b record commit. The flag is a hard stop, not a silent note.
-
-## Impl assumptions (recorded on the card, read by review)
-
-The frozen test pins what it asserts; it does NOT pin the implementer's interpretation around it.
-An **impl assumption** is any decision the implementer made that the card's spec text and its frozen
-test do NOT pin down — user-facing wording, edge-case behavior outside the frozen assertions,
-data-shape/format choices, dependency or API selection.
-
-**This is NOT arch's labeled assumptions** — those are design-time unknowns recorded in
-`arch.md`/ADRs by the arch stage. Impl assumptions are implementation-time interpretation only;
-`pipeline-impl` NEVER writes `arch.md` or ADRs.
-
-They live in a **`## Assumptions` section on the CARD file** (trunk-authoritative, same home as
-`## Freeze coverage`), one bullet per assumption; every card gets its own section (multi-card
-features included). When there are none, the section body is exactly `none` — the sentinel is
-mandatory, so a missing section is distinguishable from an honest empty. It is written on the
-**GREEN path only**, in the SAME single metadata commit on `main` that flips the card
-`status: review` (impl step 4); the failed/blocked dispositions do NOT write it. The card is the authoritative home: when a forge PR exists,
-impl MAY mirror the list into the PR body, but review reads the card copy. This is a deliberate, narrowly-scoped extension of impl's card write-set (§State authority
-table); this grant covers exactly the `## Assumptions` section and nothing more.
-
-**`pipeline-review` reads it.** A card in `status: review` whose `## Assumptions` section is missing
-⇒ changes requested (mechanical check). An assumption that CONTRADICTS the card/spec/PRD ⇒ reject. A `none`
-while the diff visibly contains un-pinned decisions ⇒ a review finding (semantic judgment).
-
-## Handoff block — a self-contained briefing for a COLD next node
-
-**The next node is a FRESH session — possibly a different agent on a different frontier LLM — with ZERO
-prior context.** It has only: this repo (via `git pull`), `CONTRACT.md`, and your handoff. So the
-handoff must carry everything it needs to ACT, not a one-liner. Point at artifacts (git is the bus —
-never paste bodies), give **concrete numbered steps**, and name **feature-specific gotchas**. Err toward MORE next-step detail, not less.
-Chat-friendly: plain text, short lines, no tables.
-
-Carry one **`Model:`** line naming THIS next stage's model requirement — reasoning stages
-(prd/arch/task/review/hunt/improve) want a **frontier SOTA model**; `impl` tolerates a **capable local model**.
-It is operator guidance for which bot to assign (the pipeline cannot verify the running model), not a
-self-check.
+Every stage appends ONE entry to the **physical END** of `.pipeline/<feature>/journal.md` in its
+metadata commit (never prepend, never edit prior entries):
 
 ```text
->>> NEXT
-Run pipeline-<next> on a FRESH session (assume you know nothing — rebuild from the repo + CONTRACT.md).
-repo=<url> branch=<branch> pr=<url|none>
-Model: <frontier SOTA required | capable-local OK (impl only)> — operator assigns the bot; the pipeline can't verify the model.
-First: git pull --rebase; load repo config (.env if present, per CONTRACT step 2).
-Read for context (before acting):
-  - <repo>/AGENTS.md|CLAUDE.md (if present) — repo-wide project conventions (read FIRST; some runtimes don't auto-read it, so the handoff makes injection explicit + portable)
-  - <path/PRD.md>      — what
-  - <path/arch.md>     — how / component boundaries / data flow
-  - <path/CONTEXT.md>  — domain glossary + conventions
-  - <path/tasks/NN.md , docs/adr/*> — the card / binding decisions
-Your task (concrete, numbered):
-  1. <step>
-  2. <step>
-  3. <step>
-Feature gotchas (project-specific traps the next node MUST know):
-  - <e.g. binary crate → review carries formatter correctness; mirror <existing pattern>;
-    config var is lowercase X; this repo uses branch `master` not `main`>
-Done when: <success criterion>. On success: <status transition>, then run pipeline-<after>.
-On failure: attempts++; >=3 ⇒ blocked ⇒ run pipeline-hunt.
-<<< END
-```
-
-Carry artifact PATHS, never bodies — git is the bus.
-
-## Run journal — the handoff, persisted (append-only)
-
-**At step 6, append your handoff to `.pipeline/<feature>/journal.md` as part of your stage's metadata
-commit** (one atomic commit with the rest of your write-set — never a separate/orphan commit, never an
-amend); step 7 only prints what is already journaled. The journal makes the run resumable, auditable,
-and orchestratable by anyone reading the tail (see DESIGN.md §Why a journal).
-
-One entry per completed stage, appended (never edited or deleted — the git history is the audit trail):
-
-```text
-## seq=N · <ISO8601 UTC> · <from-stage>→<to-stage> · <completed|failed|blocked> · by=<bot/LLM tag|?>
+## seq=N · <YYYY-MM-DDTHH:MM:SSZ> · <from>→<to> · <completed|failed|blocked> · by=<role/model tag|?>
 done:   <1–3 lines: what this stage actually produced>
-output: <artifact path(s)>        # paths, never bodies — git is the bus
+output: <artifact path(s)>
 --- handoff ---
 >>> NEXT
-…(the exact handoff block you print, verbatim)…
+Run pipeline-<next> on a FRESH session (rebuild state from git + CONTRACT.md).
+repo=<url> branch=<branch> pr=<url|none>
+Role: <planner | reviewer (distinct model) | implementer (distinct from reviewer)>
+First: git pull --rebase; load repo config (.env if present).
+Read: <repo>/AGENTS.md, .pipeline/<feature>/plan.md, latest review (if any).
+Task: <concrete numbered steps>
+Done when: <success criterion>.
 <<< END
 ```
 
-Rules:
+Legal transitions (`<from>→<to> · <status>`):
+- `plan→plan-review · completed` (NEXT `Run pipeline-plan-review`)
+- `plan-review→impl · completed` (NEXT `Run pipeline-impl`; records `approved_plan_blob`)
+- `plan-review→plan · failed` (NEXT `Run pipeline-plan`, `plan_rejects < 3`)
+- `plan-review→human · blocked` (`plan_rejects >= 3` or `pause_after_plan: true`)
+- `human→impl · completed` (NEXT `Run pipeline-impl`; explicit human approval after `pause_after_plan: true`, preserving `approved_plan_blob`)
+- `impl→review · completed` (NEXT `Run pipeline-review`)
+- `impl→human · blocked` (unrecoverable impl/verify failure or implementer crash/timeout)
+- `review→review · completed` (NEXT `Await human-direct merge confirmation in this reviewer session.` for interactive/multica sessions, OR `Headless Step 4 ACCEPT for feat/<feature>@<sha40> — open interactive pipeline-review to arm GO-gate.` for headless CLI runs)
+- `review→done · completed` (post-merge terminal)
+- `review→impl · failed` (NEXT `Run pipeline-impl`, `review_rejects < 3`)
+- `review→human · blocked` (`review_rejects >= 3`, OR `CAUSE: plan_fact|plan_design|env` short-circuit)
+- `hunt→plan · completed` / `hunt→impl · completed` (resets the relevant reject counter to `0`) / `hunt→human · blocked` (unresolved `env` outage)
 
-- **`seq`** — per-feature monotonic integer. Read the current tail, add 1 (first entry `seq=1`). It is
-  the run ordinal.
-- **Append-only.** Never rewrite or delete a prior entry. A correction is a NEW entry, not an edit.
-- **One commit.** The entry rides your stage's metadata commit (step 6) — `git add journal.md` alongside
-  your other write-set paths and commit once. Never a separate/orphan commit, never `git commit --amend`.
-- **Tail is authoritative.** The live position = the last entry's `to-stage` + its handoff `>>> NEXT`.
-  `current.json.stage` is only a fast cache; on any disagreement the journal tail wins.
-- **Resume protocol (cold start, chat gone):** `git pull --rebase` → open `journal.md` → read the LAST
-  entry → its handoff IS your briefing. `current.json` is a hint, the journal is the source.
-- A `failed`/`blocked` stage still appends an entry (status + the failure handoff to hunt).
+## Operating transports & coordinated mode
 
-## Coordinated mode (optional, feature-authorized) — a coordinator types, human gates unchanged
+**Default remains human-relayed.** Three L1 transports share this exact contract without changing a
+single invariant:
+1. **Human-relayed (default):** operator copies handoffs between agent sessions.
+2. **Headless CLI runner (`skills/pipeline-coordinate/scripts/run-loop.py`):** stateless,
+   synchronous subprocess loop for Phase II (`Step 3 Impl CLI ↔ deterministic verify ↔ Step 4
+   Reviewer CLI`) and single-shot Step 2 (`review-plan`). Configured via operator-local
+   `~/.config/pipeline/runners.json` (JSON `argv` lists, never `shell=True`, mechanically enforces
+   `model_id` separation, zero planner tokens in Phase II, zero merge path).
+3. **Coordinated mode (`pipeline-coordinate` playbook over `multica` or `herdr`):** authorized per
+   feature by `.pipeline/<feature>/control.json`:
+   ```json
+   { "schema_version": 1, "mode": "coordinated", "merge_gate": "human-direct" }
+   ```
+   Optional `"pause_after_plan": false` (default `false`). `schema_version == 1`,
+   `mode ∈ {"human","coordinated"}`, `merge_gate == "human-direct"`. Absence = human mode. Created
+   ONLY by `pipeline-plan` on explicit operator request; later stages preserve it untouched.
 
-**Default remains human-relayed.** A feature MAY opt in to an external coordinator that replaces the
-human's TYPING between stages — never a judgment that belongs to a stage or to the human. **v1 is a
-CC session running the `pipeline-coordinate` playbook skill** (this repo; `pipeline-driver`'s
-`coordinate.sh` is a read-only `doctor`/`status` preflight, not a dispatcher — history in DESIGN.md
-§Provenance). The coordinator observes remote Git as the only business truth, routes on the journal
-tail's transition forms below, and delivers the next `pipeline-*` command to the right agent — typed
-into its pane or, for a role under the playbook's multica transport, as an issue assigned to it.
-As COORDINATOR it writes no target artifacts and no journal entries
-and performs no stage work belonging
-to another role; the CC-playbook session may separately execute the CC-role stages (arch/task/hunt)
-under their own write-sets — the three-role/three-model separation (CC coordinates+reasons, Pi
-implements, Codex reviews) is the invariant, not the process count. It halts fail-closed on anything
-outside the known forms. **It cannot merge and cannot confirm a merge** — the review GO-gate already
-rejects any relayed/forwarded token as non-human.
+**Coordinator role is ASSIGNED, never inferred:** a stage node NEVER dispatches other agents.
 
-### `control.json` — feature-level authorization
-
-Coordinated mode is authorized by a tracked file `.pipeline/<feature>/control.json`:
-
-```json
-{ "schema_version": 1, "mode": "coordinated", "merge_gate": "human-direct" }
-```
-
-- `schema_version` MUST be `1`; `mode` MUST be `human` or `coordinated`; `merge_gate` MUST be
-  `human-direct` — no other merge policy exists.
-- **Absence = human mode** (the coordinator observes but never dispatches). No migration ever adds
-  this file to an existing feature.
-- **`pipeline-prd` creates it, ONLY when the operator explicitly requested coordinated mode in the
-  initial PRD session** — never by default, never inferred. Git history is the authorization audit.
-- Every other stage **preserves the file and never modifies it**.
-
-### The coordinator role is ASSIGNED, never inferred (binds every node)
-
-`control.json`, this section, and the coordinate playbook are readable by every node — **reading them
-never confers the coordinator role.** A session coordinates ONLY if the human invoked
-`pipeline-coordinate` in it; a session invoked with a `pipeline-<stage>` command is that stage's node
-and nothing else, envelope or not. A stage node therefore NEVER types into another pane, enumerates or
-reports pane topology, dispatches through any other transport (creating or assigning agent issues,
-@mentioning another agent), or asks the human to let IT dispatch or coordinate
-— `pipeline-prd`'s step-4
-mode recommendation, which asks the operator to CHOOSE the run's mode, is that stage's own work and is
-untouched. Encountering coordinated metadata, an unexpected journal tail, or an apparent second
-coordinator: continue ONLY when your stage's own guards accept the state; otherwise STOP for the
-human — never self-promote.
-
-### Dispatch envelope (arrives as command arguments)
-
-Every coordinator-typed command carries five plain fields — there is no derived hash identifier:
+### Dispatch envelope & pre-write stale-dispatch guard (coordinated mode)
 
 ```text
-repo=<absolute role clone path>  branch=<trunk>  feature=<slug>
-expected_seq=<journal tail seq the coordinator observed>  expected_commit=<full trunk commit>
+repo=<abs clone path>  branch=<trunk>  feature=<slug>  expected_seq=<N>  expected_commit=<sha40>
 ```
 
-### Pre-write stale-dispatch guard (MANDATORY whenever an envelope is present)
+When present, `preflight.sh` runs BEFORE any file write: `git fetch`, exact match on `repo`,
+`branch`, `feature`, `expected_commit` (40-hex == `FETCH_HEAD` == `HEAD`), `expected_seq`, tail
+`>>> NEXT` first token == `pipeline-<stage>`, and `control.json` authorization tuple. Any mismatch
+⇒ `STALE_DISPATCH <field> observed=<v> expected=<v>` and STOP with zero writes.
 
-Run it immediately after shim step 1 (`git pull --rebase`), **before ANY file write**:
+### Atomic review outcome (coordinated mode)
 
-1. `git fetch` the configured remote trunk.
-2. Verify EXACTLY, field by field, against the observed remote state: remote identity, branch,
-   feature, trunk commit == `expected_commit`, journal tail `seq` == `expected_seq`, and the tail's
-   `>>> NEXT` first line names YOUR stage command.
-3. Verify `control.json` at that commit still carries the COMPLETE authorization tuple:
-   `schema_version` == `1` AND `mode` == `coordinated` AND `merge_gate` == `human-direct`. A missing
-   file, a missing field, or any other value is a mismatch — fail closed.
-4. Any mismatch ⇒ print `STALE_DISPATCH <field> observed=<value> expected=<envelope value>` and
-   **STOP — zero writes, zero commits.** The guard refuses CONSUMED seqs, which protects dispatches
-   whose effect is already observed in Git — it does NOT make blind redelivery safe: an unconsumed
-   dispatch is ambiguous among never-delivered / delivered-not-started / ran-without-delivering, and a
-   coordinator without a delivery ledger must STOP for human inspection instead of re-sending.
-
-Exact-match and fail-closed — a natural-language "check git first" is not a substitute. No envelope
-(human-relay) ⇒ the guard does not apply; nothing else about the shim loop changes.
-
-### Stage-consistent transitions (coordinated features MUST emit)
-
-The coordinator routes ONLY on the journal tail's `<from>→<to> · <status>` plus the `>>> NEXT` first
-line — never on prose. A coordinated feature therefore MUST emit the stage-specific forms; the
-load-bearing one is impl's next-card continuation:
-
-- impl card green, **todo cards remain** ⇒ `impl→impl · completed`, NEXT `Run pipeline-impl`.
-- impl card green, **every card `review`** ⇒ `impl→review · completed`, NEXT `Run pipeline-review`.
-- impl fail `attempts < 3` ⇒ `impl→impl · failed`; `attempts >= 3` ⇒ `impl→hunt · blocked` (unchanged).
-- hunt re-split/re-spec ⇒ `hunt→task · completed`; hunt re-queue (card reset `todo, attempts: 0`) ⇒
-  `hunt→impl · completed`.
-- review rejected ⇒ `review→impl · failed` (exactly ONE named, flipped card) or
-  `review→hunt · blocked` (named card or `reviews/integration-NN.md` report). Approved ⇒ the atomic
-  outcome below; merged ⇒ `review→done · completed` terminal.
-
-### Atomic review outcome (coordinated mode is strict)
-
-The review verdict must become visible in Git in ONE commit — never an intermediate "verdict written;
-disposition follows" commit the coordinator can observe but not route:
-
-- **Approved** ⇒ run EVERY pre-merge guard FIRST — the freeze gate, the semantic review, the
-  every-card-is-`review` completeness guard, and the final full-suite gate (GREEN on the
-  `feat/<feature>` HEAD) — and only when ALL pass, publish ONE commit: `reviews/review-NN.md` + a
-  `review→review · completed` journal entry whose handoff's FIRST line after `>>> NEXT` is exactly:
-  `Await human-direct merge confirmation in this reviewer session.`
-  The marker is a promise that the feature is merge-ready but for the human token — a watcher that
-  sees it enters `WAITING_HUMAN_MERGE`, so publishing it over an incomplete or red feature is a
-  contract violation. If any guard fails, the outcome is NOT approved — emit the matching rejection
-  form below instead. The coordinator observes the marker, stops dispatching, and waits read-only;
-  the merge still happens ONLY via the GO-gate (direct operator token in the same reviewer session).
-- **Changes requested, single-owner** ⇒ ONE commit: `reviews/review-NN.md` + the offending card's
-  `status`/`attempts` update + the `review→impl · failed` (or `review→hunt · blocked` at
-  `attempts >= 3`) journal entry, naming that card in the handoff.
-- **Cross-card integration failure, no single owner** ⇒ ONE commit: `reviews/review-NN.md` +
-  `reviews/integration-NN.md` + the `review→hunt · blocked` journal entry (output = the report
-  path) — **no card is mutated** (§State authority: never blind-flip a real card; the report is the
-  hunt target).
-
-Human-relay mode may keep the existing two-step (verdict commit, then disposition); coordinated mode
-may not.
+`pipeline-review` publishes its verdict and disposition in ONE trunk commit:
+- **Approved:** verify green + all checks passed ⇒ ONE commit (`code-review-NN.md` +
+  `review→review · completed` with `Await human-direct merge confirmation in this reviewer session.`),
+  then arm the GO-gate and STOP.
+- **Rejected:** ONE commit (`code-review-NN.md` + updated `current.json` + `review→impl · failed`
+  or `review→human · blocked`).
 
 ## Forge adapter (review/merge only)
 
 Keyed on `git config --get remote.origin.url`:
-
 - **github.com** → `gh` (`gh pr diff` / `gh pr merge`)
-- **gitee** → `gitee-cli` against the instance's PR API
-- **anything else / no forge** → `git fetch && git diff base..branch`
-
-The PR is the **preferred** review surface (auditable thread + clean merge gate); where no forge
-exists, the `git diff base..branch` review is its **sanctioned equivalent** — the same gate still holds
-(semantic review + freeze gate + full-suite green + human-confirmed, only-`pipeline-review`-merges).
-This degrade is fail-open by design (see DESIGN.md §Rejected). The no-forge path loses only the forge's PR thread, never the review
-gate — reviewable code still never reaches trunk except through a `feat/<feature>` branch that this gate
-has passed.
-
-Merge is always human-confirmed. The pipeline performs no destructive forge operations.
+- **gitee** → `gitee-cli`
+- **anything else / no forge** → `git fetch && git diff base..branch` (fail-open; same gates hold)
 
 ## Self-improvement — skills propose, review gates (never self-edit)
 
-A running bot must **NEVER edit a live/installed skill in place**. A bot's pipeline clone is
-a **read-only consumer**: it never carries local skill edits. The canonical skill entries are
-**symlinks into that clone**; the maintenance command `pipeline-update` is an ff-only pull of it (a dirty
-or diverged clone ⇒ STOP, never reset) (pull-only — it opens no PR and merges
-nothing; the write direction stays the gated `pipeline-improve` path below).
+Never edit a live/installed skill or `~/.agents/pipeline` in place (`pipeline-update` is ff-only
+pull). Gaps emit `SKILL-PROPOSAL: <skill> — <what + why>` and land ONLY via `pipeline-improve` →
+meta-PR against `jackypanster/pipeline` → `pipeline-review` in **meta-PR mode** (semantic review +
+**size-budget axis**: any `skills/*/SKILL.md` with net growth > 0 AND post-merge `wc -l > 120`
+requires explicit justification in the PR body; **evidence tier**: `observed` vs `hypothetical`,
+only `observed` or invariant violations block) → direct human confirm → reviewer squash-merge.
 
-When a run reveals a skill gap, **emit a proposal — do not apply it**: add a line to your report/handoff
-`SKILL-PROPOSAL: <skill> — <what to change + why, one line>`. A proposal reaches `main` ONLY through the
-gated path: **`pipeline-improve` opens a PR against the pipeline repo → `pipeline-review` reviews the
-skill diff (real improvement, not a weakening? every existing hard rule preserved?) → a human confirms
-the merge.** No auto-merge; the agent never merges its own proposal.
-
-This review runs in **meta-PR mode**: the pipeline repo has **no `.pipeline/` state** (no `current.json`,
-cards, `spec-rev`), so `pipeline-improve` does NOT run the feature shim loop, and `pipeline-review` skips
-its feature steps (cards / freeze gate / full-suite gate) and does **semantic review only** — real
-improvement + every hard rule and frozen invariant preserved — then human-confirm + squash-merge. The
-feature freeze-gate machinery does not apply to a skill diff; only-reviewer-merges and human-confirm
-still do. The meta-PR semantic review also runs a **size-budget axis**: any `skills/*/SKILL.md` whose
-net growth > 0 AND whose post-merge length exceeds 120 lines requires an explicit size-budget
-justification in the PR description, else review requests changes (exact numstat/wc trigger in
-`pipeline-review`'s Meta-PR mode). Blocking findings carry an **evidence tier** (`observed` vs
-`hypothetical`); for this one-operator toolchain a `hypothetical` finding is a non-blocking
-follow-up unless it hits a hard rule or frozen invariant.
-
-The same meta-PR gate covers, **additively**: proposals to **any other file of this repo** (a
-`DESIGN.md`/`README` diff is reviewed exactly like a skill diff), and PRs against the **sibling
-toolchain repos** (`pipeline-driver`, `pipeline-dashboard`, `pipeline-dispatch`) — they also carry no
-`.pipeline/` state, and whether the PR was opened by `pipeline-improve` (pipeline-repo proposals) or
-directly by the operator's session (sibling/doc proposals), it gets the same semantic-only review,
-human-confirm, and reviewer-only squash-merge; the proposer never merges. For a sibling repo the
-preservation check reads against that repo's own documented hard rules and guarantees.
-
-The **frozen invariants** (state machine · only-reviewer-merges · the freeze gate · never-force-push)
-are **not auto-improvable** — a proposal touching them is STOPPED for explicit human decision.
+The **frozen invariants** (3-role model separation · 4-step state machine & 3-reject breaker ·
+only-reviewer-merges + human-direct GO-gate · never-force-push trunk) are NOT auto-improvable —
+touching them requires explicit human decision.
