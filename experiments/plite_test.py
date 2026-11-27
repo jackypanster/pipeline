@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit and end-to-end integration tests for experiments/plite.py.
+"""Unit and end-to-end integration tests for experiments/plite-skill/scripts/plite.py.
 
 Exercises every integrity guard, phase-aware resume path, locking, verdict parser,
 protected config escalation, CLI argument validation, and pilot decision gate.
@@ -19,7 +19,8 @@ import textwrap
 import unittest
 
 EXP_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(EXP_DIR))
+SCRIPTS_DIR = EXP_DIR / "plite-skill" / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 import plite  # noqa: E402
 
@@ -46,6 +47,16 @@ def init_sample_repo(repo_dir: pathlib.Path) -> str:
 
 
 class TestUnitGuards(unittest.TestCase):
+    def test_skill_package_frontmatter_and_script_layout(self) -> None:
+        skill_md = EXP_DIR / "plite-skill" / "SKILL.md"
+        script_py = EXP_DIR / "plite-skill" / "scripts" / "plite.py"
+        self.assertTrue(skill_md.is_file())
+        self.assertTrue(script_py.is_file())
+        text = skill_md.read_text(encoding="utf-8")
+        self.assertIn("name: plite\n", text)
+        self.assertIn("scripts/plite.py", text)
+        self.assertLessEqual(len(text.splitlines()), 70)
+
     def test_resolve_identity_consistency_and_config(self) -> None:
         with self.assertRaises(plite.PliteError):
             plite.resolve_agent_identity("agy", None, None)
