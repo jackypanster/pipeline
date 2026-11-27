@@ -31,8 +31,11 @@ You are a **thin natural-language front door** over `<skill-dir>/scripts/plite.p
 2. **Real `--verify`**: inspect repo config/tests read-only (`pyproject.toml`, `package.json`, `Cargo.toml`, `Makefile`, etc.). Never invent an unverified command; ask if none exists.
 3. **Concrete `--acceptance`**: write objective, testable criteria (no placeholders).
 4. **Risk gate**: evaluate HARD/SOFT checklist (Hard Rule 3). High ⇒ STOP and route to full `pipeline`.
-5. **Model selection (applies to BOTH `run` and `resume`)**: choose `--worker` and `--reviewer` from `agy` / `claude` / `codex` with **distinct model families** (`anthropic` vs `openai` vs `google`; on `resume`, reviewer family must also differ from all prior `contributing_families`). Always pass explicit `--worker-model` / `--reviewer-model` for `agy` (e.g. `gemini-4-neon`), and pass `--*-model` for `codex`/`claude` whenever the user named one (e.g. `gpt-6.2-sol`).
-6. **Launch**: ask one concise question only if repo, `--verify`, `--acceptance`, or agent pairing is genuinely ambiguous; otherwise print a 3-line summary (`repo/base/risk`, `worker vs reviewer`, `acceptance + verify`) and execute `scripts/plite.py` (with long/background timeout).
+5. **Model selection (applies to BOTH `run` and `resume`)**:
+   - **Defaults when the user omits pairing** (do NOT stop to ask): in AGY → `--worker agy` + `--reviewer codex`; in Claude Code → `--worker claude` + `--reviewer codex`; in Codex CLI → `--worker codex` + `--reviewer claude`; elsewhere → `--worker claude` + `--reviewer codex`.
+   - **Overrides**: follow any CLI/model the user names (e.g. "claude 写、codex 审"); never require the user to spell out model IDs.
+   - **Independence & model flags**: enforce distinct model families (`anthropic` vs `openai` vs `google`; on `resume`, reviewer family must also differ from all prior `contributing_families`). Omit `--*-model` for `codex`/`claude` unless the user named one (`plite.py` resolves them from CLI config/default); for `agy`, always pass `--*-model` using the active/requested Gemini model (default `gemini-4-neon` if unspecified).
+6. **Launch**: ask one concise question only if repo, `--verify`, or `--acceptance` is genuinely ambiguous (never ask solely about default agent pairing); otherwise print a 3-line summary (`repo/base/risk`, `worker vs reviewer`, `acceptance + verify`) and execute `scripts/plite.py` (with long/background timeout).
 
 ## Reporting Back
 

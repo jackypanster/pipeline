@@ -40,8 +40,8 @@ Minimal, reversible companion experiment to `jackypanster/pipeline`, packaged as
 )
 ```
 
-Invoke naturally in each runtime:
-- **AGY / Antigravity / Claude Code**: `/plite 在当前仓库给 status 加 --json 输出，用 agy(gemini-4-neon) 写、codex(gpt-6.2-sol) 审`
+Invoke naturally in each runtime (no need to specify agent or model names — defaults pair the current host against a different model family; mention CLI names only when overriding by quota):
+- **AGY / Antigravity / Claude Code**: `/plite 在当前仓库给 status 加 --json 输出` (or override: `/plite 用 claude 写、codex 审，修一下 X`)
 - **Codex CLI**: `$plite ...`
 - **Pi**: `/skill:plite ...`
 
