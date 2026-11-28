@@ -163,7 +163,7 @@ Legal transitions:
 ## Transports & coordinated mode
 
 Three L1 transports share this exact contract:
-1. **Headless CLI runner (`pipeline-run` skill / `skills/pipeline-coordinate/scripts/run-loop.py`):**
+1. **Headless CLI runner (`pipe` skill / `skills/pipeline-coordinate/scripts/run-loop.py`):**
    end-to-end 4-step runner (`run`, `resume`, `status`, `logs`, `stop`, `init-config`, plus
    single-phase `review-plan` / `approve-plan` / `phase2`) in foreground or `--background`
    (`shell=False`, `fcntl.flock` repo lock, isolated `feat/<feature>` worktree, zero planner

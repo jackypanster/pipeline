@@ -1,9 +1,9 @@
 ---
-name: pipeline-run
-description: "Agent-native entry skill for the 3-Agent 4-Step development workflow (Planner -> Plan Review -> Implementer -> Code Review) running continuously in background or foreground with zero manual copy-paste. Any model/CLI can fill any of the 3 roles via ~/.config/pipeline/runners.json (default preset: Gemini 4 planner, Pi implementer, GPT 6.2 reviewer). Stops ONLY on ACCEPT (ready for human merge confirm), 3rd rejection breaker, NEEDS_HUMAN, or error. Triggers on: 'pipeline-run', 'run 3-agent pipeline', '3 agent 4 step', '后台跑 pipeline', '自动开发并评审'."
+name: pipe
+description: "Agent-native entry skill for the 3-Agent 4-Step development workflow (Planner -> Plan Review -> Implementer -> Code Review) running continuously in background or foreground with zero manual copy-paste. Any model/CLI can fill any of the 3 roles via ~/.config/pipeline/runners.json (default preset: Gemini 4 planner, Pi implementer, GPT 6.2 reviewer). Stops ONLY on ACCEPT (ready for human merge confirm), 3rd rejection breaker, NEEDS_HUMAN, or error. Triggers on: 'pipe', 'run 3-agent pipeline', '3 agent 4 step', '后台跑 pipeline', '自动开发并评审'."
 ---
 
-# pipeline-run
+# pipe
 
 Agent-native entry point to run the full **3-Agent 4-Step** workflow (`plan → plan-review → impl → review`)
 continuously without manually relaying context between agents.

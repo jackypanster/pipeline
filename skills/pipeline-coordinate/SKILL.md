@@ -20,12 +20,12 @@ without violating model independence or human merge authority.
    (`>= 3`), or Step 4 `plan_fact|plan_design|env` short-circuits MUST stop. Never merge, never
    force-push trunk.
 
-## Transport 1 (Recommended, single-machine): Headless CLI (`scripts/run-loop.py` / `pipeline-run` skill)
+## Transport 1 (Recommended, single-machine): Headless CLI (`scripts/run-loop.py` / `pipe` skill)
 
 Runs the full 4-step pipeline (`run [--background]`, `resume`, `status`, `logs`, `stop`, `init-config`)
 or single-phase commands (`review-plan`, `approve-plan`, `phase2`) with **0 planner tokens in Phase II**
 inside an isolated `feat/<feature>` git worktree. Reads `~/.config/pipeline/runners.json` (`argv`
-string arrays, `shell=False`, mandatory distinct `model_id` per role; see `skills/pipeline-run/SKILL.md`).
+string arrays, `shell=False`, mandatory distinct `model_id` per role; see `skills/pipe/SKILL.md`).
 
 ```bash
 # Full 4-step end-to-end (foreground or --background):

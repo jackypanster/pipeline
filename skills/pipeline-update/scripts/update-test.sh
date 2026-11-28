@@ -7,7 +7,9 @@ set -euo pipefail
 
 UPDATE="$(cd "$(dirname "$0")" && pwd)/update.sh"
 URL="https://github.com/jackypanster/pipeline.git"
-ROOT="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/update-test.XXXXXX")" && pwd -P)"
+TMP_RAW="$(mktemp -d "${TMPDIR:-/tmp}/update-test.XXXXXX")"
+[ -n "$TMP_RAW" ] && [ -d "$TMP_RAW" ]
+ROOT="$(cd "$TMP_RAW" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
 export HOME="$ROOT/home" XDG_CONFIG_HOME="$ROOT/home/.config" GIT_CONFIG_NOSYSTEM=1
 unset PIPELINE_SKILLS_DIR
@@ -42,10 +44,15 @@ check 1-fresh-link 0 "LINKED pipeline-impl" "LINKED pipeline-preflight" "already
 # 2. rerun: idempotent, nothing re-linked.
 check 2-idempotent 0 "ok pipeline-impl" "ok pipeline-preflight" "HEAD $(git -C "$CLONE" rev-parse HEAD)" "already latest"
 
-# 3. upstream adds a skill ⇒ ff pull picks it up and links it.
-mkdir -p "$ROOT/seed/skills/pipeline-new"; echo "name: pipeline-new" > "$ROOT/seed/skills/pipeline-new/SKILL.md"
+# 3. upstream adds a short-named skill (`pipe`) and a pipeline-* skill, plus a non-skill dir ⇒ links only dirs with SKILL.md.
+mkdir -p "$ROOT/seed/skills/pipeline-new" "$ROOT/seed/skills/pipe" "$ROOT/seed/skills/not-a-skill"
+echo "name: pipeline-new" > "$ROOT/seed/skills/pipeline-new/SKILL.md"
+echo "name: pipe" > "$ROOT/seed/skills/pipe/SKILL.md"
+echo "helper" > "$ROOT/seed/skills/not-a-skill/README.md"
 git -C "$ROOT/seed" add -A; git -C "$ROOT/seed" commit --quiet -m new; git -C "$ROOT/seed" push --quiet origin main
-check 3-ff-new-skill 0 "LINKED pipeline-new" "ok pipeline-impl" "updated" "HEAD $(git -C "$ROOT/seed" rev-parse HEAD)"
+check 3-ff-new-skill 0 "LINKED pipeline-new —" "LINKED pipe —" "ok pipeline-impl" "updated" "HEAD $(git -C "$ROOT/seed" rev-parse HEAD)"
+[ "$(readlink "$SKILLS/pipe")" = ../pipeline/skills/pipe ] || { echo "FAIL 3b-pipe-symlink"; fails=$((fails+1)); }
+[ ! -e "$SKILLS/not-a-skill" ] && [ ! -L "$SKILLS/not-a-skill" ] || { echo "FAIL 3c-non-skill-skipped"; fails=$((fails+1)); }
 
 # 4. a tracked-file edit in the consumer clone ⇒ STOP, clone untouched.
 echo edit >> "$CLONE/skills/pipeline-impl/SKILL.md"
