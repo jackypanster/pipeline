@@ -615,10 +615,11 @@ print("Checked non-UTF-8 diff.")
         r23a = _run("review-plan", "--repo", str(w23), "--config", str(c23), env=git_env)
         cur23 = json.loads((w23 / ".pipeline" / "current.json").read_text())
         r23b = _run("phase2", "--repo", str(w23), "--config", str(c23), env=git_env)
+        has_crlf23 = b"\r\n" in raw_blob23
         check("23-crlf-committed-plan-blob-review-and-phase2",
-              (b"\r\n" in raw_blob23) and r23a.returncode == 0
+              has_crlf23 and r23a.returncode == 0
               and cur23.get("approved_plan_blob") == crlf_sha23 and r23b.returncode == 0,
-              f"has_crlf={b'\\r\\n' in raw_blob23} r23a={r23a.returncode}/{r23a.stderr} "
+              f"has_crlf={has_crlf23} r23a={r23a.returncode}/{r23a.stderr} "
               f"pin_match={cur23.get('approved_plan_blob') == crlf_sha23} r23b={r23b.returncode}/{r23b.stderr}")
 
     print(f"---\n{passed}/{passed + failed} cases passed ({failed} failed)")
