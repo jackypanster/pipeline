@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pipeline-update — fast-forward the read-only consumer clone and check the canonical links.
-# Layout (README §Install): <skills-dir>/pipeline-<name> -> ../pipeline/skills/pipeline-<name>
+# Layout (README §Quick Start): <skills-dir>/<name> -> ../pipeline/skills/<name> (every skills/<name>/SKILL.md)
 # Usage: update.sh [clone]   (default ~/.agents/pipeline; skills dir: $PIPELINE_SKILLS_DIR, default ~/.agents/skills)
 set -euo pipefail
 
@@ -31,7 +31,8 @@ legacy=0
 mkdir -p "$skills"
 rel=0   # relative links only when the clone is <parent>/pipeline beside <parent>/<skills-dir>
 [ "$(basename "$clone")" = pipeline ] && [ "$(cd "$clone/.." && pwd -P)" = "$(cd "$skills/.." && pwd -P)" ] && rel=1
-for src in "$clone"/skills/pipeline-*/; do
+for src in "$clone"/skills/*/; do
+  [ -f "${src}SKILL.md" ] || continue
   name="$(basename "$src")"; entry="$skills/$name"; real="$(cd "$src" && pwd -P)"
   if [ "$rel" = 1 ]; then want="../pipeline/skills/$name"; else want="$real"; fi
   if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then

@@ -43,21 +43,21 @@ never in repository files.
 # Read-only consumer clone (never edit skills here — CONTRACT §Self-improvement).
 [ -e ~/.agents/pipeline ] || git clone https://github.com/jackypanster/pipeline.git ~/.agents/pipeline
 
-# Canonical symlinks under ~/.agents/skills/
+# Canonical symlinks under ~/.agents/skills/ (every skills/<name>/SKILL.md, incl. `pipe` and `pipeline-*`)
 mkdir -p ~/.agents/skills
-for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
+for d in ~/.agents/pipeline/skills/*/; do [ -f "${d}SKILL.md" ] || continue; n=$(basename "$d")
   [ -e ~/.agents/skills/$n ] || [ -L ~/.agents/skills/$n ] || ln -s ../pipeline/skills/$n ~/.agents/skills/$n
 done
 
 # Attach to local agent runtimes if present (runtimes reading ~/.agents/skills directly need none)
-for d in ~/.agents/pipeline/skills/pipeline-*/; do n=$(basename "$d")
+for d in ~/.agents/pipeline/skills/*/; do [ -f "${d}SKILL.md" ] || continue; n=$(basename "$d")
   if [ -d ~/.claude ]; then mkdir -p ~/.claude/skills
     [ -e ~/.claude/skills/$n ] || ln -s ../../.agents/skills/$n ~/.claude/skills/$n; fi
   if [ -d ~/.codex ]; then mkdir -p ~/.codex/skills
     [ -e ~/.codex/skills/$n ] || ln -s ~/.agents/skills/$n ~/.codex/skills/$n; fi
 done
 if [ -d ~/.pi/agent ]; then mkdir -p ~/.pi/agent/skills
-  for n in pipeline-impl pipeline-preflight; do
+  for n in pipe pipeline-impl pipeline-preflight; do
     [ -e ~/.pi/agent/skills/$n ] || ln -s ../../../.agents/skills/$n ~/.pi/agent/skills/$n
   done
 fi
@@ -95,15 +95,15 @@ Paste this block into `<target-repo>/AGENTS.md` (or `CLAUDE.md`) so any cold age
 
 ### 3. Run a feature
 
-**Option A — Agent-native Headless Runner (`pipeline-run` skill, recommended — full 4-step foreground or `--background`, zero manual copy-paste):**
+**Option A — Agent-native Headless Runner (`pipe` skill, recommended — full 4-step foreground or `--background`, zero manual copy-paste):**
 
 1. Generate operator-local `~/.config/pipeline/runners.json` once (never commit to Git; any model/CLI
    can fill any role as long as `reviewer` differs from both `planner` and `implementer` — see
-   [runners.example.json](skills/pipeline-run/runners.example.json)):
+   [runners.example.json](skills/pipe/runners.example.json)):
    ```bash
    python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py init-config
    ```
-2. Launch all 4 steps continuously (or simply ask any installed agent to use `pipeline-run`):
+2. Launch all 4 steps continuously (or simply ask any installed agent to use `pipe`):
    ```bash
    python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py run \
      --repo <target-repo> --feature <slug> --idea "<requirement>" [--push] --background
@@ -132,7 +132,7 @@ and use `pipeline-coordinate` (see [transport-multica.md](skills/pipeline-coordi
 
 | Command | Role | `roles.yaml` slot | Purpose |
 |---|---|---|---|
-| `pipeline-run` | (entry skill) | — | Agent-native full 4-step runner (`run --background`, `status`, `logs`, `resume`, `stop`, `init-config`) |
+| `pipe` | (entry skill) | — | Agent-native full 4-step runner (`run --background`, `status`, `logs`, `resume`, `stop`, `init-config`) |
 | `pipeline-plan` | `planner` | `[grill-me, think]` | Survey codebase, write `plan.md` (`verify[]`, `forbid-paths[]`, ≤10 specs, T1–T10) |
 | `pipeline-plan-review` | `reviewer` | `check` | Spot-check ≥3 citations, pin `approved_plan_blob`, `VERDICT \| CAUSE` |
 | `pipeline-impl` | `implementer` | `<autonomous-coding-skill>` | Code + T1–T10 tests on `feat/<feature>`, pass `verify[]`, write `impl-report.md` |

@@ -919,7 +919,7 @@ sys.exit(0)
         models30 = {k: obj30.get(k, {}).get("model_id", "") for k in ("planner", "implementer", "reviewer")}
         gen_bound30 = all(_bound_model_arg(obj30.get(k, {})) == models30[k] for k in ("planner", "implementer", "reviewer"))
 
-        example_path = Path(__file__).resolve().parents[2] / "pipeline-run" / "runners.example.json"
+        example_path = Path(__file__).resolve().parents[2] / "pipe" / "runners.example.json"
         ex30 = json.loads(example_path.read_text(encoding="utf-8"))
         ex_roles = [ex30["planner"], ex30["implementer"], ex30["reviewer"]] + list(ex30.get("_swappable_examples", {}).values())
         ex_bound30 = all(bool(r.get("model_id")) and _bound_model_arg(r) == r.get("model_id") for r in ex_roles)

@@ -15,8 +15,8 @@ not fork its commands here.
 
 1. **Machine install (idempotent):** execute README §Quick Start step 1:
    - Clone `https://github.com/jackypanster/pipeline.git` to `~/.agents/pipeline` if absent (present ⇒ keep).
-   - Symlink every `~/.agents/pipeline/skills/pipeline-*` to `~/.agents/skills/<name>` (`../pipeline/skills/<name>`).
-   - Attach runtime links (`.claude/skills/`, `.codex/skills/`, and `.pi/agent/skills/` for `pipeline-impl` + `pipeline-preflight`). Runtimes reading `~/.agents/skills` directly need no extra links.
+   - Symlink every `~/.agents/pipeline/skills/*/` (containing `SKILL.md`, incl. `pipe` and `pipeline-*`) to `~/.agents/skills/<name>` (`../pipeline/skills/<name>`).
+   - Attach runtime links (`.claude/skills/`, `.codex/skills/`, and `.pi/agent/skills/` for `pipe` + `pipeline-impl` + `pipeline-preflight`). Runtimes reading `~/.agents/skills` directly need no extra links.
 2. **Verify delegated skills** (README §Dependencies): confirm `think`, `check`, `hunt`, `grill-me`,
    and the `impl` autonomous coding skill exist on the runtimes that execute those stages. Report
    missing skills with their source repo.
