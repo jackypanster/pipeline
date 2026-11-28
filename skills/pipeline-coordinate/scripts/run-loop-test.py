@@ -110,13 +110,35 @@ def _append_plan_handoff(work, seq_num, note="revised plan", git_env=None):
     _git(work, "commit", "--quiet", "-m", f"planner handoff {seq_num}", env=git_env)
 
 
-def _mk_config(root, name, impl_cmd, rev_cmd, *, impl_model="cheap-c", rev_model="frontier-b",
-               impl_timeout=30, rev_timeout=30):
+def _mk_fresh_repo(root, name, *, git_env=None):
+    base = root / name
+    remote = base / "remote.git"
+    work = base / "work"
+    base.mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", "--bare", "--initial-branch=main", str(remote)], check=True, env=git_env)
+    subprocess.run(["git", "clone", "--quiet", str(remote), str(work)], check=True, env=git_env)
+    _git(work, "checkout", "-B", "main", env=git_env)
+    _git(work, "config", "user.name", "test", env=git_env)
+    _git(work, "config", "user.email", "test@example.invalid", env=git_env)
+    _git(work, "config", "commit.gpgsign", "false", env=git_env)
+    (work / "README.md").write_text("# Fresh Repo\n", encoding="utf-8")
+    _git(work, "add", "-A", env=git_env)
+    _git(work, "commit", "--quiet", "-m", "initial", env=git_env)
+    _git(work, "push", "--quiet", "-u", "origin", "main", env=git_env)
+    return work
+
+
+def _mk_config(root, name, impl_cmd, rev_cmd, *, planner_cmd=None, planner_model="frontier-a",
+               impl_model="cheap-c", rev_model="frontier-b",
+               planner_timeout=30, impl_timeout=30, rev_timeout=30):
     cfg = root / f"runners-{name}.json"
-    cfg.write_text(json.dumps({
+    obj = {
         "implementer": {"model_id": impl_model, "argv": impl_cmd, "timeout_s": impl_timeout},
         "reviewer": {"model_id": rev_model, "argv": rev_cmd, "prompt_via": "stdin", "timeout_s": rev_timeout},
-    }), encoding="utf-8")
+    }
+    if planner_cmd is not None:
+        obj["planner"] = {"model_id": planner_model, "argv": planner_cmd, "timeout_s": planner_timeout}
+    cfg.write_text(json.dumps(obj), encoding="utf-8")
     return cfg
 
 
@@ -400,7 +422,7 @@ time.sleep(60)
         # 14. implementer timeout STOPs immediately (exit 4, hard rule 2) AND kills descendant process group
         w14 = _mk_fixture(root, "t14", git_env=git_env)
         pidfile = root / "child.pid"
-        c14 = _mk_config(root, "t14", [str(impl_hang), str(pidfile), "{prompt}"], [str(rev_queue), str(q1)], impl_timeout=1.2)
+        c14 = _mk_config(root, "t14", [str(impl_hang), str(pidfile), "{prompt}"], [str(rev_queue), str(q1)], impl_timeout=2.5)
         r14 = _run("phase2", "--repo", str(w14), "--config", str(c14), env=git_env)
         spawned = pidfile.exists()
         child_dead = False
@@ -621,6 +643,211 @@ print("Checked non-UTF-8 diff.")
               and cur23.get("approved_plan_blob") == crlf_sha23 and r23b.returncode == 0,
               f"has_crlf={has_crlf23} r23a={r23a.returncode}/{r23a.stderr} "
               f"pin_match={cur23.get('approved_plan_blob') == crlf_sha23} r23b={r23b.returncode}/{r23b.stderr}")
+
+        # --- Full 4-Step Orchestrator & Background Execution Tests (24-31) ---
+        planner_ok = stubs / "planner-ok.py"
+        _write_exe(planner_ok, """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+cnt_file = Path(sys.argv[1])
+feat = sys.argv[2]
+n = int(cnt_file.read_text()) + 1 if cnt_file.exists() else 1
+cnt_file.write_text(str(n))
+p = Path(".pipeline") / feat / "plan.md"
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(
+    f"---\\nfeature: {feat}\\nplanner_model: frontier-a\\nverify:\\n  - \\"test -f delivered.txt\\"\\nforbid-paths: []\\n---\\n"
+    f"## Baseline Evidence\\n- README.md:1\\n## Specifications\\n1. revision {n}\\n## Acceptance Matrix (T1-T10)\\n- T1: delivered.txt\\n",
+    encoding="utf-8",
+)
+print(f"authored plan revision {n}")
+""")
+
+        # 24. Full 4-step E2E from fresh repo (no .pipeline/): Step 1->Step 2 REJECT->Step 1->Step 2 ACCEPT->Step 3->Step 4 REJECT->Step 3->Step 4 ACCEPT (0 planner tokens in Phase II!)
+        w24 = _mk_fresh_repo(root, "t24", git_env=git_env)
+        q24 = root / "q24.txt"
+        q24.write_text(
+            "VERDICT: REJECT | CAUSE: plan_design\n"
+            "VERDICT: ACCEPT | CAUSE: none\n"
+            "VERDICT: REJECT | CAUSE: impl_bug\n"
+            "VERDICT: ACCEPT | CAUSE: none\n"
+        )
+        c24 = _mk_config(
+            root, "t24",
+            [str(impl_ok), str(root / "impl24"), "{prompt}"],
+            [str(rev_queue), str(q24)],
+            planner_cmd=[str(planner_ok), str(root / "plan24"), FEATURE, "{prompt}"],
+        )
+        r24 = _run("run", "--repo", str(w24), "--feature", FEATURE, "--idea", "Build demo feature", "--config", str(c24), env=git_env)
+        cur24 = json.loads((w24 / ".pipeline" / "current.json").read_text())
+        plan_runs24 = (root / "plan24").read_text().strip() if (root / "plan24").exists() else "0"
+        impl_runs24 = (root / "impl24").read_text().strip() if (root / "impl24").exists() else "0"
+        st24 = _run("status", "--repo", str(w24), "--feature", FEATURE, "--json", env=git_env)
+        st24_obj = json.loads(st24.stdout) if st24.returncode == 0 else {}
+        check("24-full-4step-e2e-auto-loops-with-zero-planner-tokens-in-phase2",
+              r24.returncode == 0 and plan_runs24 == "2" and impl_runs24 == "2"
+              and cur24.get("plan_rejects") == 1 and cur24.get("review_rejects") == 1
+              and st24_obj.get("status") == "accept" and st24_obj.get("exit_code") == 0,
+              f"rc={r24.returncode} plan_runs={plan_runs24} impl_runs={impl_runs24} cur24={cur24} st={st24_obj} err={r24.stderr}")
+
+        # 25. Full 4-step --background detaches cleanly, status --json reaches accept, logs show PHASE2 ACCEPT
+        w25 = _mk_fresh_repo(root, "t25", git_env=git_env)
+        q25 = root / "q25.txt"
+        q25.write_text("VERDICT: ACCEPT | CAUSE: none\nVERDICT: ACCEPT | CAUSE: none\n")
+        c25 = _mk_config(
+            root, "t25",
+            [str(impl_ok), str(root / "impl25"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_ok), str(root / "plan25"), FEATURE, "{prompt}"],
+        )
+        r25 = _run("run", "--repo", str(w25), "--feature", FEATURE, "--idea", "Background demo", "--config", str(c25), "--background", env=git_env)
+        st25_obj = {}
+        for _ in range(100):
+            st25 = _run("status", "--repo", str(w25), "--feature", FEATURE, "--json", env=git_env)
+            if st25.returncode == 0:
+                st25_obj = json.loads(st25.stdout)
+                if not st25_obj.get("alive") and st25_obj.get("status") not in ("starting", "running"):
+                    break
+            time.sleep(0.1)
+        lg25 = _run("logs", "--repo", str(w25), "--feature", FEATURE, "--tail", "50", env=git_env)
+        check("25-full-4step-background-status-logs",
+              r25.returncode == 0 and "RUN_STARTED" in r25.stdout
+              and st25_obj.get("status") == "accept" and st25_obj.get("exit_code") == 0
+              and lg25.returncode == 0 and "PHASE2 ACCEPT" in lg25.stdout,
+              f"r25={r25.returncode}/{r25.stdout}/{r25.stderr} st25={st25_obj} lg={lg25.stdout[-200:]!r}")
+
+        # 26. Planner NEEDS_HUMAN pauses (exit 3), then `resume --answer` completes all 4 steps
+        planner_ask = stubs / "planner-ask.py"
+        _write_exe(planner_ask, """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+feat = sys.argv[1]
+prompt = sys.argv[2]
+if "--- HUMAN ANSWERS ---" not in prompt:
+    print("NEEDS_HUMAN: Need output format decision")
+    print("1. Should output be JSON or plain text?")
+    sys.exit(0)
+p = Path(".pipeline") / feat / "plan.md"
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(
+    f"---\\nfeature: {feat}\\nplanner_model: frontier-a\\nverify:\\n  - \\"test -f delivered.txt\\"\\nforbid-paths: []\\n---\\n"
+    f"## Baseline Evidence\\n- README.md:1\\n## Specifications\\n1. Use JSON per human answer\\n## Acceptance Matrix (T1-T10)\\n- T1: delivered.txt\\n",
+    encoding="utf-8",
+)
+print("authored plan after human answer")
+""")
+        w26 = _mk_fresh_repo(root, "t26", git_env=git_env)
+        q26 = root / "q26.txt"
+        q26.write_text("VERDICT: ACCEPT | CAUSE: none\nVERDICT: ACCEPT | CAUSE: none\n")
+        c26 = _mk_config(
+            root, "t26",
+            [str(impl_ok), str(root / "impl26"), "{prompt}"],
+            [str(rev_queue), str(q26)],
+            planner_cmd=[str(planner_ask), FEATURE, "{prompt}"],
+        )
+        r26a = _run("run", "--repo", str(w26), "--feature", FEATURE, "--idea", "Ambiguous idea", "--config", str(c26), env=git_env)
+        qfile26 = w26 / ".pipeline" / FEATURE / "human-questions.md"
+        r26b = _run("resume", "--repo", str(w26), "--feature", FEATURE, "--answer", "1. JSON", "--config", str(c26), env=git_env)
+        afile26 = w26 / ".pipeline" / FEATURE / "human-answers.md"
+        check("26-needs-human-pause-and-resume-with-answer",
+              r26a.returncode == 3 and "RUN NEEDS_HUMAN" in r26a.stdout and qfile26.is_file()
+              and r26b.returncode == 0 and afile26.is_file() and "1. JSON" in afile26.read_text(),
+              f"r26a={r26a.returncode}/{r26a.stdout}/{r26a.stderr} r26b={r26b.returncode}/{r26b.stderr}")
+
+        # 27. Step 2 3rd rejection breaker stops full `run` (exit 2) with 0 impl runs, and `resume` refuses to bypass breaker
+        w27 = _mk_fresh_repo(root, "t27", git_env=git_env)
+        q27 = root / "q27.txt"
+        q27.write_text(
+            "VERDICT: REJECT | CAUSE: plan_design\n"
+            "VERDICT: REJECT | CAUSE: plan_design\n"
+            "VERDICT: REJECT | CAUSE: plan_design\n"
+        )
+        c27 = _mk_config(
+            root, "t27",
+            [str(impl_ok), str(root / "impl27"), "{prompt}"],
+            [str(rev_queue), str(q27)],
+            planner_cmd=[str(planner_ok), str(root / "plan27"), FEATURE, "{prompt}"],
+        )
+        r27 = _run("run", "--repo", str(w27), "--feature", FEATURE, "--idea", "Bad plan loop", "--config", str(c27), env=git_env)
+        r27_res = _run("resume", "--repo", str(w27), "--feature", FEATURE, "--config", str(c27), env=git_env)
+        plan_runs27 = (root / "plan27").read_text().strip() if (root / "plan27").exists() else "0"
+        impl_runs27 = (root / "impl27").read_text().strip() if (root / "impl27").exists() else "0"
+        check("27-step1-plan-3rd-reject-breaker-stops-and-blocks-resume",
+              r27.returncode == 2 and plan_runs27 == "3" and impl_runs27 == "0" and r27_res.returncode == 2,
+              f"r27={r27.returncode} plan_runs={plan_runs27} impl_runs={impl_runs27} r27_res={r27_res.returncode}/{r27_res.stderr}")
+
+        # 28. Planner write-set violation (touching README.md) fails closed (exit 4) without committing
+        planner_rogue = stubs / "planner-rogue.py"
+        _write_exe(planner_rogue, """#!/usr/bin/env python3
+from pathlib import Path
+Path("README.md").write_text("# hacked by planner\\n", encoding="utf-8")
+print("edited readme")
+""")
+        w28 = _mk_fresh_repo(root, "t28", git_env=git_env)
+        head28_before = _git(w28, "rev-parse", "HEAD", env=git_env)
+        c28 = _mk_config(
+            root, "t28",
+            [str(impl_ok), str(root / "impl28"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_rogue), "{prompt}"],
+        )
+        r28 = _run("run", "--repo", str(w28), "--feature", FEATURE, "--idea", "Rogue planner", "--config", str(c28), env=git_env)
+        head28_after = _git(w28, "rev-parse", "HEAD", env=git_env)
+        st28 = json.loads(_run("status", "--repo", str(w28), "--feature", FEATURE, "--json", env=git_env).stdout)
+        check("28-step1-write-set-violation-fails-closed",
+              r28.returncode == 4 and head28_before == head28_after
+              and "write-set" in r28.stderr and st28.get("status") == "error" and "README.md" in st28.get("reason", ""),
+              f"rc={r28.returncode} err={r28.stderr} st28={st28}")
+
+        # 29. `stop` terminates a live background worker cleanly
+        planner_slow = stubs / "planner-slow.py"
+        _write_exe(planner_slow, """#!/usr/bin/env python3
+import time
+time.sleep(30)
+""")
+        w29 = _mk_fresh_repo(root, "t29", git_env=git_env)
+        c29 = _mk_config(
+            root, "t29",
+            [str(impl_ok), str(root / "impl29"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_slow), "{prompt}"],
+        )
+        r29_start = _run("run", "--repo", str(w29), "--feature", FEATURE, "--idea", "Slow run", "--config", str(c29), "--background", env=git_env)
+        time.sleep(0.3)
+        st29_live = json.loads(_run("status", "--repo", str(w29), "--feature", FEATURE, "--json", env=git_env).stdout)
+        r29_stop = _run("stop", "--repo", str(w29), "--feature", FEATURE, env=git_env)
+        st29_after = json.loads(_run("status", "--repo", str(w29), "--feature", FEATURE, "--json", env=git_env).stdout)
+        check("29-background-stop-terminates-running-worker",
+              r29_start.returncode == 0 and st29_live.get("alive") is True
+              and r29_stop.returncode == 0 and "was_alive=true" in r29_stop.stdout
+              and st29_after.get("alive") is False and st29_after.get("status") == "stopped_by_user",
+              f"start={r29_start.returncode} live={st29_live} stop={r29_stop.returncode}/{r29_stop.stdout} after={st29_after}")
+
+        # 30. `init-config` creates valid distinct-model runners.json and refuses clobber without --force
+        cfg30 = root / "generated-runners.json"
+        r30a = _run("init-config", "--output", str(cfg30), env=git_env)
+        r30b = _run("init-config", "--output", str(cfg30), env=git_env)
+        obj30 = json.loads(cfg30.read_text()) if cfg30.is_file() else {}
+        models30 = {k: obj30.get(k, {}).get("model_id", "") for k in ("planner", "implementer", "reviewer")}
+        check("30-init-config-generates-valid-runners-json",
+              r30a.returncode == 0 and "INIT_CONFIG ok" in r30a.stdout and r30b.returncode == 64
+              and all(models30.values())
+              and models30["reviewer"] != models30["planner"]
+              and models30["reviewer"] != models30["implementer"],
+              f"r30a={r30a.returncode}/{r30a.stdout}/{r30a.stderr} r30b={r30b.returncode} models={models30}")
+
+        # 31. Starting a different feature while another feature is active fails synchronously BEFORE --background spawn
+        w31 = _mk_fixture(root, "t31", stage="plan", tail_trans="plan→plan-review · completed", git_env=git_env)
+        c31 = _mk_config(
+            root, "t31",
+            [str(impl_ok), str(root / "impl31"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_ok), str(root / "plan31"), "other-feat", "{prompt}"],
+        )
+        r31 = _run("run", "--repo", str(w31), "--feature", "other-feat", "--idea", "Conflict", "--config", str(c31), "--background", env=git_env)
+        check("31-background-blocks-active-feature-conflict-before-spawn",
+              r31.returncode == 4 and "currently active" in r31.stderr,
+              f"rc={r31.returncode} out={r31.stdout!r} err={r31.stderr!r}")
 
     print(f"---\n{passed}/{passed + failed} cases passed ({failed} failed)")
     return 0 if failed == 0 else 1

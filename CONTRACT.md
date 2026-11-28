@@ -151,7 +151,8 @@ Run pipeline-<next> on a FRESH session (rebuild state from git + CONTRACT.md).
 ```
 
 Legal transitions:
-- `plan→plan-review · completed`
+- `plan→plan-review · completed` / `plan→human · blocked` (`NEEDS_HUMAN` pause)
+- `human→plan · completed` (operator answered planner questions)
 - `plan-review→impl · completed` / `plan-review→plan · failed` / `plan-review→human · blocked`
 - `human→impl · completed` (explicit human approval after `pause_after_plan: true`)
 - `impl→review · completed` / `impl→human · blocked`
@@ -162,10 +163,12 @@ Legal transitions:
 ## Transports & coordinated mode
 
 Three L1 transports share this exact contract:
-1. **Human-relayed (default):** operator copies handoffs between sessions.
-2. **Headless CLI runner (`skills/pipeline-coordinate/scripts/run-loop.py`):** synchronous subprocess
-   loop (`shell=False`, `fcntl.flock` repo lock, isolated `feat/<feature>` worktree, zero planner
-   tokens in Phase II, zero merge path), configured via `~/.config/pipeline/runners.json`.
+1. **Headless CLI runner (`pipeline-run` skill / `skills/pipeline-coordinate/scripts/run-loop.py`):**
+   end-to-end 4-step runner (`run`, `resume`, `status`, `logs`, `stop`, `init-config`, plus
+   single-phase `review-plan` / `approve-plan` / `phase2`) in foreground or `--background`
+   (`shell=False`, `fcntl.flock` repo lock, isolated `feat/<feature>` worktree, zero planner
+   tokens in Phase II, zero merge path), configured via operator-local `~/.config/pipeline/runners.json`.
+2. **Human-relayed (zero extra setup):** operator copies handoffs between sessions.
 3. **Coordinated mode (`pipeline-coordinate` over `multica` or `herdr`):** opt-in per feature via
    `.pipeline/<feature>/control.json`:
    ```json

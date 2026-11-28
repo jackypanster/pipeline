@@ -1,0 +1,41 @@
+{
+  "_comment": "Operator-local config (~/.config/pipeline/runners.json). NEVER commit to Git. Any model/CLI may fill any role as long as reviewer.model_id differs from BOTH planner.model_id and implementer.model_id.",
+  "planner": {
+    "model_id": "gemini-4-neon",
+    "argv": ["agy", "-p", "--mode", "auto", "--dangerously-skip-permissions", "{prompt}"],
+    "prompt_via": "arg",
+    "timeout_s": 900
+  },
+  "implementer": {
+    "model_id": "pi-main",
+    "argv": ["pi", "-p", "--no-session", "--no-mcp", "--", "{prompt}"],
+    "prompt_via": "arg",
+    "timeout_s": 1800
+  },
+  "reviewer": {
+    "model_id": "gpt-6.2-astra",
+    "argv": ["codex", "exec", "-s", "read-only", "-m", "gpt-6.2-astra", "-"],
+    "prompt_via": "stdin",
+    "timeout_s": 600
+  },
+  "_swappable_examples": {
+    "planner_claude": {
+      "model_id": "claude-opus",
+      "argv": ["claude", "-p", "--permission-mode", "acceptEdits", "{prompt}"],
+      "prompt_via": "arg",
+      "timeout_s": 900
+    },
+    "implementer_claude": {
+      "model_id": "claude-sonnet",
+      "argv": ["claude", "-p", "--permission-mode", "acceptEdits", "{prompt}"],
+      "prompt_via": "arg",
+      "timeout_s": 1800
+    },
+    "reviewer_claude": {
+      "model_id": "claude-opus",
+      "argv": ["claude", "-p", "--permission-mode", "plan", "{prompt}"],
+      "prompt_via": "arg",
+      "timeout_s": 600
+    }
+  }
+}
