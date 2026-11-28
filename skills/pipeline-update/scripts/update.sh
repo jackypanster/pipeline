@@ -37,7 +37,7 @@ for src in "$clone"/skills/*/; do
   if [ "$rel" = 1 ]; then want="../pipeline/skills/$name"; else want="$real"; fi
   if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
     ln -s "$want" "$entry"
-    echo "LINKED $name — add its runtime attachments by hand (.claude/.codex; .pi only for impl/preflight)"
+    echo "LINKED $name — add its runtime attachments by hand (.claude/.codex; .pi for pipe/impl/preflight)"
   elif [ -L "$entry" ] && [ "$(cd "$entry" 2>/dev/null && pwd -P)" = "$real" ]; then
     echo "ok $name"
   elif [ -L "$entry" ]; then
