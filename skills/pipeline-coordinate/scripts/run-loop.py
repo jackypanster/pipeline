@@ -158,34 +158,50 @@ _ACTIVE_STATE_DIR = None
 _ACTIVE_CHILD_PROC = None
 
 
-def _kill_pg_and_wait(pid, grace_s=1.5):
-    """Terminate process group `pid` (falling back to single PID) and wait until gone."""
-    if not _pid_is_alive(pid) or pid == os.getpid():
+def _pg_is_alive(pgid):
+    if not isinstance(pgid, int) or pgid <= 0:
+        return False
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _kill_pg_and_wait(pgid, grace_s=1.5):
+    """Terminate an owned process group (even after its group leader exits) and wait until gone."""
+    if not isinstance(pgid, int) or pgid <= 0 or pgid == os.getpid() or pgid == os.getpgrp():
+        return
+
+    def _alive():
+        return _pg_is_alive(pgid) or _pid_is_alive(pgid)
+
+    if not _alive():
         return
     try:
-        pgid = os.getpgid(pid)
+        os.killpg(pgid, signal.SIGTERM)
     except OSError:
-        pgid = -1
-    try:
-        if pgid == pid and pgid != os.getpgrp():
-            os.killpg(pgid, signal.SIGTERM)
-        else:
-            os.kill(pid, signal.SIGTERM)
-    except OSError:
-        pass
-    deadline = time.time() + grace_s
-    while time.time() < deadline and _pid_is_alive(pid):
-        time.sleep(0.05)
-    if _pid_is_alive(pid):
         try:
-            if pgid == pid and pgid != os.getpgrp():
-                os.killpg(pgid, signal.SIGKILL)
-            else:
-                os.kill(pid, signal.SIGKILL)
+            os.kill(pgid, signal.SIGTERM)
         except OSError:
             pass
+    deadline = time.time() + grace_s
+    while time.time() < deadline and _alive():
+        time.sleep(0.05)
+    if _alive():
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            try:
+                os.kill(pgid, signal.SIGKILL)
+            except OSError:
+                pass
         kill_deadline = time.time() + 2.0
-        while time.time() < kill_deadline and _pid_is_alive(pid):
+        while time.time() < kill_deadline and _alive():
             time.sleep(0.05)
 
 
@@ -212,7 +228,8 @@ def _install_stop_handler(state_dir):
 
     def _on_signal(signum, _frame):
         proc = _ACTIVE_CHILD_PROC
-        if proc is not None and proc.poll() is None:
+        if proc is not None:
+            # Always terminate the entire owned process group, even if the group leader already exited.
             _kill_pg_and_wait(proc.pid, grace_s=1.0)
             try:
                 proc.wait(timeout=1.0)
@@ -251,16 +268,15 @@ def _run_bounded(argv, cwd, timeout_s, stdin_text=None):
         out, err = proc.communicate(input=stdin_text, timeout=timeout_s)
         return proc.returncode, out or "", err or "", False
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        _kill_pg_and_wait(proc.pid, grace_s=0.2)
         try:
             out, err = proc.communicate(timeout=2.0)
         except subprocess.TimeoutExpired:
             out, err = "", ""
         return -9, out or "", err or "", True
     finally:
+        if _pg_is_alive(proc.pid):
+            _kill_pg_and_wait(proc.pid, grace_s=0.5)
         _ACTIVE_CHILD_PROC = None
         _record_active_child(None)
 
@@ -1924,8 +1940,8 @@ def cmd_stop(args):
         _die(4, "refusing to stop current process")
 
     child_pid = _read_pid_file(child_pid_path)
-    worker_alive = _pid_is_alive(pid)
-    child_alive = _pid_is_alive(child_pid) if child_pid else False
+    worker_alive = _pg_is_alive(pid) or _pid_is_alive(pid)
+    child_alive = (child_pid is not None) and (_pg_is_alive(child_pid) or _pid_is_alive(child_pid))
     if not worker_alive and not child_alive:
         if child_pid_path.exists():
             try:
@@ -1936,16 +1952,18 @@ def cmd_stop(args):
         print(f"RUN_STOPPED feature={feature} pid={pid} was_alive=false")
         return 0
 
-    # Signal worker (its SIGTERM handler also terminates & reaps active child), then explicitly
-    # ensure any active role/verify child process group is terminated & gone before returning.
+    # Signal worker (its SIGTERM handler also terminates the whole child process group), then
+    # explicitly verify every owned process group is completely dead before returning RUN_STOPPED.
     if worker_alive:
         _kill_pg_and_wait(pid, grace_s=2.0)
-    # Re-read active-child.pid in case a child was launched right before worker signalled.
     latest_child = _read_pid_file(child_pid_path) or child_pid
-    if latest_child and _pid_is_alive(latest_child):
-        _kill_pg_and_wait(latest_child, grace_s=1.5)
-    if child_pid and child_pid != latest_child and _pid_is_alive(child_pid):
-        _kill_pg_and_wait(child_pid, grace_s=1.5)
+    for cpg in {p for p in (latest_child, child_pid) if p}:
+        if _pg_is_alive(cpg) or _pid_is_alive(cpg):
+            _kill_pg_and_wait(cpg, grace_s=1.5)
+        if _pg_is_alive(cpg) or _pid_is_alive(cpg):
+            _die(4, f"failed to terminate active child process group {cpg}")
+    if _pg_is_alive(pid) or _pid_is_alive(pid):
+        _die(4, f"failed to terminate background worker process group {pid}")
     if child_pid_path.exists():
         try:
             child_pid_path.unlink()

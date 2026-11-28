@@ -850,6 +850,58 @@ Path(sys.argv[2]).write_text("SHOULD_NEVER_BE_WRITTEN\\n", encoding="utf-8")
               f"start={r29_start.returncode} spawned={planner_pid29.is_file()} child_dead={child_dead29} "
               f"stray_written={stray_write29.exists()} stop={r29_stop.returncode}/{r29_stop.stdout} after={st29_after}")
 
+        # 29b. `stop` kills same-group descendant EVEN AFTER group-leader wrapper has already exited (holding pipe open)
+        helper_pid29b = root / "helper29b.pid"
+        leader_done29b = root / "leader29b.done"
+        stray_write29b = root / "stray_helper_after_stop.txt"
+        planner_wrapper29b = stubs / "planner-wrapper29b.py"
+        _write_exe(planner_wrapper29b, """#!/usr/bin/env python3
+import subprocess, sys
+from pathlib import Path
+hpid_file, ldone_file, marker_file = sys.argv[1], sys.argv[2], sys.argv[3]
+helper_code = (
+    "import os, sys, time; from pathlib import Path; "
+    "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8'); "
+    "time.sleep(0.8); "
+    "Path(sys.argv[2]).write_text('LEAKED_BY_DESCENDANT', encoding='utf-8')"
+)
+# Inherit same process group + stdout pipe, then let wrapper (group leader) exit immediately!
+subprocess.Popen([sys.executable, "-c", helper_code, hpid_file, marker_file])
+Path(ldone_file).write_text("exited", encoding="utf-8")
+sys.exit(0)
+""")
+        w29b = _mk_fresh_repo(root, "t29b", git_env=git_env)
+        c29b = _mk_config(
+            root, "t29b",
+            [str(impl_ok), str(root / "impl29b"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_wrapper29b), str(helper_pid29b), str(leader_done29b), str(stray_write29b), "{prompt}"],
+        )
+        r29b_start = _run("run", "--repo", str(w29b), "--feature", FEATURE, "--idea", "Wrapper exits before descendant", "--config", str(c29b), "--background", env=git_env)
+        for _ in range(60):
+            if helper_pid29b.is_file() and leader_done29b.is_file():
+                break
+            time.sleep(0.05)
+        # Give leader a moment to exit completely while same-group helper stays alive holding stdout pipe.
+        time.sleep(0.15)
+        r29b_stop = _run("stop", "--repo", str(w29b), "--feature", FEATURE, env=git_env)
+        time.sleep(1.0)
+        helper_dead29b = False
+        if helper_pid29b.is_file():
+            hpid29b = int(helper_pid29b.read_text().strip())
+            try:
+                os.kill(hpid29b, 0)
+            except ProcessLookupError:
+                helper_dead29b = True
+        st29b_after = json.loads(_run("status", "--repo", str(w29b), "--feature", FEATURE, "--json", env=git_env).stdout)
+        check("29b-background-stop-kills-descendant-after-group-leader-exits",
+              r29b_start.returncode == 0 and helper_pid29b.is_file() and leader_done29b.is_file()
+              and r29b_stop.returncode == 0 and "was_alive=true" in r29b_stop.stdout
+              and helper_dead29b and not stray_write29b.exists()
+              and st29b_after.get("alive") is False and st29b_after.get("status") == "stopped_by_user",
+              f"start={r29b_start.returncode} hspawn={helper_pid29b.is_file()} hdead={helper_dead29b} "
+              f"stray={stray_write29b.exists()} stop={r29b_stop.returncode}/{r29b_stop.stdout} after={st29b_after}")
+
         # 30. `init-config` and shipped `runners.example.json` explicitly bind --model/-m matching model_id for every role
         def _bound_model_arg(role_obj):
             argv = role_obj.get("argv", [])
