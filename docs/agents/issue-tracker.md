@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues (`jackypanster/pipeline`). Use the `gh` CLI for all operations.
+Issues and plans for this repo live as GitHub issues (`jackypanster/pipeline`). Use the `gh` CLI for all operations.
 
 > **Scope.** This file configures the *issue tracker* only, for the `mattpocock/skills` engineering
 > commands that read it: `/wayfinder`, `/to-tickets`, `/to-spec`, `/triage`.
