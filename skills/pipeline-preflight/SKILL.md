@@ -35,7 +35,7 @@ Output grammar (stdout, one line per check):
 entry, validates the **committed** `HEAD:.pipeline/<feature>/plan.md` Git blob (unaffected by
 checkout filters; stops on uncommitted local `plan.md` edits), checks YAML frontmatter with no
 duplicate keys, explicit non-empty `verify:` list, and explicit `forbid-paths:` list (`[]` allowed).
-On `impl`/`review`, ALSO requires `current.json.approved_plan_blob` to match `HEAD:.pipeline/<feature>/plan.md`.
+On `impl`/`review`, ALSO requires committed `HEAD:.pipeline/current.json`'s `approved_plan_blob` to match `HEAD:.pipeline/<feature>/plan.md`.
 `hunt` is advisory (never STOPs). On mandatory stages, missing checker, `PLAN stop`, or checker
 error all exit `2` (`PREFLIGHT STOP`).
 

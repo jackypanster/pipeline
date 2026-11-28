@@ -506,8 +506,10 @@ case "$stage" in
         fi
       else
         plan_rc=0
+        plan_commit="HEAD"
+        if [ "$envelope" = 1 ]; then plan_commit="$env_commit"; fi
         plan_out="$(python3 "$plan_script" --repo "$repo" --feature "$cur_feature" \
-                      --stage "$stage" 2>&1)" || plan_rc=$?
+                      --stage "$stage" --commit "$plan_commit" 2>&1)" || plan_rc=$?
         if [ -n "$plan_out" ]; then printf '%s\n' "$plan_out"; fi
         if [ "$plan_rc" = 2 ]; then
           plan_reason="$(printf '%s\n' "$plan_out" | sed -n 's/^PLAN stop //p' | sed -n 1p)"

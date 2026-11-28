@@ -588,6 +588,39 @@ print("Checked non-UTF-8 diff.")
               r22.returncode == 0 and "non-UTF-8 bytes" in prompt22 and "caf\ufffd" in prompt22,
               f"rc={r22.returncode} err={r22.stderr} has_note={'non-UTF-8 bytes' in prompt22}")
 
+        # 23. Committed CRLF plan.md blob parses cleanly in Step 2 (review-plan) and Phase II while pinning raw blob SHA
+        w23 = _mk_fixture(root, "t23", tail_trans="plan→plan-review · completed", pin_approved_blob=False, git_env=git_env)
+        p23 = w23 / ".pipeline" / FEATURE / "plan.md"
+        crlf_plan = (
+            "---\r\n"
+            f"feature: {FEATURE}\r\n"
+            "planner_model: frontier-a\r\n"
+            "verify:\r\n"
+            "  - \"test -f delivered.txt\"\r\n"
+            "forbid-paths: []\r\n"
+            "---\r\n"
+            "## Baseline Evidence\r\n- README.md:1\r\n"
+            "## Specifications\r\n1. CRLF plan test\r\n"
+            "## Acceptance Matrix (T1-T10)\r\n- T1: delivered.txt\r\n"
+        )
+        p23.write_bytes(crlf_plan.encode("utf-8"))
+        _git(w23, "-c", "core.autocrlf=false", "add", str(p23), env=git_env)
+        _git(w23, "-c", "core.autocrlf=false", "commit", "--quiet", "-m", "commit crlf plan", env=git_env)
+        _git(w23, "push", "--quiet", "origin", "main", env=git_env)
+        crlf_sha23 = _git(w23, "rev-parse", f"HEAD:.pipeline/{FEATURE}/plan.md", env=git_env)
+        raw_blob23 = subprocess.check_output(["git", "-C", str(w23), "cat-file", "blob", crlf_sha23], env=git_env)
+        q23 = root / "q23.txt"
+        q23.write_text("VERDICT: ACCEPT | CAUSE: none\nVERDICT: ACCEPT | CAUSE: none\n")
+        c23 = _mk_config(root, "t23", [str(impl_ok), str(root / "cnt23"), "{prompt}"], [str(rev_queue), str(q23)])
+        r23a = _run("review-plan", "--repo", str(w23), "--config", str(c23), env=git_env)
+        cur23 = json.loads((w23 / ".pipeline" / "current.json").read_text())
+        r23b = _run("phase2", "--repo", str(w23), "--config", str(c23), env=git_env)
+        check("23-crlf-committed-plan-blob-review-and-phase2",
+              (b"\r\n" in raw_blob23) and r23a.returncode == 0
+              and cur23.get("approved_plan_blob") == crlf_sha23 and r23b.returncode == 0,
+              f"has_crlf={b'\\r\\n' in raw_blob23} r23a={r23a.returncode}/{r23a.stderr} "
+              f"pin_match={cur23.get('approved_plan_blob') == crlf_sha23} r23b={r23b.returncode}/{r23b.stderr}")
+
     print(f"---\n{passed}/{passed + failed} cases passed ({failed} failed)")
     return 0 if failed == 0 else 1
 

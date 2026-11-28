@@ -288,6 +288,74 @@ run_case 16f-dirty-local-plan 2 "PLAN stop plan-dirty-local|PREFLIGHT STOP plan-
   "repo=$WORK" "branch=main" "feature=$FEATURE" "expected_seq=1" "expected_commit=$COMMIT"
 unset FX_NEXT
 
+# 16g. local-only forged approved_plan_blob in checkout current.json MUST NOT bypass committed unapproved current.json
+FX_PIN_BLOB=no FX_NEXT=impl build forged-local-pin
+forged_blob="$(git -C "$WORK" rev-parse "HEAD:.pipeline/$FEATURE/plan.md")"
+python3 - "$WORK/.pipeline/current.json" "$forged_blob" <<'PY'
+import json, sys
+p, blob = sys.argv[1], sys.argv[2]
+d = json.load(open(p))
+d["approved_plan_blob"] = blob
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+PY
+run_case 16g-local-forged-pin-rejected 2 "PLAN stop plan-not-approved|PREFLIGHT STOP plan-not-approved" \
+  --stage impl --repo "$WORK" \
+  "repo=$WORK" "branch=main" "feature=$FEATURE" "expected_seq=1" "expected_commit=$COMMIT"
+unset FX_PIN_BLOB FX_NEXT
+
+# 16h. committed approved_plan_blob in locked commit stays authoritative even if local checkout drops the pin
+FX_NEXT=impl build committed-pin-wins
+python3 - "$WORK/.pipeline/current.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d.pop("approved_plan_blob", None)
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+PY
+run_case 16h-committed-pin-wins-over-local-removal 0 "PLAN ok feature=$FEATURE|PREFLIGHT OK stage=impl" \
+  --stage impl --repo "$WORK" \
+  "repo=$WORK" "branch=main" "feature=$FEATURE" "expected_seq=1" "expected_commit=$COMMIT"
+unset FX_NEXT
+
+# 16i. committed CRLF plan.md blob passes plan-review, impl, and review with raw CRLF blob SHA pinned
+build crlf-plan
+python3 - "$WORK/.pipeline/$FEATURE/plan.md" "$FEATURE" <<'PY'
+import sys
+p, feat = sys.argv[1], sys.argv[2]
+content = (
+    f"---\r\n"
+    f"feature: {feat}\r\n"
+    f"verify:\r\n"
+    f"  - \"true\"\r\n"
+    f"forbid-paths: []\r\n"
+    f"---\r\n"
+    f"## Specs\r\n1. CRLF plan test\r\n"
+)
+open(p, "wb").write(content.encode("utf-8"))
+PY
+git -C "$WORK" -c core.autocrlf=false add ".pipeline/$FEATURE/plan.md"
+git -C "$WORK" -c core.autocrlf=false commit --quiet -m "commit crlf plan"
+crlf_blob="$(git -C "$WORK" rev-parse "HEAD:.pipeline/$FEATURE/plan.md")"
+python3 - "$WORK" "$crlf_blob" <<'PY'
+import json, subprocess, sys
+repo, blob = sys.argv[1], sys.argv[2]
+raw = subprocess.check_output(["git", "-C", repo, "cat-file", "blob", blob])
+assert b"\r\n" in raw, "expected raw CRLF bytes in committed git blob"
+p = repo + "/.pipeline/current.json"
+d = json.load(open(p))
+d["approved_plan_blob"] = blob
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+PY
+git -C "$WORK" add .pipeline/current.json
+git -C "$WORK" commit --quiet -m "pin crlf plan blob"
+git -C "$WORK" push --quiet origin main
+run_case 16i-crlf-plan-review 0 "PLAN ok feature=$FEATURE verify=1 forbid=0|PREFLIGHT OK stage=plan-review" \
+  --stage plan-review --repo "$WORK"
+run_case 16j-crlf-impl 0 "PLAN ok feature=$FEATURE verify=1 forbid=0|PREFLIGHT OK stage=impl" \
+  --stage impl --repo "$WORK"
+run_case 16k-crlf-review 0 "PLAN ok feature=$FEATURE verify=1 forbid=0|PREFLIGHT OK stage=review" \
+  --stage review --repo "$WORK"
+
 # 17. plan.md with empty verify stops
 FX_PLAN_BODY='---
 feature: demo-feature

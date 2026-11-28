@@ -5,11 +5,13 @@ Always validates the COMMITTED Git blob (never checkout-filtered working-tree by
 so Git `ident`/smudge filters cannot cause the reviewed plan and executed verify[] to diverge.
 
 Checks:
-  1. Committed blob `HEAD:.pipeline/<feature>/plan.md` exists and is non-empty.
+  1. Committed blob `<commit>:.pipeline/<feature>/plan.md` exists and is non-empty (default commit: HEAD).
   2. No uncommitted working-tree edits to `.pipeline/<feature>/plan.md`.
-  3. On `--stage impl` or `--stage review`: `.pipeline/current.json.approved_plan_blob` is a
-     40-hex SHA matching `HEAD:.pipeline/<feature>/plan.md` (prevents post-approval plan edits).
-  4. Leading `--- ... ---` YAML frontmatter has no duplicate keys, explicit non-empty `verify:`
+  3. On `--stage impl` or `--stage review`: committed `<commit>:.pipeline/current.json`'s
+     `approved_plan_blob` is a 40-hex SHA matching `<commit>:.pipeline/<feature>/plan.md`
+     (never reads approval from uncommitted working-tree `current.json`).
+  4. Leading `--- ... ---` YAML frontmatter (LF or CRLF line endings normalized on parse while
+     preserving raw blob SHA for approval) has no duplicate keys, explicit non-empty `verify:`
      list (scalars rejected), explicit `forbid-paths:` list (`[]` allowed; missing or bare
      empty key rejected), and matching `feature` (when present).
 
@@ -56,6 +58,7 @@ def _parse_value(val, is_list):
 
 def parse_plan_frontmatter(text):
     """Parse leading YAML frontmatter into (dict | None, body)."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     m = re.match(r"---\n(.*?)\n---\n?(.*)\Z", text, re.S)
     if not m:
         has_fence = bool(re.search(r"(?m)^[ \t]*---[ \t\r]*$", text))
@@ -160,9 +163,9 @@ def extract_plan_meta(plan_path, expected_feature=None):
     return extract_plan_meta_from_text(text, expected_feature=expected_feature)
 
 
-def _git_blob(repo, rel_path):
+def _git_blob(repo, rel_path, commit="HEAD"):
     r = subprocess.run(
-        ["git", "-C", repo, "rev-parse", "--verify", "--quiet", f"HEAD:{rel_path}"],
+        ["git", "-C", repo, "rev-parse", "--verify", "--quiet", f"{commit}:{rel_path}"],
         capture_output=True, text=True,
     )
     if r.returncode != 0:
@@ -177,29 +180,30 @@ def _git_blob(repo, rel_path):
         return blob_sha, "\x00non-utf8"
 
 
-def _plan_is_dirty(repo, rel_path):
-    r = subprocess.run(["git", "-C", repo, "diff", "--quiet", "HEAD", "--", rel_path], capture_output=True)
+def _plan_is_dirty(repo, rel_path, commit="HEAD"):
+    r = subprocess.run(["git", "-C", repo, "diff", "--quiet", commit, "--", rel_path], capture_output=True)
     return r.returncode != 0
 
 
 def main(argv):
-    opt = {"--repo": "", "--feature": "", "--stage": ""}
+    opt = {"--repo": "", "--feature": "", "--stage": "", "--commit": "HEAD"}
     while argv:
         k = argv.pop(0)
         if k not in opt or not argv:
-            sys.stderr.write("usage: check-plan.py --repo <path> --feature <slug> [--stage <s>]\n")
+            sys.stderr.write("usage: check-plan.py --repo <path> --feature <slug> [--stage <s>] [--commit <rev>]\n")
             return 64
         opt[k] = argv.pop(0)
     if not opt["--repo"] or not opt["--feature"]:
-        sys.stderr.write("usage: check-plan.py --repo <path> --feature <slug> [--stage <s>]\n")
+        sys.stderr.write("usage: check-plan.py --repo <path> --feature <slug> [--stage <s>] [--commit <rev>]\n")
         return 64
 
     repo = os.path.abspath(opt["--repo"])
     feature = opt["--feature"]
     stage = opt["--stage"]
+    commit = opt["--commit"] or "HEAD"
     rel_plan = f".pipeline/{feature}/plan.md"
 
-    blob_sha, text = _git_blob(repo, rel_plan)
+    blob_sha, text = _git_blob(repo, rel_plan, commit=commit)
     errors = []
     meta = None
     if blob_sha is None:
@@ -209,14 +213,17 @@ def main(argv):
     elif text is None:
         errors.append("plan-blob-unreadable")
     else:
-        if stage in ("plan-review", "impl", "review") and _plan_is_dirty(repo, rel_plan):
+        if stage in ("plan-review", "impl", "review") and _plan_is_dirty(repo, rel_plan, commit=commit):
             errors.append("plan-dirty-local")
         if stage in ("impl", "review"):
-            cur_path = os.path.join(repo, ".pipeline", "current.json")
-            try:
-                cur = json.load(open(cur_path, encoding="utf-8"))
-            except Exception:
+            cur_blob, cur_text = _git_blob(repo, ".pipeline/current.json", commit=commit)
+            if cur_blob is None or cur_text is None or cur_text == "\x00non-utf8":
                 cur = {}
+            else:
+                try:
+                    cur = json.loads(cur_text)
+                except Exception:
+                    cur = {}
             pin = cur.get("approved_plan_blob") if isinstance(cur, dict) else None
             if not isinstance(pin, str) or not SHA40_RE.fullmatch(pin):
                 errors.append("plan-not-approved")
