@@ -95,43 +95,33 @@ Paste this block into `<target-repo>/AGENTS.md` (or `CLAUDE.md`) so any cold age
 
 ### 3. Run a feature
 
-**Option A — Single-machine Headless CLI Runner (recommended, 0 planner tokens in Phase II):**
+**Option A — Agent-native Headless Runner (`pipeline-run` skill, recommended — full 4-step foreground or `--background`, zero manual copy-paste):**
 
-Create operator-local `~/.config/pipeline/runners.json` (never commit to Git):
-
-```json
-{
-  "implementer": {
-    "model_id": "<impl-model-id>",
-    "argv": ["<impl-cli>", "-p", "--no-session", "--no-mcp", "{prompt}"],
-    "timeout_s": 1800
-  },
-  "reviewer": {
-    "model_id": "<reviewer-model-id>",
-    "argv": ["<reviewer-cli>", "exec", "-s", "read-only", "-"],
-    "prompt_via": "stdin",
-    "timeout_s": 600
-  }
-}
-```
-
-Then run:
-1. In your **planner** session: run `pipeline-plan` to author `.pipeline/<feature>/plan.md` and commit to trunk.
-2. Run Step 2 (interactive `pipeline-plan-review`, or headless):
+1. Generate operator-local `~/.config/pipeline/runners.json` once (never commit to Git; any model/CLI
+   can fill any role as long as `reviewer` differs from both `planner` and `implementer` — see
+   [runners.example.json](skills/pipeline-run/runners.example.json)):
    ```bash
-   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py review-plan \
-     --repo <target-repo> --config ~/.config/pipeline/runners.json [--push]
+   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py init-config
    ```
-   *(If `control.json` sets `"pause_after_plan": true`, run `run-loop.py approve-plan --repo <target-repo>` after reviewing.)*
-3. Close the planner session (**0 planner tokens from here**) and run Phase II (`Step 3 ↔ verify ↔ Step 4`):
+2. Launch all 4 steps continuously (or simply ask any installed agent to use `pipeline-run`):
    ```bash
-   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py phase2 \
-     --repo <target-repo> --config ~/.config/pipeline/runners.json [--push]
+   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py run \
+     --repo <target-repo> --feature <slug> --idea "<requirement>" [--push] --background
    ```
-4. On `PHASE2 ACCEPT` (exit `0`), open an interactive `pipeline-review` session to confirm the
-   pinned 40-hex SHA and merge via the human-direct GO-gate.
+   Monitor / manage:
+   ```bash
+   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py status --repo <target-repo> --feature <slug>
+   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py logs   --repo <target-repo> --feature <slug>
+   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py resume --repo <target-repo> --feature <slug> [--answer "<text>"] --background
+   python3 ~/.agents/skills/pipeline-coordinate/scripts/run-loop.py stop   --repo <target-repo> --feature <slug>
+   ```
+   *(Single-phase commands `review-plan`, `approve-plan`, and `phase2` remain available when you
+   author `plan.md` interactively and only want headless Phase II with 0 planner tokens.)*
+3. The run stops ONLY when human action is required: `ACCEPT` (open interactive `pipeline-review`
+   to confirm the pinned 40-hex SHA and merge via GO-gate), 3rd-rejection breaker (`>= 3`),
+   `NEEDS_HUMAN` / `plan_fact` / `plan_design` / `env`, or CLI error.
 
-**Option B — Human-relayed (default, zero extra setup):** copy the printed `>>> NEXT` handoff block
+**Option B — Human-relayed (zero extra setup):** copy the printed `>>> NEXT` handoff block
 between your 3 role sessions. Mandatory for high-consequence write paths (trading, irreversible ops).
 
 **Option C — Multi-machine / coordinated (`multica` or `herdr`):** create
@@ -142,6 +132,7 @@ and use `pipeline-coordinate` (see [transport-multica.md](skills/pipeline-coordi
 
 | Command | Role | `roles.yaml` slot | Purpose |
 |---|---|---|---|
+| `pipeline-run` | (entry skill) | — | Agent-native full 4-step runner (`run --background`, `status`, `logs`, `resume`, `stop`, `init-config`) |
 | `pipeline-plan` | `planner` | `[grill-me, think]` | Survey codebase, write `plan.md` (`verify[]`, `forbid-paths[]`, ≤10 specs, T1–T10) |
 | `pipeline-plan-review` | `reviewer` | `check` | Spot-check ≥3 citations, pin `approved_plan_blob`, `VERDICT \| CAUSE` |
 | `pipeline-impl` | `implementer` | `<autonomous-coding-skill>` | Code + T1–T10 tests on `feat/<feature>`, pass `verify[]`, write `impl-report.md` |

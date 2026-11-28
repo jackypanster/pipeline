@@ -20,19 +20,19 @@ without violating model independence or human merge authority.
    (`>= 3`), or Step 4 `plan_fact|plan_design|env` short-circuits MUST stop. Never merge, never
    force-push trunk.
 
-## Transport 1 (Recommended, single-machine): Headless CLI (`scripts/run-loop.py`)
+## Transport 1 (Recommended, single-machine): Headless CLI (`scripts/run-loop.py` / `pipeline-run` skill)
 
-Runs Phase II (`Step 3 Impl CLI ↔ deterministic verify ↔ Step 4 Reviewer CLI`) with **0 planner
-tokens** inside an isolated `feat/<feature>` git worktree. Reads `~/.config/pipeline/runners.json`
-(`argv` string arrays, `shell=False`, mandatory non-empty `model_id` per role; see README §Quick Start).
+Runs the full 4-step pipeline (`run [--background]`, `resume`, `status`, `logs`, `stop`, `init-config`)
+or single-phase commands (`review-plan`, `approve-plan`, `phase2`) with **0 planner tokens in Phase II**
+inside an isolated `feat/<feature>` git worktree. Reads `~/.config/pipeline/runners.json` (`argv`
+string arrays, `shell=False`, mandatory distinct `model_id` per role; see `skills/pipeline-run/SKILL.md`).
 
 ```bash
-# Optional headless Step 2:
-python3 <skill-base-dir>/scripts/run-loop.py review-plan --repo <repo> --config ~/.config/pipeline/runners.json [--push]
-# Only if control.json set pause_after_plan=true:
-python3 <skill-base-dir>/scripts/run-loop.py approve-plan --repo <repo> [--push]
-# Phase II (0 planner tokens):
-python3 <skill-base-dir>/scripts/run-loop.py phase2 --repo <repo> --config ~/.config/pipeline/runners.json [--push]
+# Full 4-step end-to-end (foreground or --background):
+python3 <skill-base-dir>/scripts/run-loop.py run --repo <repo> --feature <slug> --idea "<req>" [--push] [--background]
+python3 <skill-base-dir>/scripts/run-loop.py status|logs|resume|stop --repo <repo> --feature <slug>
+# Single-phase entry points:
+python3 <skill-base-dir>/scripts/run-loop.py review-plan|approve-plan|phase2 --repo <repo> [--config ~/.config/pipeline/runners.json] [--push]
 ```
 
 | exit | meaning | next action |
