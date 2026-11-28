@@ -1,18 +1,15 @@
-# roles.yaml — per-target-repo skill bindings (copy this into the target repo's .pipeline/)
-# Each command resolves its slot to a skill NAME here. Point a slot at a better skill any time —
-# the contract is unchanged. The runtime is ANY capable agent you paste the command into; the
-# pipeline is framework-, machine- and LLM-agnostic — not bound to any tool, framework, agent or LLM.
-# Per-stage model requirement (the one guarantee that matters): reasoning slots (prd/arch/task/review/
-# hunt/improve) want a frontier SOTA model; impl tolerates a capable local model.
+# roles.yaml — per-target-repo skill bindings (copy into the target repo's .pipeline/)
+# Each command resolves its slot to a skill NAME here. Swap a skill any time — the contract is
+# unchanged. Framework-, machine-, and LLM-agnostic: NEVER put model or vendor names in this file.
+#
+# Model-separation invariant (CONTRACT.md):
+#   - planner (Step 1 `plan`): frontier model A
+#   - reviewer (Step 2 `plan-review` + Step 4 `review`): independent frontier model B (B != A, B != C)
+#   - implementer (Step 3 `impl`): capable/cost-efficient coding CLI C (C != B)
 
-prd:    [grill-me, think]   # grill-me clarifies the rough idea, then think produces the plan
-arch:   grill-with-docs     # walks the design tree against the codebase; emits CONTEXT.md + ADRs
-task:   think               # decomposes into atomic cards (the agent writes the red tests)
-impl:   <autonomous-coding-skill>   # REQUIRED: set to the real installed name of your runtime's autonomous think→design-tests→code→check skill
-review: check               # semantic review of the diff/PR
-hunt:   hunt                # root-cause a blocked card before re-queue
-improve: think              # meta: draft a reviewed skill-improvement PR against the pipeline repo (never self-edit, never auto-merge)
-
-# Extend with new verbs as needed, e.g.:
-# learn:  learn             # research an unfamiliar external dependency before arch
-# deploy: <your-deploy-skill>
+plan:        [grill-me, think]          # Step 1: clarify + architecture + <=10 specs + T1-T10 + verify cmds
+plan-review: check                      # Step 2: independent adversarial review of plan.md
+impl:        <autonomous-coding-skill>  # Step 3 (REQUIRED): real installed name of your autonomous coding skill
+review:      check                      # Step 4: code review + mutation spot-check + human-direct merge
+hunt:        hunt                       # Escalation: root-cause a blocked feature (>=3 rejects or plan/env halt)
+improve:     think                      # Meta: draft a reviewed PR against the pipeline repo (never self-merges)

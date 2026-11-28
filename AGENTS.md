@@ -3,8 +3,9 @@
 Pointers for agents working in this repo. **This file is not the authority.**
 
 [CONTRACT.md](CONTRACT.md) is the frozen protocol and single source of truth for every `pipeline-*`
-skill — the shim loop, the state machine, the `.pipeline/` layout, and the per-stage write-sets.
-Read it before changing anything under `skills/`. [DESIGN.md](DESIGN.md) carries the rationale.
+skill — the 3-agent 4-step workflow, the shim loop, the state machine, the `.pipeline/` layout, and
+the per-stage write-sets. Read it before changing anything under `skills/`. [DESIGN.md](DESIGN.md)
+carries the rationale.
 
 ## Agent skills
 
@@ -24,6 +25,6 @@ the tracker doc carries the `gh label create` commands to run before first use.
 ### Domain docs
 
 Not configured here **by design**. `CONTEXT.md` and `docs/adr/*` are governed by CONTRACT.md, which
-freezes them under `.pipeline/<feature>/` in the **target** repo and scopes the `arch` write-set to
-exactly those paths. Do not add a repo-root domain-doc layout — it would give `grill-with-docs` (bound
-as the `arch` slot in [roles.yaml](roles.yaml)) a second, contradicting instruction.
+places them under `.pipeline/<feature>/` in the **target** repo and scopes the `plan` write-set to
+those paths. Do not add a repo-root domain-doc layout — it would give the `plan` stage a second,
+contradicting instruction.

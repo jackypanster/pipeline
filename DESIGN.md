@@ -1,283 +1,55 @@
-# pipeline — design contract
+# DESIGN.md — architectural rationale
 
-A thin skill-aggregation pipeline. The **only durable asset is this contract** (command sequence +
-handoff format + git+md state convention). Each command is a thin shim delegating to a swappable
-skill; its body follows the CONTRACT shim loop, and its length is whatever that stage's own steps need. Forge-agnostic, machine-agnostic, human-relayed, no scheduler.
+A thin, model-agnostic, forge-agnostic dev pipeline. **The only durable asset is [CONTRACT.md](CONTRACT.md).**
+Every stage skill is a thin shim over a swappable `roles.yaml` slot; no DB, no daemon, no vendor lock-in.
 
-## Core principle: skills reason, the shim does I/O
+## Core principles
 
-The aggregated skills are **reasoning/interview engines** — as a rule they do not write the artifacts.
-Writing `PRD.md` / the red test / the review report, running the freeze gate, opening a PR, committing —
-all of that is the **shim's** contract, never assumed of the skill. (Verified: `think` is explicitly
-"No code"; `grill-me` only interviews.) The one **exception** is `grill-with-docs` (arch), which lands
-`CONTEXT.md`/ADRs inline by design — even then commit/journal/write-set enforcement stays the shim's;
-only those files' authorship is the skill's. So the precise invariant is **the shim owns commit +
-journal + handoff + write-set enforcement**, not "no skill ever writes a file".
+1. **Skills reason; the shim owns I/O.** Delegated skills (`grill-me`, `think`, `check`, `hunt`,
+   `<autonomous-coding-skill>`) focus on reasoning and coding. The shim + `preflight.sh` own git
+   sync, `current.json`, `journal.md`, verdict grammar, write-set enforcement, and handoffs.
+2. **Two-phase quota economics.** Frontier reasoning tokens are scarce; coding/test-fix loops are
+   token-heavy. Concentrating the frontier `planner` strictly in **Phase I (`Step 1 ↔ Step 2`)**
+   and exiting before **Phase II (`Step 3 ↔ verify ↔ Step 4`)** cuts frontier planner spend to zero
+   during implementation and rework while preserving independent quality gates.
+3. **Anti-cheat without pre-impl red-test bloat.** Writing fine-grained unit tests blind before
+   implementation guesses fixtures wrong on complex state machines and I/O harnesses, creating
+   high test-rework drag without catching upstream spec flaws. Instead, anti-cheat rests on four
+   cheaper, stronger seams:
+   - Step 1 writes a **≤10-spec, zero-inference-space `plan.md`** with a **T1–T10 observable
+     acceptance matrix** (no brittle private function names), explicit `forbid-paths[]`, and exact
+     `verify[]` commands.
+   - Step 2 (`reviewer ≠ planner`) spot-checks ≥3 codebase citations and pins `approved_plan_blob`.
+   - Step 3 (`implementer ≠ reviewer`) ships code + T1–T10 tests together and must pass `verify[]`
+     green before Step 4 runs.
+   - Step 4 (`reviewer`) enforces `.pipeline/` + `forbid-paths` (NUL-delimited, rename-aware),
+     independently re-runs `verify[]`, requires explicit `## Assumptions`, audits T1–T10 coverage,
+     and runs a **mutation/revert spot-check** (`CAUSE: weak_test` on hollow tests).
+4. **Fast convergence with hard breakers.**
+   - Step 2 allows `ACCEPT WITH NITS` so 1–2 minor doc wording fixes pass directly to Step 3
+     without burning a planner rework round; Step 4 stays strict binary `ACCEPT`/`REJECT`.
+   - Step 4 `REJECT` on `plan_fact | plan_design | env` short-circuits immediately to human/planner
+     so Step 3 never wastes retries on a flawed plan or broken environment.
+   - Either review gate halts for human intervention on the **3rd rejection (`>= 3`)**.
 
-Each command body follows the shim loop:
-`git pull --rebase → read current.json + md → resolve skill via roles.yaml → invoke skill →
-write your stage's write-set + append handoff to journal.md → commit (one) → push → print handoff`.
-The pull, `current.json`, slot resolution, the coordinated stale-dispatch guard and the card-invariant
-check run deterministically as `pipeline-preflight/scripts/preflight.sh` (the stage's step 0); the prose stays the spec.
+## Bounded automation (why `run-loop.py` is allowed without a daemon)
 
-## Commands
+**Default: human-relayed, no daemon, no DB.** Three bounded L1 transports share the same contract,
+and NONE of them can merge (only `pipeline-review` merges behind the SHA-bound human-direct GO-gate):
 
-| command | delegates to (skill) | shim / agent I/O |
-|---|---|---|
-| pipeline-prd | `grill-me` (clarify) → `think` (plan) | agent writes `PRD.md` + commit |
-| pipeline-arch | `grill-with-docs` (walks the design tree; emits CONTEXT.md + ADRs) | land `arch.md` / `CONTEXT.md` / ADRs |
-| pipeline-task | `think` (decompose into atomic cards) | **agent writes the red-test code** (think won't) + card frontmatter; freeze into `spec-paths:`; push |
-| pipeline-impl | the bound `<autonomous-coding-skill>` (think → design tests → code → check loop; white-box tests in `impl-paths:`) | shim freezes `spec-paths:`; opens PR/branch; status → review |
-| pipeline-review | `check` (semantic review of the diff/PR) | shim adds the `spec-paths` freeze gate + drives merge after human confirm |
-| pipeline-hunt | `hunt` (root-cause) | **entry for `blocked` cards** — root-cause before re-queue, never blind retry |
-| pipeline-improve | `think` (validate + draft the minimal edit) | branch + PR against THIS repo; meta-PR review gates; never merges its own proposal |
+- **Headless CLI runner (`skills/pipeline-coordinate/scripts/run-loop.py`):** invokes configured CLIs
+  synchronously via `subprocess.Popen(argv, shell=False)` with process-group timeouts, an exclusive
+  `fcntl.flock` repo lock, and an isolated `feat/<feature>` git worktree. Unlike fragile TUI
+  screen-scraping loops, synchronous subprocesses give exact exit codes, real git SHA checks, and
+  deterministic `verify[]` gating before burning reviewer tokens.
+- **Coordinated mode (`multica` / `herdr`):** opt-in per feature (`control.json`), routing solely
+  on remote `journal.md` tail transitions with fail-closed stale-dispatch guards.
 
-```yaml
-# .pipeline/roles.yaml  (one per target repo; any line independently swappable to a best-of-breed skill)
-prd:    [grill-me, think]
-arch:   grill-with-docs
-task:   think
-impl:   <autonomous-coding-skill>   # autonomous think→design-tests→code→check loop; set to your runtime's real installed skill name
-review: check
-hunt:   hunt
-improve: think              # meta: draft a reviewed skill-improvement PR against the pipeline repo (never self-edit, never auto-merge)
-```
+## Non-goals (deliberately rejected)
 
-`roles.yaml` names the skill only; which agent/bot you paste into selects the runtime. On init, each
-command verifies its OWN slot resolves to an installed skill (hard gate — no silent mid-run failure).
-
-## State convention (git + md, zero forge dependency)
-
-```text
-.pipeline/
-  current.json              {repo, branch, pr?, feature, stage, full-verify?}  # fast cache (journal tail authoritative); full-verify = whole-suite cmd for review's integration gate
-  <feature>/
-    journal.md              append-only run log — one entry per completed stage
-    PRD.md  arch.md  CONTEXT.md  docs/adr/*.md
-    tasks/NN.md             frontmatter: status / attempts / verify / spec-paths / impl-paths / spec-rev
-    reviews/review-NN.md
-```
-
-Status machine: `todo → in-progress → review → done`; `blocked` terminal; `attempts++`,
-`>=3 ⇒ blocked ⇒ pipeline-hunt`. A context-less bot rebuilds full state from `git pull` +
-`current.json` + a card scan. One feature in flight at a time (the human serializes; `current.json`
-is a single pointer by design).
-
-**Why a journal (append-only).** The handoff string below is the only artifact that was never on git —
-it lived in chat, so a dead chat lost the one thing a cold node most needs (next command + gotchas +
-steps). `journal.md` persists every stage's handoff as an append-only entry. The pattern is the
-convergent one across durable-execution systems (Temporal event history, LangGraph checkpoints,
-12-factor-agents' event log): **the append-only log is the source of truth; the live position is a fold
-over its tail, never a separately stored "current stage".** We take the minimal subset — persist the
-handoff we already produce, derive position from the tail — and skip replay/determinism (an LLM cannot
-replay deterministically) and any scheduler (still human-relayed). `current.json.stage` stays only as a
-fast bootstrap cache; on disagreement the journal tail wins.
-
-## Handoff string (human copies to the next bot)
-
-```text
->>> NEXT
-Run pipeline-impl.
-repo=<git-remote-url> branch=feat/login pr=none
-- model: capable-local OK here (impl); reasoning stages want a frontier SOTA model — operator assigns the bot
-- artifact: .pipeline/login/tasks/03.md (pushed)
-- do: git pull --rebase, pick oldest todo card, make its red test green
-- DO NOT touch spec-paths; white-box tests in impl-paths OK
-- attempts=1/3 — two more failures ⇒ blocked ⇒ run pipeline-hunt
-- on green: open PR, status=review, run pipeline-review
-<<< END
-```
-
-Carries: next command, repo, branch, pr?, artifact path (never the body — git is the bus),
-attempts/blocked path, the first action (`git pull`). Self-contained: the next bot shares no memory.
-
-## Test ownership (anti-cheat)
-
-`pipeline-task` writes the failing red test and freezes it into `spec-paths:` (recording `spec-rev`).
-`pipeline-impl` only makes it green and may add white-box tests in `impl-paths:` — it must not touch
-`spec-paths:`. `pipeline-review` enforces this with the two-commit `git diff <spec-rev> <review-tip> --
-<spec-paths>` (review-tip = PR head) and **fails if the frozen spec changed**. Deterministic, git-only,
-no CI required. The autonomous coder skill writes
-its own tests by default — we don't fight it; the diff gate is what guarantees the exam wasn't edited.
-
-## Forge / review surface
-
-Review prefers the forge's PR (auditable thread + a clean human merge gate), falling back to a plain
-branch diff when no forge PR exists. An adapter keyed on `git config --get remote.origin.url`:
-
-- **GitHub** → `gh` (`gh pr diff` / `gh pr merge`).
-- **Gitee** → `gitee-cli` against the instance's PR API.
-- **anything else / no forge** → `git fetch && git diff base..branch → check` (forge-agnostic).
-
-Merge is always human-confirmed (only the reviewer merges, after the human gate). The pipeline never
-performs destructive operations (no repo/branch deletion beyond the task's own branch, no force-push).
-
-## Thin aggregator + swappability
-
-Each command is independently refactorable: it declares which skill slot it delegates to plus the
-input/artifact contract, nothing more. A better skill drops in by editing one `roles.yaml` line; the
-contract is unchanged. The frozen protocol (status machine, attempts, only-reviewer-merges) lives in
-this file; commands carry no logic of their own.
-
-## Borrowed / rejected
-
-**Borrowed:** the thin read-prior/write-next command shape (spec-kit); a truth-vs-proposal file
-split (OpenSpec). **Rejected:** spec-kit's `specify` CLI / templates / constitution machinery;
-heavy multi-subagent runtimes. We ship N markdown skill files — no CLI, no DB, no scheduler.
-
-**Borrowed (Trellis):** spec auto-injection, reduced to pipeline's idiom — the handoff's "Read for
-context" cites the target repo's existing agent-doc (`AGENTS.md`/`CLAUDE.md`), reusing pipeline's own
-injection channel; no new `.trellis/spec` tree, no new stage, no new file. **Rejected (Trellis):** the
-`trellis init` multi-platform CLI (same `no-CLI` rule as spec-kit's `specify`; install is already
-`cp` + one runtime-registration line); the `.trellis/spec/` multi-file convention tree (a second convention source
-that drifts from the agent-doc — revisit only when the agent-doc can't hold it); per-developer
-`workspace/` parallel journals (violates one-feature-in-flight); `update-spec` auto-promotion
-(deferred — payoff needs many features re-hitting the same convention; until a real signal, a learning
-goes via an opportunistic `SKILL-PROPOSAL` + human-applied edit, the existing §Self-improvement path,
-not a built-in mechanism).
-
-## Constraints
-
-No cron, no scheduler in the contract (human relays) — ONE bounded, human-bracketed span MAY be
-auto-advanced, plus ONE feature-authorized coordinated mode and its queued duty re-entry (3), and
-nothing else (the merge itself is always a human step; trunk may additionally be protected against
-force-push/deletion server-side where the plan allows): (1) the review↔fix RELAY of a toolchain-repo
-meta-PR (the CONTRACT §Self-improvement lane): the review is still `pipeline-review` in meta-PR
-mode, the verdict still lands on the PR, and the human-confirm + reviewer-only squash-merge gate is
-untouched — the relay automates the TYPING between verdicts under capped rounds and fail-closed
-halts, never a review judgment and never a merge. It is carried by the `pipeline-coordinate`
-playbook (Profile A) — an attended CC session dispatching the fixer and reviewer panes (either role
-as a Herdr pane or a multica issue) and reading verdicts off the PR
-— NOT by a driver script (one span, one implementation). The span
-begins and ends at a human read and is never chained to anything else. (2) **Coordinated mode** (CONTRACT §Coordinated mode): under explicit per-feature authorization
-(`.pipeline/<feature>/control.json`, created by `pipeline-prd` ONLY on an explicit operator request),
-a coordinator MAY type every NORMAL stage handoff — v1 is a CC session running the
-`pipeline-coordinate` playbook (why not a deterministic dispatcher: §Provenance). It observes remote Git only, routes
-on the journal tail's transition forms, performs no stage work belonging to another role, halts
-fail-closed on anything outside the known forms, and can neither merge nor confirm a merge (the review
-GO-gate rejects relayed tokens; the human-direct merge confirm is untouched). The scheduler
-prohibition stays the DEFAULT — coordinated mode is its one explicit, opt-in, journal-audited
-exception. (3) **Duty mode** (pilot 2026-08-19, one target repo — README §Operating modes, third
-track): coordinated mode re-entered on a timer while the operator is away. The operator's standing
-`/loop 1h /pipeline-coordinate … duty tick` line re-presents the invocation at each re-entry (role
-stays assigned, never inferred), and each tick advances at most the head of a human-ordered
-`.pipeline/queue.md`, only through the post-freeze half of Profile B (impl loop → review dispatch →
-verdict). The per-feature human bracket is unchanged: GATE 1 spec-rev read at enqueue before,
-human-direct merge token in the reviewer pane after (armed gate: forge state is the only wait
-instrument). Gates notify out-of-band (Telegram) with a guaranteed daily dead-man digest, and a
-blocked, spec-drift, or over-budget head halts the whole queue. The duty coordinator stays
-READ-ONLY toward the target repo (the §Coordinated-mode write ban holds: `queue.md` is human-owned,
-run state is derived per tick from journal + cards + forge; its only session-side state is a local,
-disposable notification ledger). This IS unattended operation past the freeze gate, so duty carries
-Open item 3's halt clause: cumulative impl `attempts`
-(journal/card evidence, never estimate) crossing `impl-budget-per-feature` in the target repo's
-`queue.md` Config halts to human (route=human, not hunt), alongside the coarser
-`max-features-per-day`. The
-contract itself is unchanged and stays scheduler-free and human-relayable · not coupled to
-any machine · LLM-agnostic (reasoning commands want a
-frontier model; `impl` tolerates a capable local LLM) · commands are extensible — a new verb is a new
-thin shim + one `roles.yaml` line + the prior command's handoff naming it (e.g. `deploy`, `test`,
-`learn` for unfamiliar-domain research).
-
-## Provenance (moved from CONTRACT)
-
-History, citations, and field lessons behind CONTRACT rules. CONTRACT carries the rules only; the
-reasons live here, grouped by CONTRACT section.
-
-- **§State machine — review rejection `review → todo`.** Without the flip a rejected feature leaves
-  every card at `review` and impl (oldest `todo`) has nothing to pick. It completed the already-implied
-  "reject routes to impl" semantics; the `>= 3 ⇒ blocked` circuit-breaker was unchanged.
-- **§State authority — precedence.** Ref: arXiv:2605.18747 "Code as Agent Harness" — fix state
-  precedence before conflicts occur. The journal-tail-over-`current.json` rule, step 1's
-  rebuild-from-git, paths-never-bodies handoffs, and coordinated mode's remote-Git-only truth are all
-  instances of the one order.
-- **§State authority — rebase an in-flight branch.** Without it review's freeze gate diffs the new
-  `spec-rev` against a stale branch tip and falsely rejects.
-- **§State authority — card-scoped `verify`.** If card 1's `verify` ran the whole suite it could never
-  pass while cards 2..N are still red — the loop deadlocks.
-- **§State authority — "Disagrees" means neither end.** A literal cache==most-recently-completed reading
-  false-flags every compliant mid-flight state (field lesson: `jackypanster/pipeline-dashboard` ADR 0008,
-  2026-07-11, where that misreading cost a full bug-fix feature).
-- **§Test ownership — one freeze commit per feature.** If cards were frozen in sequence and two shared a
-  test file, an earlier card's `spec-rev` would predate a later sibling's append, and the freeze gate
-  (which diffs `spec-rev..review-tip` over `spec-paths`) would mis-flag that legitimate sibling test as
-  an impl spec-edit and falsely reject. A partial re-freeze reintroduces the same mis-flag; resetting
-  siblings on re-freeze would silently restart cards mid-impl or in review. A green "spec" is a no-op.
-- **§Freeze coverage — no escape hatch, seams first.** An unfrozen required step ships as a hollow stub
-  that passes every frozen test and the full-verify; only review catches it, late. Freezing only the
-  command text or an honest-degrade message can still leave the real action path hollow. Field lesson:
-  a generated-config wizard shipped 4 of 7 required steps as empty stubs behind a fully green suite; the
-  sink defects behind the remaining "review must read" surface then took three review rounds to reach
-  `blocked`. The fail-closed rule strengthens coverage and changes nothing in the freeze gate, spec-rev
-  protocol, state machine, or merge rules.
-- **§Impl assumptions.** Un-pinned decisions are where the implementing agent silently authors product
-  intent; a contradicting assumption is exactly that failure. Failed/blocked dispositions skip the
-  section because there is no delivered implementation to interpret; the card copy means the no-forge
-  path loses nothing.
-- **§Handoff block.** A cold frontier bot with a thin handoff guesses wrong; the "Your task" + "Feature
-  gotchas" sections are what let a different LLM on a different bot execute the stage with no shared
-  memory. The shim-loop push is the other half of step 1's `git pull`: an un-pushed commit means the
-  next node sees no card or a stale spec.
-- **§Run journal.** See §Why a journal above. Resumable = chat dies ⇒ read the tail; auditable = the
-  append sequence IS the run history (a failed/blocked dead end is part of it); orchestratable = a human
-  or another LLM reads the tail to take over.
-- **§Coordinated mode — why a CC playbook, not a dispatcher.** A deterministic dispatcher was evaluated
-  and rejected: pipeline-driver PR #14 closed unmerged; the pivot is recorded in coordinator-design.md
-  v1.3 §25, pinned at <https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md>. `coordinate.sh` ships only the read-only `doctor`/`status`
-  preflight.
-- **pipeline-coordinate — multica as the configured default transport (2026-10-03).** The operator
-  ran both roles over multica on every run; retyping the selectors was friction, and a forgotten one
-  silently landed the role on Herdr. Hence resolution invocation → operator machine file
-  (`~/.config/pipeline/transport`) → Herdr. The binding lives on the machine, not in this repo: the
-  repo stays machine- and model-agnostic while the agents and the models behind them change
-  continuously. An outage still STOPS instead of failing over: the merge-confirm location differs
-  between transports (issue comment vs reviewer terminal), and a created-but-unclaimed issue may run
-  late and duplicate the fallback path — so the operator re-invokes with `review=herdr` /
-  `impl=herdr`. The implementer transport was extended to Profile A the same day. Because a remote
-  implementer cannot share a local worktree, the handoff travels as the issue description and the
-  deliverable as a pushed topic branch. The implementer pushes to a delivery ref (`impl/<branch>`)
-  and the coordinator promotes only a verified commit to the PR ref: a PR already open during fix
-  rounds would otherwise receive unverified commits (review finding, PR #93).
-- **§The coordinator role is ASSIGNED.** Field-observed 2026-08-07: a second implementer session, handed
-  an impl dispatch, answered as a coordinator instead — zero writes, but two dispatchers typing into each
-  other's panes is the failure this forecloses. It is the node-side complement to the playbook's
-  one-pane-per-role preflight.
-- **§Pre-write stale-dispatch guard, step 4.** The two delivered-but-unrecorded windows are recorded in
-  `coordinator-design.md` v1.2 (same pinned doc).
-- **§Stage-consistent transitions.** Human-relay journals wrote `impl→review · completed` even
-  mid-feature; coordinated routing needs the `impl→impl` continuation.
-- **§Forge adapter.** A *mandatory* PR would fail closed in air-gapped/intranet/non-forge contexts (see
-  §Rejected), hence the fail-open degrade.
-- **§Self-improvement.** Editing a live skill mutates the contract mid-flight, untracked and ungated, and
-  can silently break every future run. Skills are markdown + git: a bad edit only mis-guides the next
-  run (caught by review), and is one `git revert` away.
-
-## Open items
-
-1. **Map the design-tree *shape* before walking its branches.** `grill-with-docs` walks branches but
-   does not first establish the tree's shape — an open methodology gap, deferred.
-2. **`pipeline-learn`** (a research stage before arch for unfamiliar external dependencies) — add when
-   a domain-unfamiliar requirement actually appears, not before.
-3. **Feature-level impl-loop budget ceiling** — the loop-engineering canon (`WHEN TO STOP` is a
-   mandatory loop-charter field) wants a stop condition above the per-card `attempts >= 3` breaker.
-   Under human-relay/coordinated mode the attended operator IS that ceiling. **Resolved for duty mode**
-   (2026-08-19, the one unattended path past a freeze gate): Constraint (3) halts to human when
-   cumulative impl `attempts` crosses `impl-budget-per-feature` in the target repo's `queue.md` Config.
-
-## Rejected
-
-- **A default, mandatory, front-of-pipeline "research/discovery" stage** (clarify-questions + OSS
-  prior-art/build-vs-buy + feasibility challenge + deploy-env survey). Rejected as a *required stage* —
-  not the underlying lookups. Clarify-questions is already `pipeline-prd` (`grill-me → think`, which
-  surveys the codebase first); feasibility-challenge and official-solution/OSS lookup are already latent
-  in `think` (its "check for official solutions first" + evaluation modes) and would also fit a future
-  `pipeline-learn` — they should fire **only when a specific requirement warrants it, never as a hard
-  pipeline dependency**. A mandatory online OSS-search gate fails *closed* in air-gapped/intranet/non-IT
-  contexts; the forge adapter is different — it uses `gh`/`gitee-cli` only when a forge exists and
-  otherwise degrades *open* to a plain `git diff`, so optional fail-open network is in-contract while a
-  mandatory fail-closed network stage is not. It also loads heavy OSS quality-vetting onto the earliest
-  stage and adds a position to the otherwise-frozen state machine for a one-feature pipeline.
-  Deployment-environment discovery for non-IT users is out of scope (this pipeline ends at review→merge
-  and owns no `deploy` stage); if it ever matters it belongs in a separate `pipeline-deploy`/onboarding
-  tool driven by a real deployment. Net: no new stage, no prd change; OSS/build-vs-buy stays an
-  opportunistic `think`/`pipeline-learn` capability, not a gate.
+- **Hardcoding LLM/vendor names in repo contracts or `roles.yaml`:** models rotate continuously;
+  concrete bindings belong strictly in operator-local config (`~/.config/pipeline/`).
+- **Mandatory online discovery/OSS-search gates:** break in air-gapped environments; web lookups
+  stay opportunistic inside `think`.
+- **Auto-merge by implementers, coordinators, or runners:** merge authority stays exclusively with
+  `pipeline-review` + direct human confirmation.

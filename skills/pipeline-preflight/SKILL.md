@@ -1,77 +1,45 @@
 ---
 name: pipeline-preflight
-description: "Helper script — NOT a pipeline stage, NOT a roles.yaml slot, never invoke by hand: the six stage skills run its scripts/preflight.sh as their step 0 (CONTRACT §shim loop → deterministic executor). It executes shim steps 1/3/4 (pull · current.json · slot resolve + install check), the coordinated-mode pre-write stale-dispatch guard, and a read-only card-invariant check on impl/review/hunt entry, printing one greppable line per check. Args: none — you are not the caller."
+description: "Helper script — NOT a pipeline stage, NOT a roles.yaml slot, never invoke by hand: the stage skills run scripts/preflight.sh as step 0 (CONTRACT §shim loop). Executes pull, dotenv count, current.json, roles.yaml slot + install check, coordinated stale-dispatch guard, and read-only plan.md check. Args: none — you are not the caller."
 ---
 
 # pipeline-preflight
 
 ```bash
-bash <the stage skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage <prd|arch|task|impl|review|hunt> \
+bash <the stage skill's base dir>/../pipeline-preflight/scripts/preflight.sh \
+     --stage <plan|plan-review|impl|review|hunt> \
      [--repo <path>] [repo=<abs> branch=<b> feature=<slug> expected_seq=<n> expected_commit=<sha40>]
 ```
 
-The five `k=v` envelope fields are all-or-nothing — pass them exactly as the coordinator typed them, or none at all (human-relay ⇒ the guard does not apply). Presence is decided by the ARGUMENT, not its value: `feature=` counts as passed-and-empty, i.e. an incomplete envelope (STOP).
+The five `k=v` envelope fields are all-or-nothing (human-relay ⇒ omit all five). An argument
+present-but-empty (`feature=`) is an incomplete envelope (STOP).
 
 | exit | prints | the calling stage then |
 |---|---|---|
-| 0 | `PREFLIGHT OK stage=<s>` | steps 1/3/4 (+ the guard, + any card check) are DONE — take the values from the printed lines |
-| 2 | `PREFLIGHT STOP <reason>`, incl. `STALE_DISPATCH <field> observed=… expected=…` and `python3-missing` | STOPs and reports that reason; zero writes |
-| 3 | `PREFLIGHT UNVERIFIED <check>[,<check>]` | everything ELSE passed — **does the named check(s) itself** and STOPs on failure |
-| 64 | usage error on stderr | fixes the invocation |
+| `0` | `PREFLIGHT OK stage=<s>` | steps 1/3/4 (+ guard + plan check) DONE — use its printed lines |
+| `2` | `PREFLIGHT STOP <reason>` (incl. `STALE_DISPATCH …`, `python3-missing`) | STOPs and reports that reason; zero writes |
+| `3` | `PREFLIGHT UNVERIFIED <check>[,<check>]` | everything ELSE passed — does ONLY the named check(s) (`install-check`, `remote-identity`) and STOPs on failure |
+| `64` | usage error on stderr | fixes the invocation |
 
-The exit-3 checks: **`install-check`** — verify the slot skill is installed on this runtime, STOP if not; **`remote-identity`** — confirm the repo's remote really is the one `current.json.repo` names.
+Output grammar (stdout, one line per check):
+- `PULL ok head=<sha>` / `PULL fail`
+- `ENV file=<n> keys=<N>` / `ENV none` (count only — never names or values)
+- `CURRENT ok repo=… branch=… feature=… stage=…[ pr=…]` / `CURRENT absent (plan creates it)`
+- `SLOT <stage>=<n1>[,<n2>]` (charset `^[A-Za-z0-9][A-Za-z0-9._-]*$`, no `<placeholder>`)
+- `INSTALLED <n> path=<dir>/<n>` (verified via `PIPELINE_SKILL_DIRS`) / `INSTALLED <n> found=… UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…`
+- `GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)`
+- `PLAN ok feature=<f> verify=<N> forbid=<M> blob=<sha10>` / `PLAN stop <reason> feature=<f>` / `PLAN advisory stage=hunt …` / `PLAN unchecked rc=<n>`
+- `UPSTREAM ok head=<sha>[ cached]` / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <not-a-clone|network>`
 
-**Remote identity** = `git ls-remote --get-url <remote>` byte-equal to `current.json.repo` (whose fields are never trimmed — surrounding whitespace is `current.json-invalid-field`); anything else is UNVERIFIED (Git's URL grammar is not re-implemented, and this check never STOPs).
+**`PLAN …`** (`scripts/check-plan.py`, read-only, python3 stdlib): on `plan-review`/`impl`/`review`/`hunt`
+entry, validates the **committed** `HEAD:.pipeline/<feature>/plan.md` Git blob (unaffected by
+checkout filters; stops on uncommitted local `plan.md` edits), checks YAML frontmatter with no
+duplicate keys, explicit non-empty `verify:` list, and explicit `forbid-paths:` list (`[]` allowed).
+On `impl`/`review`, ALSO requires committed `HEAD:.pipeline/current.json`'s `approved_plan_blob` to match `HEAD:.pipeline/<feature>/plan.md`.
+`hunt` is advisory (never STOPs). On mandatory stages, missing checker, `PLAN stop`, or checker
+error all exit `2` (`PREFLIGHT STOP`).
 
-**Journal handoff markers are whole lines** (CONTRACT §Run journal): inside the tail entry, the first line that IS `--- handoff ---`, whose next non-empty line must BE `>>> NEXT`; the command is the next non-empty line after that. Anything else ⇒ `STALE_DISPATCH next observed=<absent-handoff-in-tail>`. Prose that merely mentions `>>> NEXT` is prose. **Slot names are directory names**, `^[A-Za-z0-9][A-Za-z0-9._-]*$` — a path such as `../outside` is `PREFLIGHT STOP slot-invalid-name`, never an install found outside the declared dirs.
-
-Output grammar (stdout, one line per check): `PULL ok head=<sha>` / `PULL fail` · `ENV file=<n> keys=<N>` / `ENV none` ·
-`CURRENT ok repo=… branch=… feature=… stage=…[ pr=…]` / `CURRENT absent (prd creates it)` · `SLOT <stage>=<n1>[,<n2>]` ·
-`UPSTREAM ok head=<sha>[ cached]` (installed == pipeline main, or ahead of it) / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <not-a-clone|network>` ·
-`INSTALLED <n> path=<dir>/<n>` (verified) / `INSTALLED <n> found=<dir>/<n> UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…` ·
-`FETCH fail <remote>/<branch>` · `REMOTE unverified observed=… current.json.repo=…` ·
-`GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)` ·
-`CARDS ok feature=<f> n=<N> spec-rev=<sha7>` / `CARDS unverified feature=<f> n=<N> unchecked=<k>` ·
-`CARDS note <assumptions-missing|card-frontmatter-unrecognized|card-list-unparsed <key>|card-spec-path-glob <path>> card=<f>/<id>` / `CARDS note full-verify-unknown feature=<f>` ·
-`CARDS stop <card-no-frontmatter|card-missing-field <keys>|card-bad-status <v>|card-bad-attempts <v>|card-verify-empty|card-spec-paths-empty|card-spec-impl-overlap <paths>|card-spec-path-absent <path>|card-verify-full-suite|card-spec-rev-unresolvable <rev>> card=<f>/<id>` / `CARDS stop feature-spec-rev-not-shared <sha7,…> feature=<f>` ·
-`CARDS advisory stage=hunt findings=<n> (hunt repairs cards — not a STOP)` / `CARDS unchecked rc=<n>`.
-
-**`PIPELINE_SKILL_DIRS`** (colon-separated, per runtime) declares which dirs THIS runtime actually loads skills from. A hit there is a **verified** install (`path=`). Without it the script still searches the default dirs, but a hit is evidence only (`found=… UNVERIFIED`) — a readable `SKILL.md` on disk never proves the running agent loads it — so the exit is 3 and the stage verifies the slot itself.
-
-**`UPSTREAM …`** is advisory, printed after the guard, just before the final verdict (so a STOP never writes its cache): at most one `git ls-remote` of the pipeline repo per 24h, throttled through `${XDG_CACHE_HOME:-$HOME/.cache}/pipeline/upstream-head` (a failed fetch is throttled too), with `PIPELINE_UPSTREAM_URL` overriding the URL (tests/mirrors). It compares that sha against the installed version — the HEAD of the pipeline clone holding this script's real path (canonical entries symlink into the consumer clone; not in such a clone ⇒ `not-a-clone`). `UPSTREAM newer` ⇒ the stage adds one line to its final report telling the operator to run `pipeline-update` between stages. It never changes the exit code and never STOPs.
-
-**`CARDS …`** = the card-invariant check (`scripts/check-cards.py`, read-only, python3 stdlib): on
-`impl`/`review`/`hunt` entry, when `.pipeline/<current feature>/tasks/*.md` exists, it executes the card
-rules CONTRACT already states — the six frontmatter fields present · `status` enum · `attempts` an
-integer · `spec-paths ∩ impl-paths = ∅` with every `spec-paths` entry present in the checkout ·
-non-empty `verify` ≠ `current.json.full-verify` · ONE `spec-rev`, resolved with `git rev-parse` and
-shared (as a full sha) by every card of the feature (a prefix that no commit matches, or that two
-commits match, is `card-spec-rev-unresolvable`; one a blob also matches still resolves — `^{commit}`
-filters by type). It adds no rule and reads no frozen one
-(`attempts >= 3 ⇒ blocked` and the freeze diff stay with the state machine and `pipeline-review`);
-`impl-paths: []` is legal (impl may write `src/**`) and `full-verify` is optional (absent or not a list
-⇒ `CARDS note full-verify-unknown` and that check is skipped for every card of the feature). A
-`CARDS stop` line becomes `PREFLIGHT STOP <that same reason>`; a `CARDS note` never changes the exit —
-what it cannot read it does not judge. **Values are read in ordered steps, with no quote or comment
-grammar re-implemented:** a value starting with `#` is a comment, i.e. empty; a value starting with `[`,
-`"` or `{` is JSON (exact — a `#` inside a JSON string is data), and JSON is asked about nothing else,
-so a bare `7e16` stays a short sha and `null`/`true` stay text; a block-list item is a comment only when
-its own raw text starts with `#`, and an item that is not a string (`- []`) is unreadable, not skipped; else, only if the text carries no quote at
-all, a bare scalar with a whitespace-preceded ` #…` tail dropped; else the card is unrecognised. So is a card with any other unreadable shape — a line that is neither blank, nor `#`,
-nor `key: value`, nor a `- item` entry; a `- item` under anything but a key declared empty (a scalar or
-an inline array is not a block list); anything above the `---` fence — reported
-`card-frontmatter-unrecognized` with **all** its STOP checks suppressed: a parser-limitation fail-open,
-not an anti-tamper control. `card-no-frontmatter` is reserved for a file with no `---` fence line at all
-(CRLF needs no handling: the cards are read in text mode, which normalises it). Whenever any check was
-skipped — a suppressed card, or a feature-level one — the verdict is `CARDS unverified …
-unchecked=<k>`, never `CARDS ok`. **`hunt` is advisory too**
-(`CARDS advisory stage=hunt`): hunt REPAIRS cards, so a card defect must never gate its own entry. Any
-other exit prints `CARDS unchecked rc=<n>` and the run continues — `pipeline-task` 6b / `pipeline-review`
-prose is the spec; this executes it.
-
-**Mandatory, no prose fallback:** script absent on this install, or any exit other than 0/3 ⇒ the stage
-STOPs and reports (absent = incomplete install: every machine that runs a stage installs the full
-`pipeline-*` set); exit 3 ⇒ the stage does the named check(s) itself. The prose IS the spec; this script
-is its only executor.
-
-**Guarantees:** no file writes inside a repo or skill dir — the only checkout mutations are `git pull --rebase` (CONTRACT step 1) and the guard's `git fetch`, and a failure of either is a STOP, never a fall-back to a cached ref; the one write anywhere else is the once-a-day upstream throttle stamp above; dotenv reporting is **the file and a key COUNT — never a name, never a value** (a multi-line value's continuation line can look like a key, so names are unsafe to print at all), and nothing is exported (loading stays the stage's own step 2). The card check likewise only reads files and runs `git rev-parse --verify`. Deps: `git`, `python3`, coreutils. Tests: `bash scripts/preflight-test.sh` (78 cases, hermetic `$HOME` + temp remote/clone fixtures; also run it with `/bin/bash` for the bash-3.2 path).
+**Guarantees:** zero writes inside target repos or skill dirs (except `git pull --rebase` and the
+guard's `git fetch`, plus the post-guard 24h `upstream-head` cache stamp on exit 0/3 only).
+Deps: `git`, `python3`, coreutils. Self-test: `bash scripts/preflight-test.sh` (also test with
+`/bin/bash` for macOS bash-3.2 compatibility).

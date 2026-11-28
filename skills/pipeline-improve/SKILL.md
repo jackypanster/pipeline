@@ -7,7 +7,7 @@ description: "Meta-command — turn a SKILL-PROPOSAL (a skill gap learned from a
 
 Meta-stage: improves the **pipeline repo's own** skills/CONTRACT, gated exactly like any code change.
 Operates on the pipeline repo (`github.com/jackypanster/pipeline`), NOT a target project — **so there is
-NO `.pipeline/` state here** (no `current.json`, no cards, no `spec-rev`). **This command does NOT run
+NO `.pipeline/` state here** (no `current.json`, no `plan.md`). **This command does NOT run
 the feature shim loop** (whose step 3 would STOP on the missing `current.json`); its own steps are below,
 and its gate is `pipeline-review` in **meta-PR mode** (CONTRACT §Self-improvement), not the feature
 review steps.
@@ -16,8 +16,9 @@ review steps.
 
 1. `git pull --rebase` the pipeline repo; read `CONTRACT.md` (esp. §Self-improvement).
 2. Take the `SKILL-PROPOSAL` (which skill, what change, why). **Frozen-invariant guard:** if it touches
-   the state machine, only-reviewer-merges, the freeze gate, or never-force-push, **STOP** and flag for
-   explicit human decision — these are not routinely improvable.
+   3-role model separation, the 4-step state machine & 3-reject breaker, only-reviewer-merges +
+   human-direct GO-gate, or never-force-push, **STOP** and flag for explicit human decision — these
+   are not routinely improvable.
 3. **Resolve `improve` slot from `roles.yaml`; verify installed (else STOP).** Invoke **`think`** — it
    validates the proposal is a real improvement (not a weakening) and produces the minimal, additive
    change that preserves every hard rule. `think` reasons and writes NO files; YOU apply the edit (the
@@ -32,7 +33,7 @@ review steps.
    > 120 lines), **lead the PR description with the size-budget justification** — why not net-neutral,
    why not in CONTRACT.md / a reference file — so review doesn't have to ask (CONTRACT §Self-improvement). **Do NOT merge.**
 6. Hand off to **pipeline-review in meta-PR mode** (CONTRACT §Self-improvement — NOT the feature review
-   steps: no cards, no `spec-rev`, no freeze gate, no full-suite gate on this repo): semantic-review the
+   steps: no `plan.md`, no feature review gates on this repo): semantic-review the
    skill diff — is it a real improvement (not a weakening/破坏)? does it preserve every hard rule + frozen
    invariant? — then a human confirms the squash-merge to `main`. Improved skill propagates to runtimes
    on their next pull.

@@ -1,3 +1,5 @@
 .codegraph/
 .DS_Store
 slide-deck/
+__pycache__/
+*.pyc

@@ -1,13 +1,13 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues (`jackypanster/pipeline`). Use the `gh` CLI for all operations.
+Issues and plans for this repo live as GitHub issues (`jackypanster/pipeline`). Use the `gh` CLI for all operations.
 
 > **Scope.** This file configures the *issue tracker* only, for the `mattpocock/skills` engineering
 > commands that read it: `/wayfinder`, `/to-tickets`, `/to-spec`, `/triage`.
 > (`/implement` does not — it takes a spec or tickets already in hand and never touches the tracker.)
-> It does **not** govern domain docs: `CONTEXT.md` and `docs/adr/*` are frozen by
-> [CONTRACT.md](../../CONTRACT.md) to live under `.pipeline/<feature>/` in the **target** repo, and the
-> `arch` stage write-set is scoped to exactly those paths. Do not infer a repo-root
+> It does **not** govern domain docs: `CONTEXT.md` and `docs/adr/*` are placed by
+> [CONTRACT.md](../../CONTRACT.md) under `.pipeline/<feature>/` in the **target** repo, and the
+> `plan` stage write-set is scoped to those paths. Do not infer a repo-root
 > `CONTEXT.md` / `docs/adr/` layout from this file.
 
 ## Conventions

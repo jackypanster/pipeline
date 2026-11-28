@@ -1,284 +1,83 @@
 ---
 name: pipeline-coordinate
-description: "Coordinator playbook — a CC session dispatches Pi (implementation) and Codex (review) through multica issues or Herdr panes to run a pipeline feature or a toolchain meta-PR end to end. NOT a pipeline stage and NOT a scheduler daemon: CC is the requirements/coordination role of a three-role, three-model team; it never implements product code, never reviews, never merges. Args: repo, what to coordinate (a feature idea, or a meta-PR task)."
+description: "Coordinator playbook + headless runner guide — drives the 3-Agent 4-Step pipeline across planner (frontier A), reviewer (independent frontier B), and implementer (coding CLI C) via headless CLI (run-loop.py, zero planner tokens in Phase II), multica issues, or Herdr panes. Never implements, never reviews, never merges. Args: repo, what to coordinate (feature or meta-PR)."
 ---
 
-# pipeline-coordinate — the coordinator playbook
+# pipeline-coordinate
 
-You are CC, the coordinator. This playbook makes a COLD session able to run the loop a human
-otherwise runs by hand: dispatch work to the implementer pane, verify what comes back, relay review
-rounds, and stop at every gate that belongs to a human. It replaces manual handoff TYPING — never
-human judgment, never stage work that belongs to another role.
-
-**Why three roles on three models (the founding constraint):** requirements (CC/Claude),
-implementation (Pi), review (Codex) are deliberately DIFFERENT models so no model grades its own
-work — LLM self-preference is real and was observed here (an author-written test suite stubbed the
-exact integration its own implementation got wrong; the cross-model reviewer caught it in one round).
-The human is the fourth, final gate.
+Automates handoff delivery across the 3 abstract roles (`planner`, `reviewer`, `implementer`)
+without violating model independence or human merge authority.
 
 ## Hard rules (violating any one voids the run)
 
-1. **Three roles, three models.** CC coordinates and authors requirements artifacts only; it does NOT
-   write product/implementation code and does NOT review. Pi implements only; it does NOT review and
-   does NOT merge. Codex reviews only; it is the ONLY role that merges, and only on a direct human
-   token typed in ITS OWN session. Any two roles collapsing into one model is a violation that VOIDS
-   the coordinated run.
-2. **Implementer death = STOP.** If the implementer pane dies (quota exhausted, crash, blocked), stop
-   the run, report the exact break point (committed vs uncommitted work, last green state), and wait.
-   Do NOT take over the implementation. A compromise directive ("CC, take over") can come ONLY from
-   the human, and it does not bend rule 1 — it ENDS the coordinated run for that work item and starts
-   a separately attributed TWO-MODEL fallback workflow (CC implements with honest attribution in
-   every commit and PR body; Codex still independently reviews AND remains the only role that
-   executes the merge, on the human's direct token — only-reviewer-merges holds in the fallback
-   too). Resume coordinated mode only when three distinct models are available again.
-3. **Git is the only truth.** Verify the implementer's work yourself (rerun the tests, check the diff
-   scope) before pushing anything; never trust a self-report. Never paste artifact bodies between
-   panes — git is the bus, handoffs carry paths.
-4. **Fail closed to the human.** Anything outside this playbook's routes — an unexpected journal
-   state, a review that will not converge, an ambiguous instruction — means stop and surface it.
-   The coordinator's failure mode is ALWAYS "stop and ask", never "guess and proceed". Never merge,
-   never force-push, never expand scope on your own.
+1. **Role & model separation.** `model(reviewer) ≠ model(planner)` AND
+   `model(reviewer) ≠ model(implementer)`. Concrete models live ONLY in `~/.config/pipeline/`.
+2. **Implementer death = STOP.** Crash, timeout, or quota exhaustion stops immediately and reports
+   exact git state. Never silently take over coding.
+3. **Git + deterministic `verify` are the only truth.** Never trust self-reports; verify commits,
+   `forbid-paths`, and `verify[]` exit codes before advancing. Handoffs carry paths, never bodies.
+4. **Fail closed to the human.** Malformed verdicts, unexpected journal states, 3rd rejection
+   (`>= 3`), or Step 4 `plan_fact|plan_design|env` short-circuits MUST stop. Never merge, never
+   force-push trunk.
 
-## Preflight (once per session)
+## Transport 1 (Recommended, single-machine): Headless CLI (`scripts/run-loop.py`)
 
-**Role transport:** invocation selector, else the operator's `~/.config/pipeline/transport` (read,
-never write), else Herdr; `review=herdr`/`impl=herdr` force Herdr; state each role's transport and
-source. File present or a role on multica ⇒ read `transport-multica.md` (base dir) IN FULL before
-preflight — for that role ONLY it replaces the parts it lists; everything else binds unchanged.
+Runs Phase II (`Step 3 Impl CLI ↔ deterministic verify ↔ Step 4 Reviewer CLI`) with **0 planner
+tokens** inside an isolated `feat/<feature>` git worktree. Reads `~/.config/pipeline/runners.json`
+(`argv` string arrays, `shell=False`, mandatory non-empty `model_id` per role; see README §Quick Start).
 
-1. `herdr pane list` — identify your OWN pane (exclude it from every dispatch), the Pi pane, and the
-   Codex pane by agent + cwd. Exactly one pane per role; zero or many = stop and ask.
-2. `herdr agent explain <pane> --json` per role pane — require an AUTHORITATIVE state source
-   (`.fallback_reason == null` and a matched rule / lifecycle hook). Non-authoritative = stop: you
-   cannot safely tell working from idle.
-3. **Model identities.** Pane agent type is not model identity. Read each role pane's visible
-   footer/title (`herdr pane read <pane> --source visible --lines 3` — Pi and Codex TUIs show their
-   model there) and confirm three DISTINCT underlying models. Unknown or duplicate → stop and ask
-   the human to attest which models back each pane; do not proceed on assumption.
-4. Coordinating a pipeline feature (Profile B)? Run `pipeline-driver`'s read-only preflight. Cold
-   start: `git clone https://github.com/jackypanster/pipeline-driver` (or reuse an existing clone),
-   `cp coordinate.config.example coordinate.config`, fill EVERY non-optional field per the example's
-   comments — `OBSERVER_WORKDIR` = a clone this session may fetch in,
-   `CC_WORKDIR`/`PI_WORKDIR`/`CODEX_WORKDIR` = the three role clones matching the panes from step 1,
-   `BRANCH`, and the five command-prefix fields (pane pins are optional). **Run `bash coordinate.sh doctor --config coordinate.config` from a
-   NON-ROLE shell** — a plain terminal or a fourth utility pane, never from the CC/Pi/Codex panes:
-   the shipped tool captures its own `HERDR_PANE_ID` as "self" and excludes that pane from role
-   resolution (a dispatcher must never type into itself), so under this playbook's same-session
-   topology a doctor run inside the CC pane can never resolve the CC role and fails
-   `PANE_NOT_FOUND` by design. Any MISS blocks the run; `coordinate.sh status --config …` shows the
-   machine bindings and the active feature at any time.
+```bash
+# Optional headless Step 2:
+python3 <skill-base-dir>/scripts/run-loop.py review-plan --repo <repo> --config ~/.config/pipeline/runners.json [--push]
+# Only if control.json set pause_after_plan=true:
+python3 <skill-base-dir>/scripts/run-loop.py approve-plan --repo <repo> [--push]
+# Phase II (0 planner tokens):
+python3 <skill-base-dir>/scripts/run-loop.py phase2 --repo <repo> --config ~/.config/pipeline/runners.json [--push]
+```
 
-## Transport verbs (Herdr today; the two verbs are the swappable seam)
+| exit | meaning | next action |
+|---|---|---|
+| `0` | `review-plan`: passed; `approve-plan`: resumed; `phase2`: headless `ACCEPT` (NOT merged) | `review-plan`/`approve-plan` → `phase2`; `phase2` → interactive `pipeline-review` GO-gate |
+| `2` | Breaker hit (`plan_rejects >= 3`, `review_rejects >= 3`, or verify/forbid-paths retry cap) | Human intervention / `pipeline-hunt` |
+| `3` | Escalation (`CAUSE: plan_fact \| plan_design \| env`) or `pause_after_plan` | Human/Planner fixes plan or env (or `approve-plan`) |
+| `4` | Fail-closed error (impl crash/timeout, model collision, dirty trunk, stale plan, malformed verdict, lock busy) | Inspect stderr + git state |
+| `10` | `review-plan` rejected (`plan_rejects < 3`) | Planner revises `plan.md` and re-runs Step 2 |
+| `64` | Usage or invalid `runners.json` | Fix CLI args or config |
 
-- **send** — `herdr pane run <pane> '<single line>'` (atomic text+Enter); never into your own pane.
-  **Claude Code TUI gotcha (field-verified 2026-07-17):** a line starting with `/` opens the
-  slash-command completion popup, which EATS the trailing Enter — the text sits unsubmitted on the
-  input line. The recovery is a NARROWLY GUARDED CONTINUATION of the same logical send, not a
-  general empty-send exception (the empty-input invariant below still binds every NEW send): take a
-  fresh authoritative+idle sample; read the pane and require the visible input line to EXACTLY equal
-  the slash command you just dispatched — byte-for-byte, nothing more; only then send the empty
-  follow-up (`herdr pane run <pane> ''`) and read back to verify it submitted. Any other content on
-  the line (edited, partial, someone else's draft) = do NOT press Enter; stop and surface it.
-  **Per-send readiness, immediately before every send:** take ONE sample —
-  `herdr agent explain <pane> --json` — and require BOTH `authority` (matched rule / lifecycle hook,
-  `.fallback_reason == null`) AND `state == idle` from that SAME sample (state without authority is
-  the fallback's always-idle lie); then `herdr pane read <pane> --source visible --lines 3` and
-  verify the input line is EMPTY (an idle pane can hold draft text your Enter would submit). Either
-  check failing = do not send; re-sample or stop.
-- **status** — same single-sample discipline: read state AND authority together; lost authority at
-  ANY poll fails closed (stop, tell the human), never "keep polling state".
-- **watch** (background, so you are woken instead of polling by hand). Arm it only AFTER a send you
-  observed leave the idle state — the first post-send `idle` sample may be the PRE-dispatch state
-  (`pane run` proves delivery to the TUI, not processing):
+## Transport 2 & 3: `multica` issues or `herdr` panes
 
-  Invocation: `python3 <skill-base-dir>/scripts/watch-pane.py <pane>` (the skill base dir is
-  provided at skill invocation); requires `python3` ≥3.9 on PATH, stdlib only. Env knobs (outside
-  the documented range → exit 64): `HERDR_WATCH_SAMPLE_MS` 1..86400000 (default 5000),
-  `HERDR_WATCH_INTERVAL_S` 0..86400 (20), `HERDR_WATCH_START_SAMPLES` 1..1000000 (6),
-  `HERDR_WATCH_MAX_SAMPLES` 1..1000000 (135). Frozen exit codes:
+Resolution: invocation selector (`review=multica:<name>`, `impl=multica:<name>`, `review=herdr`,
+`impl=herdr`) → `~/.config/pipeline/transport` (read-only) → Herdr default. When any role uses
+`multica`, read `transport-multica.md` (base dir) IN FULL before preflight.
 
-  | code | meaning |
-  |---|---|
-  | 0 | working→idle |
-  | 2 | authoritative blocked |
-  | 3 | max samples exhausted |
-  | 4 | authority lost / unexpected state / sample failure (fail closed) |
-  | 5 | never started processing |
-  | 64 | usage / bad env |
+**Herdr preflight & verbs:**
+1. `herdr pane list` — locate one distinct pane per role (exclude your own pane).
+2. `herdr agent explain <pane> --json` — require `.fallback_reason == null` (authoritative).
+3. Confirm distinct underlying models from each pane's visible footer (`herdr pane read <pane> --source visible --lines 3`).
+4. **send:** `herdr pane run <pane> '<single line>'` ONLY after fresh authoritative+idle sample and
+   empty visible input line.
+5. **watch:** `python3 <skill-base-dir>/scripts/watch-pane.py <pane>` (frozen exit codes: `0`
+   working→idle, `2` blocked, `3` max samples, `4` authority lost, `5` never started, `64` bad env).
+   Idle alone never proves delivery; unchanged git after a send STOPs for human inspection.
 
-  The script is the normative implementation of the reviewed inline loop (single-sample authority+state — state without authority is the fallback's always-idle lie; bounded sampling; fail closed); its semantics are frozen — change only via meta-PR.
+## Profile A — meta-PR flow (this pipeline repo, no `.pipeline/` state)
 
-  Exit 0 means the pane went working→idle — it is NOT completion by itself: completion additionally
-  requires the expected Git/deliverable evidence (new commits in the worktree, an advanced journal
-  seq, a posted verdict). Idle WITHOUT that evidence = the stage ended without delivering → stop and
-  inspect (never re-send on a hunch; see the redelivery rule below). Exit 2 (blocked) → read the
-  pane to see the blocker; quota/crash → hard rule 2.
+1. Write a disposable handoff (scope, allowed/forbidden files, deliverables, done-when).
+2. Dispatch implementer; watch; rerun tests and check `git diff --stat` before pushing PR branch.
+3. Dispatch reviewer (`pipeline-review` meta-PR mode, head SHA, 2–3 review axes, PR comment only).
+   Use an edge-triggered verdict watcher (snapshot latest non-bot comment before dispatch; require
+   newer comment naming head SHA + explicit verdict).
+4. Relay fixes with typed evidence; 3rd rejection without convergence ⇒ STOP for human.
+5. **Merge gate:** on approval, tell the human to reply `go`/`merge`/`confirm` directly in the
+   reviewer session/issue. **From arming until merge, coordinator sends NOTHING to the reviewer.**
 
-**Redelivery is NOT generally safe.** With no delivery ledger, an unconsumed dispatch cannot be
-distinguished among "never delivered", "delivered, not yet started", and "ran and ended without
-delivering" (the load-bearing PR #12 lesson recorded in coordinator-design v1.2/§25 — pinned: https://github.com/jackypanster/pipeline-driver/blob/19e8c954/coordinator-design.md). An ambiguous
-send, or unchanged Git after a send, always STOPS for human inspection of the pane transcript. Only
-a dispatch whose effect is OBSERVED (journal advanced / commits landed / verdict posted) is
-replay-safe to move past.
+## Profile B — 4-Step feature flow (target repo with `.pipeline/`)
 
-## Remote Pi pane (executor on another host) — Profile A only
-
-The Pi pane may live on another machine while CC, Codex, the observer clone, and every rule above stay local and unchanged. **Profile B is BLOCKED with a remote Pi pane**: `coordinate.sh doctor` resolves all three role clones and panes on the local socket and has no remote mode, so a remote `PI_WORKDIR` cannot pass Preflight item 4; do not substitute manual sampling for doctor. Until a `PI_SSH` field exists in `pipeline-driver`, use this section for Profile A meta-PRs only.
-
-Herdr remote control IS ssh — pane/agent ids are per-server (two hosts can both have `w1:p1`) — so the two transport verbs, and `pane list` / `pane read` / `agent wait` aimed at the Pi pane, run on the Pi host. Put `BatchMode yes`, `ConnectTimeout 10`, `ServerAliveInterval 5`, `ServerAliveCountMax 3`, `ControlMaster auto`, `ControlPath ~/.ssh/cm-%C`, `ControlPersist 10m` in that host's `~/.ssh/config` block so both shapes inherit them (bash; a bare `$R` scalar does not word-split under zsh):
-
-    H=<host>; P=<pane>
-    r() { ssh -n "$H" "$@"; }                           # sample and other argument-only verbs
-    r herdr agent explain "$P" --json
-    ssh "$H" bash -s <<'REMOTE'                         # send: text crosses ssh as a stdin script, quoted inside
-    herdr pane run <pane> '<single line>'
-    REMOTE
-
-`PI_WORKDIR` is then a path on that host; the local `herdr` version is irrelevant (only the remote CLI talks to the remote socket). **Watch step:** `watch-pane.py` talks to the LOCAL socket only — never hand it a remote pane id (it would select an unrelated local pane). The remote equivalent with the same bounded, fail-closed semantics: `r herdr agent wait "$P" --until idle --until done --timeout <ms>`, then ONE `r herdr agent explain "$P" --json` requiring `fallback_reason == null`; a wait timeout or a non-authoritative sample → stop, exactly as in the Transport verbs section. Preflight additions, each a command, any miss = stop:
-
-- `r true` exits 0 (`BatchMode yes` needs a loaded key/agent or an authenticated master; the master authenticates once — observed ~1 s per verb → tens of ms). `ServerAlive*` bounds a hung session to ~15 s so remote timeouts reach CC; on failure apply the existing STOP rules, re-establish, resume by hand — never auto-reconnect.
-- `r herdr status` is running and `r herdr integration status` lists pi; the Pi pane was started with `herdr agent start --kind pi` (a `pane run pi` pane never reaches authority — pane setup in the adhoc playbook §7).
-- `git ls-remote` succeeds on BOTH hosts and the forge CLI works where it will run. A local `Host <forge>` + `ProxyJump <host>` routes ONLY ssh git remotes and keeps URLs identical; HTTPS remotes and forge API calls are not covered.
-
-Attended layer only; unattended cross-host queueing is a different layer and out of scope here. Provenance: 2026-09-16, MacBook → Mac Studio over a relay tunnel, local herdr 0.8.2 driving remote 0.9.0.
-
-## Profile A — meta-PR flow (toolchain, docs, small changes; quality via adversarial review)
-
-For no-`.pipeline`-state changes only (CONTRACT §Self-improvement lane: this repo + the sibling
-toolchain repos `pipeline-driver`/`-dashboard`/`-dispatch`, nothing else). No envelope needed —
-review pins the head sha (the staleness guard). **Profile A admits ONLY a forge PR thread on a
-SAME-REPO PR in that set** (github via `gh`, gitee via `gitee-cli`); a fork / cross-repository PR, a
-repo outside the set, or no forge ⇒ STOP for the human and fall back to plain-diff review (CONTRACT §Forge adapter).
-
-1. **Handoff.** Write ONE disposable markdown file: context, constraints (files it may touch, files
-   it must NOT touch), deliverables, done-when, "commit locally, do NOT push". Create a git worktree
-   for the implementer; state its absolute path and forbid touching the pane's own cwd.
-   **Spec-completeness for reimplementation handoffs (field lesson, PR #48 — five rounds):** when
-   the deliverable re-expresses existing behavior in another language/runtime, freeze the IMPLICIT
-   substrate semantics alongside the visible ones — tokenization/charset (bash default IFS is
-   space/tab/newline ONLY), process-lifecycle side effects (e.g. an unconditional group kill after
-   every wait), and input robustness the original never had to define (env parsing/ranges) — every
-   implicit behavior left unfrozen is a review round waiting to happen. And when the evidence plan
-   requires a process-spawning test harness, give the harness its OWN lifecycle spec in the same
-   handoff, written as OUTCOMES (nothing may signal a process outside this run; no leak outlives a
-   bounded self-expiring lease; death is PROVEN by read-only checks before any evidence deletion or
-   success report), never as mechanisms — a prescribed mechanism with a hole becomes a mandated
-   hole (reference endpoint: stop-file + bounded lease + `os.kill(pid, 0)` proof).
-2. **Dispatch.** send Pi: `Read <handoff path> in full and implement it completely. Work ONLY in
-   <worktree>. Commit locally as you go; do not push.` Then watch.
-3. **Verify (acceptance, not review).** On idle: rerun every test yourself, `git diff --stat` against
-   the base, check no forbidden file moved. Broken → send a correction handoff (this is acceptance
-   rejection, not review). Green → push, open the PR via the CONTRACT forge adapter (github → `gh pr
-   create`; gitee → `gitee-cli`), with an honest authorship note.
-4. **Review dispatch.** send Codex:
-   `$pipeline-review meta-PR <pr-url> — toolchain meta-PR, no .pipeline state. base=<b> head=<sha>.
-   git fetch origin first. <two or three review axes specific to the change>. Verdict as a PR
-   comment ONLY — do not type it into any other pane (the coordinator watches the PR; a pane
-   write-back is redundant and is often blocked by the unsent-text guard anyway). Arm the GO-gate;
-   merge ONLY on a direct human token in this session.`
-   **Immediately after dispatching, arm your own verdict watcher — EDGE-TRIGGERED per dispatch:**
-   snapshot the latest NON-BOT comment's ID/timestamp IMMEDIATELY BEFORE the dispatch; the author
-   filter excludes bots only and cannot identify the reviewer (reviewer, operator, and you may share
-   one forge account). Accept only a comment NEWER than the snapshot, non-bot, and naming the
-   dispatched head SHA — NECESSARY, never sufficient: the verdict also carries the reviewer's
-   explicit decision (approve / changes requested) for that head. A status, dispatch, or relay
-   comment is not the verdict even when it names the head; failing any condition ⇒ not your verdict:
-   do not route on it, and rejecting a candidate changes no other rule. After round 1 the PR already
-   carries earlier verdict comments, so a count- or presence-based poll re-armed on re-dispatch
-   returns the OLD verdict and routes you on stale evidence. Never rely on an operator relay or a
-   reviewer pane write-back to wake you: git/the forge is the bus, panes are command transport.
-5. **Relay loop** (the heart of the flow):
-   - Verdict = changes requested → save it VERBATIM to a file; write a fix handoff for Pi: the
-     verdict file path + per-finding evidence requirements + the standing constraints. Evidence is
-     TYPED: a behavioral defect needs a regression test that FAILS on the reviewed head <sha>
-     (proven in a temp worktree); a documentation/contract defect needs deterministic old-head
-     evidence instead (the contradictory text quoted at the old head, resolved in the new diff) —
-     never a hollow test manufactured to satisfy a blanket rule. Dispatch, watch, VERIFY (rerun
-     everything; re-prove each claimed evidence item yourself), push.
-   - Re-dispatch: `re-review <pr-url> — findings fixed; new head <sha>. Review ONLY the delta
-     <old>..<new>. <finding→fix→evidence mapping>. Verdict as PR comment ONLY (no pane
-     write-back); GO-gate; direct human token only.` Re-arm your verdict watcher after every
-     re-dispatch.
-   - Three rounds without convergence → stop for the human with the verdict trail (hard rule 4); the cap is PR-thread-bound and counts verdict rounds already on this PR thread, so a resumed session inherits the spent budget, not a fresh three.
-6. **Merge gate.** Verdict = approved → tell the human: reply `go`/`merge`/`confirm` as the ENTIRE
-   message in the Codex pane. **From the moment a GO-gate is armed until the PR merges (or the human
-   says otherwise), the coordinator MUST NOT send ANYTHING to the reviewer pane** — no re-review, no
-   status ping, nothing: while the gate is armed, every keystroke into that pane is
-   indistinguishable from the human token, so the only safe coordinator behavior is silence toward
-   that pane (dispatching a NEW review round after a changes-requested verdict is fine — the gate is
-   not armed then). While the gate is armed, do not arm a pane watcher on the reviewer pane either:
-   pane-state detection can flap (false working→idle wakes, observed in the field), the wait is
-   human-paced and unbounded, and every false wake invites acting on pane noise — the forge's PR
-   state is the ONLY wait instrument at an armed gate. Watch the PR state via the forge; on merge,
-   clean up the worktree and report.
-
-   *Accepted limitation (known, deliberate):* transport-level enforcement of human-only token
-   provenance does not exist in the current Herdr — a malicious coordinator could type the token.
-   The mitigations are this send-freeze rule, the human's own view of the reviewer TUI (a forged
-   token is visible in scrollback), and the audit trail; a channel/ACL that mechanically denies the
-   coordinator write access to an armed reviewer pane is future work for the transport layer.
-
-## Profile B — pipeline feature flow (product code; quality via the frozen-spec contract)
-
-For a real feature in a target repo, driven by `.pipeline/<feature>/journal.md`. Everything in
-CONTRACT.md binds; this profile only adds who types what.
-
-- **Authorization.** Coordinate ONLY a feature whose `control.json` says
-  `{"schema_version":1,"mode":"coordinated","merge_gate":"human-direct"}` (created by `pipeline-prd`
-  on the operator's explicit request). Absent/human mode → observe only. Malformed, or vanishing
-  after dispatches started → stop, tell the human (never treat as a pause).
-- **Stage split (three models, unchanged):** the reasoning stages — `prd` (operator-started),
-  `arch`, `task`, `hunt` — are CC-role work: run them IN THIS SESSION with their stage skills,
-  obeying each stage's write-set. Implementation is dispatched to the Pi pane; review to the Codex
-  pane. Coordinating and executing the CC-role stages in one session is the sanctioned
-  simplification of the old design's separate CC pane — the model separation is what matters.
-  The operator MAY instead assign a reasoning stage to an ADDITIONAL distinct-model frontier pane
-  (a 4th model strengthens, never weakens, the separation invariant); the coordinator then
-  dispatches that stage exactly like impl/review — five-field envelope, per-send readiness, watch,
-  Git-evidence verification (field-validated: `task` on a 4th-model pane, 2026-08-08). Before the
-  FIRST dispatch to such a pane, extend preflight step 3 to it: read its visible footer/title and
-  require its underlying model DISTINCT from all three role models — unknown or duplicate ⇒ stop
-  and ask the human to attest; per-send readiness proves authority and idle, never model identity.
-  For a non-Claude TUI a slashless plain-text line (`Run pipeline-task repo=… …`) is the safe
-  delivery form — zero slash-popup risk.
-  **In-session stages carry the envelope too:** invoke every coordinated stage — including your own
-  `arch`/`task`/`hunt` — with all five fields (`repo= branch= feature= expected_seq=
-  expected_commit=`) built from ONE fresh journal observation, so the stage's mandatory pre-write
-  stale-dispatch guard and control-tuple check run rather than the human-relay path. Cannot
-  construct the tuple (unreadable tail, missing control) → stop; never invoke bare.
-- **Routing.** After every stage: `git pull --rebase`, read the journal tail's header and its
-  `>>> NEXT` line, and follow CONTRACT §Coordinated mode's transition forms. The tail is the ONLY
-  authority. A tail that matches no known form → stop and show the human (never force a route).
-- **Dispatching a stage to a pane.** Compose the stage command + the envelope, e.g. send Pi:
-  `<PI_IMPL_CMD> repo=<pi-clone> branch=<b> feature=<f> expected_seq=<N> expected_commit=<full sha>`
-  — the stage's pre-write stale guard (CONTRACT §Coordinated mode) verifies it; the guard refuses
-  CONSUMED seqs, which protects observed-complete dispatches — it does NOT make blind redelivery
-  safe (see the redelivery rule above). Watch the pane; when it idles, pull and read the tail. An
-  idle pane with NO new journal entry = the stage broke its promise → stop, surface it (hard rule 4).
-- **Retries and hunt** follow the CONTRACT state machine as written (attempts, `>=3 ⇒ blocked ⇒
-  hunt`); you validate the card evidence by READING it, and stop on any disagreement between journal
-  and cards.
-- **Merge gate**: identical to Profile A — Codex arms, the human types the token in the Codex pane.
-
-## Templates (copy, fill, keep to one line for sends)
-
-- **Review axes line** (step 4): name the 2–3 things this specific diff could get wrong — scope
-  creep, a weakened rule, an untested path. Generic "please review" wastes the reviewer's round.
-- **Fix handoff skeleton**: verdict path · per-finding fix requirement · TYPED old-head evidence per
-  finding (behavioral ⇒ a regression test failing on `<old head>`; doc/contract ⇒ the contradictory
-  old-head text quoted, resolved in the new diff) · unchanged constraints · "commit locally, do not
-  push".
-- **Honest attribution**: every commit/PR body names who implemented and who verified (e.g.
-  "Implemented by Pi against <handoff>; verified and pushed by the coordinator").
-
-## What this playbook is not
-
-No daemon, no ledger, no state files beyond disposable handoffs, no unattended operation, no
-parallel features, no merges by anyone but Codex-with-a-human-token. Sole carve-out: duty mode
-(README §Operating modes, third track) — normative bounds live in the target repo's
-`.pipeline/duty-tick.md`, which a duty session MUST read IN FULL before acting. It excepts exactly
-two clauses: unattended re-entry between the per-feature human brackets, and one local, disposable
-notification ledger (loss at worst repeats a notification); toward the target repo a duty session
-stays READ-ONLY, so nothing else above moves. If the loop needs something
-this file does not describe, that is a signal to stop and talk to the human — or to propose a
-change to THIS file via the normal meta-PR lane (never edit the installed copy mid-run).
+Requires `.pipeline/<feature>/control.json` (`{"schema_version":1,"mode":"coordinated","merge_gate":"human-direct"}`).
+- **Phase I:** planner runs `pipeline-plan`; reviewer runs `pipeline-plan-review` (headless or
+  5-field envelope). `ACCEPT`/`ACCEPT WITH NITS` proceeds to Phase II by default; 3rd `REJECT` STOPs.
+- **Phase II:** prefer `run-loop.py phase2` on a single machine, or dispatch `pipeline-impl` /
+  `pipeline-review` with the 5-field envelope (`repo= branch= feature= expected_seq= expected_commit=`)
+  over `multica`/`herdr`. Route strictly on `journal.md` tail transitions.
+- **Merge gate:** reviewer arms GO-gate; human sends direct token; coordinator stays silent toward
+  reviewer until merge completes and `review→done` lands on trunk.
