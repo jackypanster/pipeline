@@ -154,7 +154,85 @@ def _git_common_dir(repo):
     return Path(_git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).stdout.strip())
 
 
+_ACTIVE_STATE_DIR = None
+_ACTIVE_CHILD_PROC = None
+
+
+def _kill_pg_and_wait(pid, grace_s=1.5):
+    """Terminate process group `pid` (falling back to single PID) and wait until gone."""
+    if not _pid_is_alive(pid) or pid == os.getpid():
+        return
+    try:
+        pgid = os.getpgid(pid)
+    except OSError:
+        pgid = -1
+    try:
+        if pgid == pid and pgid != os.getpgrp():
+            os.killpg(pgid, signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    deadline = time.time() + grace_s
+    while time.time() < deadline and _pid_is_alive(pid):
+        time.sleep(0.05)
+    if _pid_is_alive(pid):
+        try:
+            if pgid == pid and pgid != os.getpgrp():
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+        kill_deadline = time.time() + 2.0
+        while time.time() < kill_deadline and _pid_is_alive(pid):
+            time.sleep(0.05)
+
+
+def _record_active_child(pid):
+    if not _ACTIVE_STATE_DIR:
+        return
+    p = Path(_ACTIVE_STATE_DIR) / "active-child.pid"
+    try:
+        if pid is None:
+            if p.exists():
+                p.unlink()
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(f".pid.tmp.{os.getpid()}")
+            tmp.write_text(f"{pid}\n", encoding="utf-8")
+            os.replace(str(tmp), str(p))
+    except OSError:
+        pass
+
+
+def _install_stop_handler(state_dir):
+    global _ACTIVE_STATE_DIR
+    _ACTIVE_STATE_DIR = Path(state_dir) if state_dir else None
+
+    def _on_signal(signum, _frame):
+        proc = _ACTIVE_CHILD_PROC
+        if proc is not None and proc.poll() is None:
+            _kill_pg_and_wait(proc.pid, grace_s=1.0)
+            try:
+                proc.wait(timeout=1.0)
+            except Exception:
+                pass
+        _record_active_child(None)
+        _update_run_state(
+            _ACTIVE_STATE_DIR,
+            status="stopped_by_user",
+            reason=f"terminated by signal {signum}",
+            exit_code=128 + signum,
+        )
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+
+
 def _run_bounded(argv, cwd, timeout_s, stdin_text=None):
+    global _ACTIVE_CHILD_PROC
     try:
         proc = subprocess.Popen(
             argv,
@@ -167,6 +245,8 @@ def _run_bounded(argv, cwd, timeout_s, stdin_text=None):
         )
     except OSError as exc:
         raise RuntimeError(f"failed to launch {argv[0]!r}: {exc}") from exc
+    _ACTIVE_CHILD_PROC = proc
+    _record_active_child(proc.pid)
     try:
         out, err = proc.communicate(input=stdin_text, timeout=timeout_s)
         return proc.returncode, out or "", err or "", False
@@ -180,6 +260,9 @@ def _run_bounded(argv, cwd, timeout_s, stdin_text=None):
         except subprocess.TimeoutExpired:
             out, err = "", ""
         return -9, out or "", err or "", True
+    finally:
+        _ACTIVE_CHILD_PROC = None
+        _record_active_child(None)
 
 
 def _validate_positive_finite(val, label):
@@ -493,7 +576,8 @@ def _is_step1_allowed_path(rel_path, feature):
     norm = _strip_dot_slash(rel_path)
     if norm in (f".pipeline/{feature}/plan.md", f".pipeline/{feature}/CONTEXT.md"):
         return True
-    if norm.startswith("docs/adr/") and ".." not in norm.split("/"):
+    adr_prefix = f".pipeline/{feature}/docs/adr/"
+    if norm.startswith(adr_prefix) and norm.endswith(".md") and ".." not in norm.split("/"):
         return True
     return False
 
@@ -724,6 +808,8 @@ def _approve_plan_locked(repo, feature, cur, cur_path, trunk, trunk_head, do_pus
     _, tail_trans, _, _ = _read_journal_tail_strict(journal_path)
     if tail_trans != "plan-review→human · blocked":
         _die(4, f"approve-plan requires tail 'plan-review→human · blocked' (found '{tail_trans}')")
+    if int(cur.get("plan_rejects", 0) or 0) >= MAX_REJECTS:
+        _die(2, f"plan_rejects already at {cur.get('plan_rejects')} (>= {MAX_REJECTS}); human/hunt intervention required")
     if not _read_pause_after_plan(repo, feature):
         _die(4, "approve-plan only applies when control.json sets pause_after_plan=true")
     approved_blob = cur.get("approved_plan_blob", "")
@@ -1231,6 +1317,7 @@ def _run_step1_planner_locked(repo, feature, cur, cur_path, trunk, trunk_head, p
     journal_path = repo / ".pipeline" / feature / "journal.md"
     reviews_dir = repo / ".pipeline" / feature / "reviews"
     plan_path = repo / ".pipeline" / feature / "plan.md"
+    questions_path = repo / ".pipeline" / feature / "human-questions.md"
     answers_path = repo / ".pipeline" / feature / "human-answers.md"
     check_plan = _load_check_plan()
 
@@ -1239,6 +1326,10 @@ def _run_step1_planner_locked(repo, feature, cur, cur_path, trunk, trunk_head, p
         pr_files = sorted(reviews_dir.glob("plan-review-*.md"))
         if pr_files:
             prior_review = f"Latest Step 2 plan review ({pr_files[-1].name}):\n{pr_files[-1].read_text(encoding='utf-8')}\n"
+
+    human_questions = ""
+    if questions_path.is_file():
+        human_questions = questions_path.read_text(encoding="utf-8").strip()
 
     human_answers = ""
     if answers_path.is_file():
@@ -1260,12 +1351,14 @@ def _run_step1_planner_locked(repo, feature, cur, cur_path, trunk, trunk_head, p
             f"   planner_model: {plan_cfg['model_id']}\n"
             "   verify:\n"
             "     - \"<exact deterministic test/lint/build command>\"\n"
-            "   forbid-paths: []  # or explicit list of forbidden paths\n"
+            "   forbid-paths: []\n"
             "   ---\n"
+            "   (Replace `forbid-paths: []` with a YAML list when paths are forbidden; never append "
+            "trailing inline comments to YAML list lines.)\n"
             "   Body MUST include `## Baseline Evidence` (>=3 verified `file:line` citations), "
             "`## Specifications` (<=10 specs), and `## Acceptance Matrix (T1-T10)` (observable rules).\n"
             f"3. STRICT WRITE-SET: ONLY write `.pipeline/{feature}/plan.md` (and optionally "
-            f"`.pipeline/{feature}/CONTEXT.md` or `docs/adr/*.md`). NEVER edit product code/tests, "
+            f"`.pipeline/{feature}/CONTEXT.md` or `.pipeline/{feature}/docs/adr/*.md`). NEVER edit product code/tests, "
             "`current.json`, or `journal.md`. NEVER run `git commit` or `git push` — the runner commits atomically.\n"
             "4. HUMAN ESCAPE HATCH: If there is an unresolvable product/business ambiguity that cannot be decided "
             "from the codebase, make NO file edits and print `NEEDS_HUMAN: <short summary>` on physical line 1 "
@@ -1273,6 +1366,8 @@ def _run_step1_planner_locked(repo, feature, cur, cur_path, trunk, trunk_head, p
         )
         if idea_text:
             prompt += f"\n--- FEATURE REQUIREMENT ---\n{idea_text}\n"
+        if human_questions:
+            prompt += f"\n--- PRIOR HUMAN QUESTIONS ---\n{human_questions}\n"
         if human_answers:
             prompt += f"\n--- HUMAN ANSWERS ---\n{human_answers}\n"
         if prior_review:
@@ -1435,6 +1530,7 @@ def _run_full_pipeline(args, cfg, repo, feature, idea_text, state_dir):
     verify_timeout = _validate_positive_finite(args.verify_timeout, "--verify-timeout")
     _check_model_separation(rev_cfg["model_id"], planner_model=plan_cfg["model_id"], implementer_model=impl_cfg["model_id"])
 
+    _install_stop_handler(state_dir)
     _update_run_state(
         state_dir,
         status="running",
@@ -1470,7 +1566,10 @@ def _run_full_pipeline(args, cfg, repo, feature, idea_text, state_dir):
 
         journal_path = repo / ".pipeline" / feature / "journal.md"
         saved_idea = Path(state_dir) / "idea.md" if state_dir else None
-        if not idea_text and saved_idea and saved_idea.is_file():
+        if idea_text and saved_idea is not None:
+            saved_idea.parent.mkdir(parents=True, exist_ok=True)
+            saved_idea.write_text(idea_text + "\n", encoding="utf-8")
+        elif not idea_text and saved_idea is not None and saved_idea.is_file():
             idea_text = saved_idea.read_text(encoding="utf-8").strip()
 
         # ---- Phase I Loop: Step 1 Planner <-> Step 2 Reviewer ----
@@ -1589,6 +1688,35 @@ def cmd_run(args, cfg):
         raise
 
 
+def _is_pause_after_plan_wait(repo, feature, cur, tail_trans):
+    """True ONLY when blocked by pause_after_plan=true with an approved pin (never a 3rd-reject breaker)."""
+    if tail_trans != "plan-review→human · blocked":
+        return False
+    if int(cur.get("plan_rejects", 0) or 0) >= MAX_REJECTS:
+        return False
+    return _read_pause_after_plan(repo, feature) and bool(cur.get("approved_plan_blob"))
+
+
+def _check_resume_blocked(repo, feature, cur, tail_trans, answer_text, state_dir=None):
+    """Fail closed before spawning/approving if feature is blocked by breaker or unresolved escalation."""
+    if not (tail_trans and tail_trans.endswith("· blocked")):
+        return
+    pr_cnt = int(cur.get("plan_rejects", 0) or 0)
+    rr_cnt = int(cur.get("review_rejects", 0) or 0)
+    if pr_cnt >= MAX_REJECTS or rr_cnt >= MAX_REJECTS:
+        _update_run_state(
+            state_dir, status="blocked", reason=tail_trans,
+            plan_rejects=pr_cnt, review_rejects=rr_cnt, exit_code=2,
+        )
+        _die(2, f"feature '{feature}' is blocked at breaker ({tail_trans}); human/hunt intervention required")
+    if answer_text and tail_trans == "plan→human · blocked":
+        return
+    if _is_pause_after_plan_wait(repo, feature, cur, tail_trans):
+        return
+    _update_run_state(state_dir, status="escalated", reason=tail_trans, exit_code=3)
+    _die(3, f"feature '{feature}' is blocked ({tail_trans}); pass --answer or resolve before resuming")
+
+
 def cmd_resume(args, cfg):
     repo = Path(args.repo).resolve()
     feature = args.feature
@@ -1614,17 +1742,12 @@ def cmd_resume(args, cfg):
         _, tail_trans, _, _ = _read_journal_tail_strict(journal_path)
         if answer_text and tail_trans != "plan→human · blocked":
             _die(4, f"--answer only applies when tail is 'plan→human · blocked' (found '{tail_trans}')")
-        if tail_trans and tail_trans.endswith("· blocked") and not answer_text:
-            if not (tail_trans == "plan-review→human · blocked" and _read_pause_after_plan(repo, feature)):
-                pr_cnt = int(cur.get("plan_rejects", 0) or 0)
-                rr_cnt = int(cur.get("review_rejects", 0) or 0)
-                if pr_cnt >= MAX_REJECTS or rr_cnt >= MAX_REJECTS:
-                    _die(2, f"feature '{feature}' is blocked at breaker ({tail_trans}); human/hunt intervention required")
-                _die(3, f"feature '{feature}' is blocked ({tail_trans}); pass --answer or resolve before resuming")
+        _check_resume_blocked(repo, feature, cur, tail_trans, answer_text, state_dir=_run_dir_for(repo, feature))
         return _spawn_background("resume", args, repo, feature, args.config, answer_text=answer_text)
 
     state_dir = Path(args._state_dir) if args._state_dir else _run_dir_for(repo, feature)
     state_dir.mkdir(parents=True, exist_ok=True)
+    _install_stop_handler(state_dir)
 
     with _repo_lock(repo):
         cur_path = repo / ".pipeline" / "current.json"
@@ -1637,9 +1760,11 @@ def cmd_resume(args, cfg):
         journal_path = repo / ".pipeline" / feature / "journal.md"
         _, tail_trans, _, _ = _read_journal_tail_strict(journal_path)
 
+        if answer_text and tail_trans != "plan→human · blocked":
+            _die(4, f"--answer only applies when tail is 'plan→human · blocked' (found '{tail_trans}')")
+        _check_resume_blocked(repo, feature, cur, tail_trans, answer_text, state_dir=state_dir)
+
         if answer_text:
-            if tail_trans != "plan→human · blocked":
-                _die(4, f"--answer only applies when tail is 'plan→human · blocked' (found '{tail_trans}')")
             ans_path = repo / ".pipeline" / feature / "human-answers.md"
             ans_path.parent.mkdir(parents=True, exist_ok=True)
             with open(ans_path, "a", encoding="utf-8") as fh:
@@ -1653,7 +1778,7 @@ def cmd_resume(args, cfg):
                 [f"Run pipeline-plan for {feature} with {rel_ans}."],
             )
             _commit_trunk(repo, trunk_head, [ans_path, cur_path, journal_path], f"pipeline({feature}): human answered planner questions", args.push, trunk)
-        elif tail_trans == "plan-review→human · blocked" and _read_pause_after_plan(repo, feature):
+        elif _is_pause_after_plan_wait(repo, feature, cur, tail_trans):
             _approve_plan_locked(repo, feature, cur, cur_path, trunk, trunk_head, args.push)
 
     try:
@@ -1774,40 +1899,56 @@ def cmd_logs(args):
     return 0
 
 
+def _read_pid_file(path):
+    if not path.is_file():
+        return None
+    try:
+        v = int(path.read_text(encoding="utf-8").strip())
+        return v if v > 0 else None
+    except Exception:
+        return None
+
+
 def cmd_stop(args):
     repo = Path(args.repo).resolve()
     feature = _resolve_status_feature(repo, args.feature)
     run_dir = _run_dir_for(repo, feature)
     pid_path = run_dir / "pid"
+    child_pid_path = run_dir / "active-child.pid"
     if not pid_path.is_file():
         _die(4, f"no pid file found for '{feature}' at {pid_path}")
-    try:
-        pid = int(pid_path.read_text(encoding="utf-8").strip())
-    except Exception:
+    pid = _read_pid_file(pid_path)
+    if pid is None:
         _die(4, f"invalid pid file at {pid_path}")
     if pid == os.getpid():
         _die(4, "refusing to stop current process")
-    if not _pid_is_alive(pid):
+
+    child_pid = _read_pid_file(child_pid_path)
+    worker_alive = _pid_is_alive(pid)
+    child_alive = _pid_is_alive(child_pid) if child_pid else False
+    if not worker_alive and not child_alive:
+        if child_pid_path.exists():
+            try:
+                child_pid_path.unlink()
+            except OSError:
+                pass
         _update_run_state(run_dir, status="stopped_by_user", reason="already exited")
         print(f"RUN_STOPPED feature={feature} pid={pid} was_alive=false")
         return 0
-    try:
-        pgid = os.getpgid(pid)
-    except OSError:
-        pgid = -1
-    if pgid == pid and pgid != os.getpgrp():
-        os.killpg(pgid, signal.SIGTERM)
-    else:
-        os.kill(pid, signal.SIGTERM)
-    deadline = time.time() + 3.0
-    while time.time() < deadline and _pid_is_alive(pid):
-        time.sleep(0.1)
-    if _pid_is_alive(pid):
+
+    # Signal worker (its SIGTERM handler also terminates & reaps active child), then explicitly
+    # ensure any active role/verify child process group is terminated & gone before returning.
+    if worker_alive:
+        _kill_pg_and_wait(pid, grace_s=2.0)
+    # Re-read active-child.pid in case a child was launched right before worker signalled.
+    latest_child = _read_pid_file(child_pid_path) or child_pid
+    if latest_child and _pid_is_alive(latest_child):
+        _kill_pg_and_wait(latest_child, grace_s=1.5)
+    if child_pid and child_pid != latest_child and _pid_is_alive(child_pid):
+        _kill_pg_and_wait(child_pid, grace_s=1.5)
+    if child_pid_path.exists():
         try:
-            if pgid == pid and pgid != os.getpgrp():
-                os.killpg(pgid, signal.SIGKILL)
-            else:
-                os.kill(pid, signal.SIGKILL)
+            child_pid_path.unlink()
         except OSError:
             pass
     _update_run_state(run_dir, status="stopped_by_user", reason="stopped via run-loop stop")
@@ -1825,6 +1966,17 @@ def _detect_codex_bin():
     return shutil.which("codex") or "codex"
 
 
+def _read_local_json_field(path, key, default):
+    try:
+        d = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+        v = d.get(key) if isinstance(d, dict) else None
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    except Exception:
+        pass
+    return default
+
+
 def cmd_init_config(args):
     out_path = Path(args.output).expanduser().resolve()
     if out_path.exists() and not args.force:
@@ -1836,45 +1988,48 @@ def cmd_init_config(args):
     codex_bin = _detect_codex_bin()
 
     if agy_bin:
+        agy_model = _read_local_json_field("~/.gemini/antigravity-cli/settings.json", "model", "Gemini 4 Neon (High)")
         planner_cfg = {
-            "model_id": "gemini-4-neon",
-            "argv": [agy_bin, "-p", "--mode", "auto", "--dangerously-skip-permissions", "{prompt}"],
+            "model_id": agy_model,
+            "argv": [agy_bin, "-p", "--mode", "auto", "--model", agy_model, "--dangerously-skip-permissions", "{prompt}"],
             "prompt_via": "arg",
             "timeout_s": 900,
         }
     elif claude_bin:
         planner_cfg = {
-            "model_id": "claude-opus",
-            "argv": [claude_bin, "-p", "--permission-mode", "acceptEdits", "{prompt}"],
+            "model_id": "opus",
+            "argv": [claude_bin, "-p", "--model", "opus", "--permission-mode", "acceptEdits", "{prompt}"],
             "prompt_via": "arg",
             "timeout_s": 900,
         }
     else:
         planner_cfg = {
             "model_id": "planner-frontier-a",
-            "argv": ["<planner-cli>", "-p", "{prompt}"],
+            "argv": ["<planner-cli>", "-p", "--model", "planner-frontier-a", "{prompt}"],
             "prompt_via": "arg",
             "timeout_s": 900,
         }
 
     if pi_bin:
+        pi_model = _read_local_json_field("~/.pi/agent/settings.json", "defaultModel", "group/pi-main")
         impl_cfg = {
-            "model_id": "pi-main",
-            "argv": [pi_bin, "-p", "--no-session", "--no-mcp", "--", "{prompt}"],
+            "model_id": pi_model,
+            "argv": [pi_bin, "-p", "--no-session", "--no-mcp", "--model", pi_model, "--", "{prompt}"],
             "prompt_via": "arg",
             "timeout_s": 1800,
         }
     else:
         impl_cfg = {
             "model_id": "implementer-cli-c",
-            "argv": ["<impl-cli>", "-p", "{prompt}"],
+            "argv": ["<impl-cli>", "-p", "--model", "implementer-cli-c", "{prompt}"],
             "prompt_via": "arg",
             "timeout_s": 1800,
         }
 
+    rev_model = "gpt-6.2-astra"
     reviewer_cfg = {
-        "model_id": "gpt-6.2-astra",
-        "argv": [codex_bin, "exec", "-s", "read-only", "-m", "gpt-6.2-astra", "-"],
+        "model_id": rev_model,
+        "argv": [codex_bin, "exec", "-s", "read-only", "-m", rev_model, "-"],
         "prompt_via": "stdin",
         "timeout_s": 600,
     }

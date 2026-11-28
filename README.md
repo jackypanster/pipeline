@@ -122,7 +122,7 @@ Paste this block into `<target-repo>/AGENTS.md` (or `CLAUDE.md`) so any cold age
    `NEEDS_HUMAN` / `plan_fact` / `plan_design` / `env`, or CLI error.
 
 **Option B — Human-relayed (zero extra setup):** copy the printed `>>> NEXT` handoff block
-between your 3 role sessions. Recommended for high-consequence write paths (trading, irreversible ops).
+between your 3 role sessions. Mandatory for high-consequence write paths (trading, irreversible ops).
 
 **Option C — Multi-machine / coordinated (`multica` or `herdr`):** create
 `.pipeline/<feature>/control.json` (`{"schema_version":1,"mode":"coordinated","merge_gate":"human-direct"}`)

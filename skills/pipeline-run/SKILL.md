@@ -50,7 +50,8 @@ Runner path: `RUNNER="<this skill's base dir>/../pipeline-coordinate/scripts/run
 
 ## Hard rules
 
-- Keep `reviewer.model_id` strictly distinct from both `planner.model_id` and `implementer.model_id`.
+- Keep `reviewer.model_id` strictly distinct from both `planner.model_id` and `implementer.model_id`, and bind the selected model explicitly in every CLI `argv`.
+- Use human-relayed sessions (never unattended headless runs) for high-consequence write paths (trading, irreversible ops).
 - Target repo trunk checkout must be clean before launching `run` or `resume`.
 - Never bypass the 3-rejection breaker (`>= 3`) or auto-merge without direct human confirmation.
 - Report exact `status`, `exit_code`, review file path, and pinned `feat/<feature>@<sha40>` to the user.

@@ -716,17 +716,20 @@ print(f"authored plan revision {n}")
               and lg25.returncode == 0 and "PHASE2 ACCEPT" in lg25.stdout,
               f"r25={r25.returncode}/{r25.stdout}/{r25.stderr} st25={st25_obj} lg={lg25.stdout[-200:]!r}")
 
-        # 26. Planner NEEDS_HUMAN pauses (exit 3), then `resume --answer` completes all 4 steps
+        # 26. Foreground Planner NEEDS_HUMAN pauses (exit 3), then `resume --answer` passes ORIGINAL requirement + questions + answers
+        cap26 = root / "planner26-resumed-prompt.txt"
         planner_ask = stubs / "planner-ask.py"
         _write_exe(planner_ask, """#!/usr/bin/env python3
 import sys
 from pathlib import Path
 feat = sys.argv[1]
-prompt = sys.argv[2]
+cap_path = Path(sys.argv[2])
+prompt = sys.argv[3]
 if "--- HUMAN ANSWERS ---" not in prompt:
     print("NEEDS_HUMAN: Need output format decision")
     print("1. Should output be JSON or plain text?")
     sys.exit(0)
+cap_path.write_text(prompt, encoding="utf-8")
 p = Path(".pipeline") / feat / "plan.md"
 p.parent.mkdir(parents=True, exist_ok=True)
 p.write_text(
@@ -743,16 +746,21 @@ print("authored plan after human answer")
             root, "t26",
             [str(impl_ok), str(root / "impl26"), "{prompt}"],
             [str(rev_queue), str(q26)],
-            planner_cmd=[str(planner_ask), FEATURE, "{prompt}"],
+            planner_cmd=[str(planner_ask), FEATURE, str(cap26), "{prompt}"],
         )
         r26a = _run("run", "--repo", str(w26), "--feature", FEATURE, "--idea", "Ambiguous idea", "--config", str(c26), env=git_env)
         qfile26 = w26 / ".pipeline" / FEATURE / "human-questions.md"
         r26b = _run("resume", "--repo", str(w26), "--feature", FEATURE, "--answer", "1. JSON", "--config", str(c26), env=git_env)
         afile26 = w26 / ".pipeline" / FEATURE / "human-answers.md"
-        check("26-needs-human-pause-and-resume-with-answer",
+        resumed_prompt26 = cap26.read_text(encoding="utf-8") if cap26.is_file() else ""
+        check("26-needs-human-pause-and-resume-preserves-idea-questions-answers",
               r26a.returncode == 3 and "RUN NEEDS_HUMAN" in r26a.stdout and qfile26.is_file()
-              and r26b.returncode == 0 and afile26.is_file() and "1. JSON" in afile26.read_text(),
-              f"r26a={r26a.returncode}/{r26a.stdout}/{r26a.stderr} r26b={r26b.returncode}/{r26b.stderr}")
+              and r26b.returncode == 0 and afile26.is_file() and "1. JSON" in afile26.read_text()
+              and "Ambiguous idea" in resumed_prompt26
+              and "Should output be JSON or plain text?" in resumed_prompt26
+              and "1. JSON" in resumed_prompt26,
+              f"r26a={r26a.returncode} r26b={r26b.returncode}/{r26b.stderr} "
+              f"has_idea={'Ambiguous idea' in resumed_prompt26} has_q={'Should output be JSON' in resumed_prompt26}")
 
         # 27. Step 2 3rd rejection breaker stops full `run` (exit 2) with 0 impl runs, and `resume` refuses to bypass breaker
         w27 = _mk_fresh_repo(root, "t27", git_env=git_env)
@@ -799,42 +807,80 @@ print("edited readme")
               and "write-set" in r28.stderr and st28.get("status") == "error" and "README.md" in st28.get("reason", ""),
               f"rc={r28.returncode} err={r28.stderr} st28={st28}")
 
-        # 29. `stop` terminates a live background worker cleanly
+        # 29. `stop` terminates BOTH the background worker AND active role subprocess (no delayed write after RUN_STOPPED)
+        planner_pid29 = root / "planner29.pid"
+        stray_write29 = root / "stray_after_stop.txt"
         planner_slow = stubs / "planner-slow.py"
         _write_exe(planner_slow, """#!/usr/bin/env python3
-import time
-time.sleep(30)
+import os, sys, time
+from pathlib import Path
+Path(sys.argv[1]).write_text(str(os.getpid()), encoding="utf-8")
+time.sleep(0.8)
+Path(sys.argv[2]).write_text("SHOULD_NEVER_BE_WRITTEN\\n", encoding="utf-8")
 """)
         w29 = _mk_fresh_repo(root, "t29", git_env=git_env)
         c29 = _mk_config(
             root, "t29",
             [str(impl_ok), str(root / "impl29"), "{prompt}"],
             [str(rev_queue), str(q25)],
-            planner_cmd=[str(planner_slow), "{prompt}"],
+            planner_cmd=[str(planner_slow), str(planner_pid29), str(stray_write29), "{prompt}"],
         )
         r29_start = _run("run", "--repo", str(w29), "--feature", FEATURE, "--idea", "Slow run", "--config", str(c29), "--background", env=git_env)
-        time.sleep(0.3)
+        for _ in range(50):
+            if planner_pid29.is_file():
+                break
+            time.sleep(0.05)
         st29_live = json.loads(_run("status", "--repo", str(w29), "--feature", FEATURE, "--json", env=git_env).stdout)
         r29_stop = _run("stop", "--repo", str(w29), "--feature", FEATURE, env=git_env)
+        # Wait past the delayed-write timer to prove the active child was killed & reaped before RUN_STOPPED!
+        time.sleep(1.0)
+        child_dead29 = False
+        if planner_pid29.is_file():
+            cpid29 = int(planner_pid29.read_text().strip())
+            try:
+                os.kill(cpid29, 0)
+            except ProcessLookupError:
+                child_dead29 = True
         st29_after = json.loads(_run("status", "--repo", str(w29), "--feature", FEATURE, "--json", env=git_env).stdout)
-        check("29-background-stop-terminates-running-worker",
-              r29_start.returncode == 0 and st29_live.get("alive") is True
+        check("29-background-stop-terminates-active-child-no-delayed-write",
+              r29_start.returncode == 0 and planner_pid29.is_file() and st29_live.get("alive") is True
               and r29_stop.returncode == 0 and "was_alive=true" in r29_stop.stdout
+              and child_dead29 and not stray_write29.exists()
               and st29_after.get("alive") is False and st29_after.get("status") == "stopped_by_user",
-              f"start={r29_start.returncode} live={st29_live} stop={r29_stop.returncode}/{r29_stop.stdout} after={st29_after}")
+              f"start={r29_start.returncode} spawned={planner_pid29.is_file()} child_dead={child_dead29} "
+              f"stray_written={stray_write29.exists()} stop={r29_stop.returncode}/{r29_stop.stdout} after={st29_after}")
 
-        # 30. `init-config` creates valid distinct-model runners.json and refuses clobber without --force
+        # 30. `init-config` and shipped `runners.example.json` explicitly bind --model/-m matching model_id for every role
+        def _bound_model_arg(role_obj):
+            argv = role_obj.get("argv", [])
+            for idx, tok in enumerate(argv):
+                if tok in ("--model", "-m") and idx + 1 < len(argv):
+                    return argv[idx + 1]
+                if tok.startswith("--model="):
+                    return tok.split("=", 1)[1]
+            return None
+
         cfg30 = root / "generated-runners.json"
         r30a = _run("init-config", "--output", str(cfg30), env=git_env)
         r30b = _run("init-config", "--output", str(cfg30), env=git_env)
         obj30 = json.loads(cfg30.read_text()) if cfg30.is_file() else {}
         models30 = {k: obj30.get(k, {}).get("model_id", "") for k in ("planner", "implementer", "reviewer")}
-        check("30-init-config-generates-valid-runners-json",
+        gen_bound30 = all(_bound_model_arg(obj30.get(k, {})) == models30[k] for k in ("planner", "implementer", "reviewer"))
+
+        example_path = Path(__file__).resolve().parents[2] / "pipeline-run" / "runners.example.json"
+        ex30 = json.loads(example_path.read_text(encoding="utf-8"))
+        ex_roles = [ex30["planner"], ex30["implementer"], ex30["reviewer"]] + list(ex30.get("_swappable_examples", {}).values())
+        ex_bound30 = all(bool(r.get("model_id")) and _bound_model_arg(r) == r.get("model_id") for r in ex_roles)
+        claude_pair_distinct = (
+            _bound_model_arg(ex30["_swappable_examples"]["implementer_claude"])
+            != _bound_model_arg(ex30["_swappable_examples"]["reviewer_claude"])
+        )
+        check("30-init-config-and-example-bind-explicit-models",
               r30a.returncode == 0 and "INIT_CONFIG ok" in r30a.stdout and r30b.returncode == 64
-              and all(models30.values())
+              and all(models30.values()) and gen_bound30 and ex_bound30 and claude_pair_distinct
               and models30["reviewer"] != models30["planner"]
               and models30["reviewer"] != models30["implementer"],
-              f"r30a={r30a.returncode}/{r30a.stdout}/{r30a.stderr} r30b={r30b.returncode} models={models30}")
+              f"r30a={r30a.returncode} r30b={r30b.returncode} gen_bound={gen_bound30} ex_bound={ex_bound30} claude_distinct={claude_pair_distinct}")
 
         # 31. Starting a different feature while another feature is active fails synchronously BEFORE --background spawn
         w31 = _mk_fixture(root, "t31", stage="plan", tail_trans="plan→plan-review · completed", git_env=git_env)
@@ -848,6 +894,111 @@ time.sleep(30)
         check("31-background-blocks-active-feature-conflict-before-spawn",
               r31.returncode == 4 and "currently active" in r31.stderr,
               f"rc={r31.returncode} out={r31.stdout!r} err={r31.stderr!r}")
+
+        # 32. Step 1 write-set allows feature-local .pipeline/<feature>/docs/adr/*.md and rejects repo-root docs/adr/*.md
+        planner_adr = stubs / "planner-adr.py"
+        _write_exe(planner_adr, """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+feat = sys.argv[1]
+adr_rel = sys.argv[2]
+p = Path(".pipeline") / feat / "plan.md"
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(
+    f"---\\nfeature: {feat}\\nplanner_model: frontier-a\\nverify:\\n  - \\"test -f delivered.txt\\"\\nforbid-paths: []\\n---\\n"
+    f"## Baseline Evidence\\n- README.md:1\\n## Specifications\\n1. ADR test\\n## Acceptance Matrix (T1-T10)\\n- T1: delivered.txt\\n",
+    encoding="utf-8",
+)
+adr = Path(adr_rel)
+adr.parent.mkdir(parents=True, exist_ok=True)
+adr.write_text("# ADR 0001\\n", encoding="utf-8")
+print("wrote plan + adr")
+""")
+        w32a = _mk_fresh_repo(root, "t32a", git_env=git_env)
+        q32a = root / "q32a.txt"
+        q32a.write_text("VERDICT: ACCEPT | CAUSE: none\nVERDICT: ACCEPT | CAUSE: none\n")
+        c32a = _mk_config(
+            root, "t32a",
+            [str(impl_ok), str(root / "impl32a"), "{prompt}"],
+            [str(rev_queue), str(q32a)],
+            planner_cmd=[str(planner_adr), FEATURE, f".pipeline/{FEATURE}/docs/adr/0001-storage.md", "{prompt}"],
+        )
+        r32a = _run("run", "--repo", str(w32a), "--feature", FEATURE, "--idea", "Feature ADR", "--config", str(c32a), env=git_env)
+        adr_committed = (w32a / ".pipeline" / FEATURE / "docs" / "adr" / "0001-storage.md").is_file()
+
+        w32b = _mk_fresh_repo(root, "t32b", git_env=git_env)
+        head32b_before = _git(w32b, "rev-parse", "HEAD", env=git_env)
+        c32b = _mk_config(
+            root, "t32b",
+            [str(impl_ok), str(root / "impl32b"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_adr), FEATURE, "docs/adr/0001-storage.md", "{prompt}"],
+        )
+        r32b = _run("run", "--repo", str(w32b), "--feature", FEATURE, "--idea", "Root ADR", "--config", str(c32b), env=git_env)
+        head32b_after = _git(w32b, "rev-parse", "HEAD", env=git_env)
+        check("32-step1-adr-path-feature-local-allowed-root-rejected",
+              r32a.returncode == 0 and adr_committed
+              and r32b.returncode == 4 and "write-set" in r32b.stderr and head32b_before == head32b_after,
+              f"r32a={r32a.returncode}/{r32a.stderr} adr_ok={adr_committed} r32b={r32b.returncode}/{r32b.stderr}")
+
+        # 33. pause_after_plan=true + 3rd plan rejection breaker: BOTH foreground and --background resume exit 2 synchronously and preserve blocked status
+        w33 = _mk_fixture(
+            root, "t33", stage="blocked", tail_trans="plan-review→human · blocked",
+            pause_after_plan=True, plan_rejects=3, pin_approved_blob=False, git_env=git_env,
+        )
+        c33 = _mk_config(
+            root, "t33",
+            [str(impl_ok), str(root / "impl33"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_ok), str(root / "plan33"), FEATURE, "{prompt}"],
+        )
+        r33_fg = _run("resume", "--repo", str(w33), "--feature", FEATURE, "--config", str(c33), env=git_env)
+        r33_bg = _run("resume", "--repo", str(w33), "--feature", FEATURE, "--config", str(c33), "--background", env=git_env)
+        st33 = json.loads(_run("status", "--repo", str(w33), "--feature", FEATURE, "--json", env=git_env).stdout)
+        check("33-pause-after-plan-with-3rd-reject-breaker-exits-2-sync-and-bg",
+              r33_fg.returncode == 2 and r33_bg.returncode == 2 and "RUN_STARTED" not in r33_bg.stdout
+              and st33.get("status") == "blocked" and st33.get("exit_code") == 2,
+              f"fg={r33_fg.returncode}/{r33_fg.stderr} bg={r33_bg.returncode}/{r33_bg.stdout}/{r33_bg.stderr} st33={st33}")
+
+        # 34. Literal frontmatter example emitted in Step 1 planner prompt passes check-plan.py with 0 errors
+        cap34 = root / "planner34-prompt.txt"
+        planner_cap = stubs / "planner-cap.py"
+        _write_exe(planner_cap, """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(sys.argv[2], encoding="utf-8")
+print("NEEDS_HUMAN: capture prompt only")
+""")
+        w34 = _mk_fresh_repo(root, "t34", git_env=git_env)
+        c34 = _mk_config(
+            root, "t34",
+            [str(impl_ok), str(root / "impl34"), "{prompt}"],
+            [str(rev_queue), str(q25)],
+            planner_cmd=[str(planner_cap), str(cap34), "{prompt}"],
+        )
+        _run("run", "--repo", str(w34), "--feature", FEATURE, "--idea", "Validate prompt sample", "--config", str(c34), env=git_env)
+        prompt34 = cap34.read_text(encoding="utf-8") if cap34.is_file() else ""
+        fm_lines34 = []
+        in_fm = False
+        for ln in prompt34.splitlines():
+            s = ln[3:] if ln.startswith("   ") else ln
+            if s == "---" and not in_fm:
+                in_fm = True
+                fm_lines34.append(s)
+            elif in_fm:
+                fm_lines34.append(s)
+                if s == "---":
+                    break
+        sample_plan34 = "\n".join(fm_lines34) + "\nbody\n"
+        import importlib.util as _ilu
+        cp_path = Path(__file__).resolve().parents[2] / "pipeline-preflight" / "scripts" / "check-plan.py"
+        cp_spec = _ilu.spec_from_file_location("cp34", str(cp_path))
+        cp_mod = _ilu.module_from_spec(cp_spec)
+        cp_spec.loader.exec_module(cp_mod)
+        _, errs34 = cp_mod.extract_plan_meta_from_text(sample_plan34, expected_feature=FEATURE)
+        check("34-step1-prompt-frontmatter-example-passes-check-plan",
+              bool(fm_lines34) and errs34 == [],
+              f"fm_lines={len(fm_lines34)} errs={errs34} sample={sample_plan34!r}")
 
     print(f"---\n{passed}/{passed + failed} cases passed ({failed} failed)")
     return 0 if failed == 0 else 1
