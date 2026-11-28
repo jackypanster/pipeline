@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Read-only validator for .pipeline/<feature>/plan.md frontmatter (v2 3-Agent 4-Step).
+"""Read-only validator for .pipeline/<feature>/plan.md (v2 3-Agent 4-Step).
+
+Always validates the COMMITTED Git blob (never checkout-filtered working-tree bytes),
+so Git `ident`/smudge filters cannot cause the reviewed plan and executed verify[] to diverge.
 
 Checks:
-  1. .pipeline/<feature>/plan.md exists and is non-empty.
-  2. Leading `--- ... ---` YAML frontmatter is present, parseable, and has no duplicate keys.
-  3. `verify` is an explicit non-empty list of non-empty command strings (scalars rejected).
-  4. `forbid-paths` is present as an explicit list of non-empty path strings (empty list `[]` allowed;
-     missing key or bare scalar rejected).
-  5. If `feature` is present, it matches `--feature`.
+  1. Committed blob `HEAD:.pipeline/<feature>/plan.md` exists and is non-empty.
+  2. No uncommitted working-tree edits to `.pipeline/<feature>/plan.md`.
+  3. On `--stage impl` or `--stage review`: `.pipeline/current.json.approved_plan_blob` is a
+     40-hex SHA matching `HEAD:.pipeline/<feature>/plan.md` (prevents post-approval plan edits).
+  4. Leading `--- ... ---` YAML frontmatter has no duplicate keys, explicit non-empty `verify:`
+     list (scalars rejected), explicit `forbid-paths:` list (`[]` allowed; missing or bare
+     empty key rejected), and matching `feature` (when present).
 
 Exit codes:
   0  clean (or advisory on `--stage hunt`)
@@ -17,10 +21,12 @@ Exit codes:
 import json
 import os
 import re
+import subprocess
 import sys
 
 LIST_KEYS = ("verify", "forbid-paths")
 BAD, ODD, DUP = "\x00bad", "\x00odd", "\x00dup"
+SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _parse_value(val, is_list):
@@ -94,12 +100,9 @@ def parse_plan_frontmatter(text):
     return d, m.group(2)
 
 
-def extract_plan_meta(plan_path, expected_feature=None):
-    """Return (meta_dict, errors_list) where meta_dict has verify[], forbid_paths[], planner_model, feature."""
-    if not os.path.isfile(plan_path):
-        return None, ["plan-missing"]
-    text = open(plan_path, encoding="utf-8", errors="replace").read()
-    if not text.strip():
+def extract_plan_meta_from_text(text, expected_feature=None):
+    """Validate plan.md text and return (meta_dict | None, errors_list)."""
+    if not text or not text.strip():
         return None, ["plan-empty"]
     d, _body = parse_plan_frontmatter(text)
     if d is None:
@@ -149,6 +152,36 @@ def extract_plan_meta(plan_path, expected_feature=None):
     }, errors
 
 
+def extract_plan_meta(plan_path, expected_feature=None):
+    """Convenience file-path wrapper (prefer extract_plan_meta_from_text on committed git blobs)."""
+    if not os.path.isfile(plan_path):
+        return None, ["plan-missing"]
+    text = open(plan_path, encoding="utf-8", errors="replace").read()
+    return extract_plan_meta_from_text(text, expected_feature=expected_feature)
+
+
+def _git_blob(repo, rel_path):
+    r = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--verify", "--quiet", f"HEAD:{rel_path}"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        return None, None
+    blob_sha = r.stdout.strip()
+    c = subprocess.run(["git", "-C", repo, "cat-file", "blob", blob_sha], capture_output=True)
+    if c.returncode != 0:
+        return blob_sha, None
+    try:
+        return blob_sha, c.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return blob_sha, "\x00non-utf8"
+
+
+def _plan_is_dirty(repo, rel_path):
+    r = subprocess.run(["git", "-C", repo, "diff", "--quiet", "HEAD", "--", rel_path], capture_output=True)
+    return r.returncode != 0
+
+
 def main(argv):
     opt = {"--repo": "", "--feature": "", "--stage": ""}
     while argv:
@@ -160,17 +193,47 @@ def main(argv):
     if not opt["--repo"] or not opt["--feature"]:
         sys.stderr.write("usage: check-plan.py --repo <path> --feature <slug> [--stage <s>]\n")
         return 64
-    plan_path = os.path.join(os.path.abspath(opt["--repo"]), ".pipeline", opt["--feature"], "plan.md")
-    meta, errors = extract_plan_meta(plan_path, expected_feature=opt["--feature"])
+
+    repo = os.path.abspath(opt["--repo"])
+    feature = opt["--feature"]
+    stage = opt["--stage"]
+    rel_plan = f".pipeline/{feature}/plan.md"
+
+    blob_sha, text = _git_blob(repo, rel_plan)
+    errors = []
+    meta = None
+    if blob_sha is None:
+        errors.append("plan-missing")
+    elif text == "\x00non-utf8":
+        errors.append("plan-non-utf8")
+    elif text is None:
+        errors.append("plan-blob-unreadable")
+    else:
+        if stage in ("plan-review", "impl", "review") and _plan_is_dirty(repo, rel_plan):
+            errors.append("plan-dirty-local")
+        if stage in ("impl", "review"):
+            cur_path = os.path.join(repo, ".pipeline", "current.json")
+            try:
+                cur = json.load(open(cur_path, encoding="utf-8"))
+            except Exception:
+                cur = {}
+            pin = cur.get("approved_plan_blob") if isinstance(cur, dict) else None
+            if not isinstance(pin, str) or not SHA40_RE.fullmatch(pin):
+                errors.append("plan-not-approved")
+            elif pin != blob_sha:
+                errors.append("plan-blob-mismatch")
+        meta, meta_errs = extract_plan_meta_from_text(text, expected_feature=feature)
+        errors.extend(meta_errs)
+
     if errors:
         for e in errors:
-            print("PLAN stop %s feature=%s" % (e, opt["--feature"]))
-        if opt["--stage"] == "hunt":
+            print("PLAN stop %s feature=%s" % (e, feature))
+        if stage == "hunt":
             print("PLAN advisory stage=hunt findings=%d (hunt repairs blocked features — not a STOP)" % len(errors))
             return 0
         return 2
-    print("PLAN ok feature=%s verify=%d forbid=%d" % (
-        opt["--feature"], len(meta["verify"]), len(meta["forbid_paths"])
+    print("PLAN ok feature=%s verify=%d forbid=%d blob=%s" % (
+        feature, len(meta["verify"]), len(meta["forbid_paths"]), blob_sha[:10]
     ))
     return 0
 

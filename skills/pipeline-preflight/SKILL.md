@@ -28,14 +28,16 @@ Output grammar (stdout, one line per check):
 - `SLOT <stage>=<n1>[,<n2>]` (charset `^[A-Za-z0-9][A-Za-z0-9._-]*$`, no `<placeholder>`)
 - `INSTALLED <n> path=<dir>/<n>` (verified via `PIPELINE_SKILL_DIRS`) / `INSTALLED <n> found=… UNVERIFIED (…)` / `INSTALLED <n> UNVERIFIED searched=…`
 - `GUARD ok seq=<n> commit=<sha>[ remote=<url>]` / `GUARD n/a (human-relay)`
-- `PLAN ok feature=<f> verify=<N> forbid=<M>` / `PLAN stop <reason> feature=<f>` / `PLAN advisory stage=hunt …` / `PLAN unchecked rc=<n>`
+- `PLAN ok feature=<f> verify=<N> forbid=<M> blob=<sha10>` / `PLAN stop <reason> feature=<f>` / `PLAN advisory stage=hunt …` / `PLAN unchecked rc=<n>`
 - `UPSTREAM ok head=<sha>[ cached]` / `UPSTREAM newer head=<sha> installed=<sha> run=pipeline-update[ cached]` / `UPSTREAM unverified <not-a-clone|network>`
 
 **`PLAN …`** (`scripts/check-plan.py`, read-only, python3 stdlib): on `plan-review`/`impl`/`review`/`hunt`
-entry, verifies `.pipeline/<feature>/plan.md` exists, carries YAML frontmatter with no duplicate
-keys, has an explicit non-empty `verify:` command list, and has an explicit `forbid-paths:` list
-(`[]` allowed). `hunt` is advisory (never STOPs). On mandatory stages, missing checker, `PLAN stop`,
-or checker error all exit `2` (`PREFLIGHT STOP`).
+entry, validates the **committed** `HEAD:.pipeline/<feature>/plan.md` Git blob (unaffected by
+checkout filters; stops on uncommitted local `plan.md` edits), checks YAML frontmatter with no
+duplicate keys, explicit non-empty `verify:` list, and explicit `forbid-paths:` list (`[]` allowed).
+On `impl`/`review`, ALSO requires `current.json.approved_plan_blob` to match `HEAD:.pipeline/<feature>/plan.md`.
+`hunt` is advisory (never STOPs). On mandatory stages, missing checker, `PLAN stop`, or checker
+error all exit `2` (`PREFLIGHT STOP`).
 
 **Guarantees:** zero writes inside target repos or skill dirs (except `git pull --rebase` and the
 guard's `git fetch`, plus the post-guard 24h `upstream-head` cache stamp on exit 0/3 only).

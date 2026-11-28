@@ -34,11 +34,11 @@ state** — run **meta-PR mode ONLY** (skip feature steps 0–6):
 ## Feature mode steps
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage review` (+ five envelope fields if present). `0` ⇒ pull, `current.json`, slot resolve, guard, and `plan.md` check DONE; `3` ⇒ verify named check(s) yourself, STOP on failure; else ⇒ STOP.
-1. **Inputs:** read `.pipeline/<feature>/plan.md`, `.pipeline/<feature>/impl-report.md`, and the diff via the forge adapter (`gh pr diff` / `gitee-cli` / `git diff <base>..feat/<feature>`). Verify model independence (`reviewer != implementer` and `reviewer != planner`).
+1. **Inputs:** read the pinned immutable plan via `git cat-file blob <approved_plan_blob>` (verified against `HEAD:.pipeline/<feature>/plan.md` by step 0), `.pipeline/<feature>/impl-report.md`, and the feature diff from `base=$(git merge-base <trunk> <review-tip>)` through `<review-tip>` (via forge PR diff or `git diff "$base..<review-tip>"`). Verify model independence (`reviewer != implementer` and `reviewer != planner`).
 2. **Deterministic gates (run FIRST — fail immediately on violation):**
-   - **`forbid-paths` gate:** diff `git diff --name-only <base>..<review-tip>` MUST NOT touch any path in `plan.md` `forbid-paths:` nor `plan.md` itself ⇒ else `REJECT | CAUSE: scope`.
+   - **`forbid-paths` gate:** compute `base=$(git merge-base <trunk> <review-tip>)` and inspect `git diff --name-status -z -M "$base..<review-tip>"` (checking **both** rename/copy source and destination paths, NUL-delimited). MUST NOT touch any path under `.pipeline/`, `plan.md`, or any path matching `plan.md` `forbid-paths:` ⇒ else `REJECT | CAUSE: scope`.
    - **`impl-report.md` assumptions check:** missing `## Assumptions` section ⇒ `REJECT | CAUSE: scope`; assumption contradicting `plan.md` ⇒ `REJECT`.
-   - **`verify` re-run gate:** run EVERY command in `plan.md` `verify:` on `feat/<feature>` HEAD — all MUST exit 0 ⇒ else `REJECT | CAUSE: impl_bug`.
+   - **`verify` re-run gate:** run EVERY command in the pinned `plan.md` blob's `verify:` on `feat/<feature>` HEAD — all MUST exit 0 ⇒ else `REJECT | CAUSE: impl_bug`.
 3. **Anti-cheat & semantic review (`check`):**
    - **T1–T10 coverage audit:** verify every `T1–T10` row in `plan.md` maps to a real test in the diff.
    - **Mandatory mutation / revert spot-check:** deliberately break 1–2 core logic branches (in a temporary uncommitted edit, reverted immediately after running) and re-run the targeted test — if tests stay green ⇒ immediate **`VERDICT: REJECT | CAUSE: weak_test`**. *(In a strict read-only sandbox where file writes are blocked, perform an adversarial assertion audit proving each T1–T10 test fails under concrete logic inversion and flag `weak_test` on any tautological or mocked-away assertion.)*

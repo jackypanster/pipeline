@@ -416,6 +416,23 @@ def _plan_blob_sha(repo, feature):
     return _git(repo, ["rev-parse", f"HEAD:.pipeline/{feature}/plan.md"]).stdout.strip()
 
 
+def _plan_blob_text(repo, blob_sha):
+    raw = _git(repo, ["cat-file", "blob", blob_sha], text=False).stdout
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        _die(4, f"plan.md blob {blob_sha[:10]} is not valid UTF-8: {exc}")
+
+
+def _git_lossy_text(repo, args):
+    """Run git command returning (decoded_text, had_non_utf8) without crashing on Latin-1/binary diffs."""
+    raw = _git(repo, args, text=False).stdout
+    try:
+        return raw.decode("utf-8"), False
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", errors="replace"), True
+
+
 def _read_pause_after_plan(repo, feature):
     ctrl_path = Path(repo) / ".pipeline" / feature / "control.json"
     if not ctrl_path.is_file():
@@ -472,9 +489,10 @@ def cmd_review_plan(args, cfg):
         if tail_trans != "plan→plan-review · completed":
             _die(4, f"journal tail '{tail_trans}' does not authorize Step 2 (need 'plan→plan-review · completed')")
 
-        plan_path = repo / ".pipeline" / feature / "plan.md"
+        plan_blob = _plan_blob_sha(repo, feature)
+        plan_text = _plan_blob_text(repo, plan_blob)
         check_plan = _load_check_plan()
-        meta, errs = check_plan.extract_plan_meta(str(plan_path), expected_feature=feature)
+        meta, errs = check_plan.extract_plan_meta_from_text(plan_text, expected_feature=feature)
         if errs:
             _die(4, f"plan.md invalid: {', '.join(errs)}")
 
@@ -485,7 +503,6 @@ def cmd_review_plan(args, cfg):
         if rejects >= MAX_REJECTS:
             _die(2, f"plan_rejects already at {rejects} (>= {MAX_REJECTS}); human intervention required")
 
-        plan_blob = _plan_blob_sha(repo, feature)
         prompt = (
             f"You are Step 2 (pipeline-plan-review) reviewing .pipeline/{feature}/plan.md (blob {plan_blob}) in {repo}.\n"
             "Spot-check >=3 citations from Baseline Evidence against real repo files, verify <=10 specs, "
@@ -493,7 +510,7 @@ def cmd_review_plan(args, cfg):
             "Physical line 1 of your reply MUST be EXACTLY:\n"
             "VERDICT: <ACCEPT|ACCEPT WITH NITS|REJECT> | CAUSE: <none|plan_fact|plan_design|scope|env>\n"
             "(ACCEPT / ACCEPT WITH NITS require CAUSE: none; REJECT requires a non-none CAUSE.)\n\n"
-            f"--- BEGIN plan.md ---\n{plan_path.read_text(encoding='utf-8')}\n--- END plan.md ---\n"
+            f"--- BEGIN plan.md (immutable blob {plan_blob}) ---\n{plan_text}\n--- END plan.md ---\n"
         )
         rc, out, err, timed_out = _invoke_agent(rev_cfg, prompt, cwd=repo)
         if timed_out or rc != 0:
@@ -679,19 +696,20 @@ def cmd_phase2(args, cfg):
         trunk = cur.get("branch", "main")
         trunk_head = _require_clean_trunk(repo, trunk, check_remote=args.push)
 
-        plan_path = repo / ".pipeline" / feature / "plan.md"
+        approved_blob = cur.get("approved_plan_blob", "")
+        cur_blob = _plan_blob_sha(repo, feature)
+        if not approved_blob or approved_blob != cur_blob:
+            _die(4, f"plan.md not pinned to an approved Step 2 blob (approved={approved_blob or '<absent>'}, current={cur_blob})")
+
+        # Read plan.md strictly from the immutable approved Git blob (never checkout-filtered bytes).
+        plan_text = _plan_blob_text(repo, approved_blob)
         check_plan = _load_check_plan()
-        meta, errs = check_plan.extract_plan_meta(str(plan_path), expected_feature=feature)
+        meta, errs = check_plan.extract_plan_meta_from_text(plan_text, expected_feature=feature)
         if errs:
             _die(4, f"plan.md invalid: {', '.join(errs)}")
 
         planner_model = _resolve_planner_model(args.planner_model, cur.get("planner_model"), meta.get("planner_model"))
         _check_model_separation(rev_cfg["model_id"], planner_model=planner_model, implementer_model=impl_cfg["model_id"])
-
-        approved_blob = cur.get("approved_plan_blob", "")
-        cur_blob = _plan_blob_sha(repo, feature)
-        if not approved_blob or approved_blob != cur_blob:
-            _die(4, f"plan.md not pinned to an approved Step 2 blob (approved={approved_blob or '<absent>'}, current={cur_blob})")
 
         journal_path = repo / ".pipeline" / feature / "journal.md"
         _, tail_trans, tail_by, tail_output = _read_journal_tail_strict(journal_path)
@@ -705,7 +723,6 @@ def cmd_phase2(args, cfg):
         wt_dir, feat_branch = _ensure_worktree(repo, common_dir, trunk, feature, fetch_remote=args.push)
         verify_cmds = meta["verify"]
         forbid_paths = meta["forbid_paths"]
-        plan_text = plan_path.read_text(encoding="utf-8")
         reviews_dir = repo / ".pipeline" / feature / "reviews"
 
         feedback = ""
@@ -822,7 +839,8 @@ def cmd_phase2(args, cfg):
                 if args.push:
                     _ensure_remote_feature_sha(wt_dir, feat_branch, after_sha)
 
-                commits_log = _git(wt_dir, ["log", "--oneline", f"{base_sha}..{after_sha}"]).stdout.strip()
+                commits_log, _ = _git_lossy_text(wt_dir, ["log", "--oneline", f"{base_sha}..{after_sha}"])
+                commits_log = commits_log.strip()
                 assumptions_body = _extract_assumptions(out)
                 if assumptions_body is not None:
                     assumptions_block = f"## Assumptions\n\n{assumptions_body}\n\n"
@@ -900,12 +918,18 @@ def cmd_phase2(args, cfg):
                 by_tag = f"reviewer:{rev_cfg['model_id']}(deterministic-gate)"
             else:
                 # ---- Step 4: Reviewer ----
-                diff_stat = _git(wt_dir, ["diff", "--stat", f"{base_sha}..{after_sha}"]).stdout
-                full_diff = _git(wt_dir, ["diff", f"{base_sha}..{after_sha}"]).stdout
+                diff_stat, stat_non_utf8 = _git_lossy_text(wt_dir, ["diff", "--stat", f"{base_sha}..{after_sha}"])
+                full_diff, diff_non_utf8 = _git_lossy_text(wt_dir, ["diff", f"{base_sha}..{after_sha}"])
                 if len(full_diff) > DIFF_INLINE_LIMIT:
                     full_diff = (
                         full_diff[:DIFF_INLINE_LIMIT]
                         + f"\n... [TRUNCATED at {DIFF_INLINE_LIMIT} bytes; inspect full diff with `git -C {wt_dir} diff {base_sha}..{after_sha}`] ...\n"
+                    )
+                if stat_non_utf8 or diff_non_utf8:
+                    full_diff = (
+                        "[NOTE: diff contains non-UTF-8 bytes; undecodable bytes replaced with U+FFFD — "
+                        f"inspect raw bytes with `git -C {wt_dir} diff {base_sha}..{after_sha}` if needed]\n"
+                        + full_diff
                     )
                 review_prompt = (
                     f"You are Step 4 (pipeline-review) for feature '{feature}' reviewing {feat_branch}@{after_sha} (base {base_sha}).\n"

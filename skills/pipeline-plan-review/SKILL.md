@@ -18,7 +18,7 @@ Preserve `control.json`; never modify it.
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage plan-review` (+ five envelope fields if present). `0` ⇒ pull, `current.json`, slot resolve, guard, and `plan.md` frontmatter check DONE; `3` ⇒ verify named check(s) yourself, STOP on failure; else ⇒ STOP.
 1. **Model-independence check:** require a known `planner_model` (from `plan.md` or `current.json`). If `planner_model` is missing/unknown OR matches your own model, **STOP** — never grade your own plan or proceed without verified model separation.
-2. **Read `.pipeline/<feature>/plan.md`** (+ `CONTEXT.md` / ADRs / prior `plan-review-*.md` if present).
+2. **Read committed `plan.md` blob:** read `git cat-file blob "$(git rev-parse HEAD:.pipeline/<feature>/plan.md)"` (the exact immutable blob you will pin as `approved_plan_blob`, unaffected by checkout filters) plus `CONTEXT.md` / ADRs / prior `plan-review-*.md` if present.
 3. **Adversarial verification (read-only against code):**
    - **Evidence spot-check (mandatory):** open the real files in the repo and verify **≥3 citations** from `## Baseline Evidence`. Any fabricated/stale symbol, path, or flag ⇒ `REJECT | CAUSE: plan_fact`.
    - **Spec & testability check:** `## Specifications` has ≤10 atomic items; every `T1–T10` row states observable behavior (not brittle private names) with clear pass/fail criteria; no vague "etc."/"use judgment" gaps that force the implementer to guess.

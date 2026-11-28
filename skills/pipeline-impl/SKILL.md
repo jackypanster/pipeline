@@ -18,7 +18,7 @@ placeholder like `<autonomous-coding-skill>`).
 ## Steps
 
 0. **Preflight** — run `bash <this skill's base dir>/../pipeline-preflight/scripts/preflight.sh --stage impl` (+ five envelope fields if present). `0` ⇒ pull, `current.json`, slot resolve, guard, and `plan.md` check DONE; `3` ⇒ verify named check(s) yourself, STOP on failure; else ⇒ STOP.
-1. **Verify Step 2 approval:** read `.pipeline/<feature>/plan.md` and the tail of `journal.md`. Proceed ONLY when Step 2 approved (`plan-review→impl`), or Step 4 requested rework (`review→impl`), or `hunt→impl` re-queued it. On rework, read the latest `.pipeline/<feature>/reviews/code-review-NN.md` in full.
+1. **Verify Step 2 approval & plan pin:** verify `current.json.approved_plan_blob` matches `HEAD:.pipeline/<feature>/plan.md` (enforced by step 0 `preflight.sh`), and read the immutable approved plan via `git cat-file blob <approved_plan_blob>` plus the tail of `journal.md`. Proceed ONLY when the tail is `plan-review→impl`, `human→impl` (operator approval after `pause_after_plan: true`), `review→impl`, or `hunt→impl`. On rework, read the latest `.pipeline/<feature>/reviews/code-review-NN.md` in full.
 2. **Prepare `feat/<feature>` branch** (one feature branch, carries reviewable code + tests ONLY — NEVER commit `.pipeline/` files onto `feat/<feature>`):
    - First run: create `feat/<feature>` from trunk (`main`/`master`).
    - Rework run: check out existing `feat/<feature>` (rebase onto trunk only if trunk advanced cleanly).

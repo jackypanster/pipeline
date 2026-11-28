@@ -526,6 +526,68 @@ print("VERDICT: ACCEPT | CAUSE: none")
               r20.returncode == 4 and not trunk_dirty20 and not rev20_exists,
               f"rc={r20.returncode} dirty={trunk_dirty20!r} rev_exists={rev20_exists} err={r20.stderr}")
 
+        # 21. Git `ident` checkout filter expands `$Id$` in working tree, but Step 2 + Phase II both consume immutable committed blob!
+        w21 = _mk_fixture(root, "t21", tail_trans="plan→plan-review · completed", pin_approved_blob=False, git_env=git_env)
+        (w21 / ".gitattributes").write_text(f".pipeline/{FEATURE}/plan.md ident\n", encoding="utf-8")
+        # In committed blob, marker is literal "$Id$"; checkout expands it to "$Id: <sha> $".
+        # verify asserts the literal unexpanded marker passed from the immutable blob!
+        ident_plan = (
+            "---\n"
+            f"feature: {FEATURE}\n"
+            "planner_model: frontier-a\n"
+            "verify:\n"
+            "  - \"test -f delivered.txt && test '$Id$' = '$''Id''$'\"\n"
+            "forbid-paths: []\n"
+            "---\n"
+            "## Baseline Evidence\n- README.md:1\n"
+            "## Specifications\n1. ident test\n"
+            "## Acceptance Matrix (T1-T10)\n- T1: delivered.txt\n"
+        )
+        p21 = w21 / ".pipeline" / FEATURE / "plan.md"
+        p21.write_text(ident_plan, encoding="utf-8")
+        _git(w21, "add", ".gitattributes", str(p21), env=git_env)
+        _git(w21, "commit", "--quiet", "-m", "add ident filter on plan.md", env=git_env)
+        # Re-checkout plan.md so Git expands `$Id$` -> `$Id: <blob_sha> $` in the working tree!
+        p21.unlink()
+        _git(w21, "checkout", "--", f".pipeline/{FEATURE}/plan.md", env=git_env)
+        checkout_expanded = "$Id: " in p21.read_text(encoding="utf-8")
+        _git(w21, "push", "--quiet", "origin", "main", env=git_env)
+        q21 = root / "q21.txt"
+        q21.write_text("VERDICT: ACCEPT | CAUSE: none\nVERDICT: ACCEPT | CAUSE: none\n")
+        c21 = _mk_config(root, "t21", [str(impl_ok), str(root / "cnt21"), "{prompt}"], [str(rev_queue), str(q21)])
+        r21a = _run("review-plan", "--repo", str(w21), "--config", str(c21), env=git_env)
+        r21b = _run("phase2", "--repo", str(w21), "--config", str(c21), env=git_env)
+        check("21-ident-checkout-filter-uses-committed-blob",
+              checkout_expanded and r21a.returncode == 0 and r21b.returncode == 0,
+              f"expanded={checkout_expanded} r21a={r21a.returncode}/{r21a.stderr} r21b={r21b.returncode}/{r21b.stderr}")
+
+        # 22. Valid non-UTF-8 (Latin-1) diff does NOT crash Step 4 and surfaces explicit non-UTF-8 notice to reviewer
+        impl_latin1 = stubs / "impl-latin1.py"
+        _write_exe(impl_latin1, """#!/usr/bin/env python3
+import subprocess
+from pathlib import Path
+Path("delivered.txt").write_bytes(b"caf\\xe9\\n")
+subprocess.run(["git", "add", "delivered.txt"], check=True)
+subprocess.run(["git", "commit", "--quiet", "-m", "add latin1 file"], check=True)
+print("## Assumptions\\n- none")
+""")
+        rev_capture = stubs / "rev-capture.py"
+        _write_exe(rev_capture, """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(sys.stdin.read(), encoding="utf-8")
+print("VERDICT: ACCEPT | CAUSE: none")
+print("Checked non-UTF-8 diff.")
+""")
+        w22 = _mk_fixture(root, "t22", git_env=git_env)
+        cap22 = root / "rev22-prompt.txt"
+        c22 = _mk_config(root, "t22", [str(impl_latin1), "{prompt}"], [str(rev_capture), str(cap22)])
+        r22 = _run("phase2", "--repo", str(w22), "--config", str(c22), env=git_env)
+        prompt22 = cap22.read_text(encoding="utf-8") if cap22.exists() else ""
+        check("22-non-utf8-latin1-diff-handled-cleanly",
+              r22.returncode == 0 and "non-UTF-8 bytes" in prompt22 and "caf\ufffd" in prompt22,
+              f"rc={r22.returncode} err={r22.stderr} has_note={'non-UTF-8 bytes' in prompt22}")
+
     print(f"---\n{passed}/{passed + failed} cases passed ({failed} failed)")
     return 0 if failed == 0 else 1
 

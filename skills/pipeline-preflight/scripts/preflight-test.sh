@@ -113,6 +113,14 @@ JRN
   fi
   git -C "$w" add -A
   git -C "$w" commit --quiet -m "fixture $name"
+  if [ -z "${FX_CURRENT_JSON:-}" ] && [ "${FX_CURRENT:-yes}" = yes ] && [ "${FX_PLAN:-yes}" = yes ] && [ "${FX_PIN_BLOB:-yes}" = yes ]; then
+    plan_blob="$(git -C "$w" rev-parse "HEAD:.pipeline/$FEATURE/plan.md")"
+    cat > "$w/.pipeline/current.json" <<JSON
+{ "repo": "${FX_CUR_REPO:-$base/remote.git}", "branch": "main", "feature": "$FEATURE", "stage": "plan", "plan_rejects": 0, "review_rejects": 0, "approved_plan_blob": "$plan_blob" }
+JSON
+    git -C "$w" add .pipeline/current.json
+    git -C "$w" commit --quiet -m "pin approved_plan_blob"
+  fi
   git -C "$w" push --quiet origin main
   WORK="$w"
   COMMIT="$(git -C "$w" rev-parse HEAD)"
@@ -253,6 +261,32 @@ run_case 16a-missing-plan-impl 2 "PLAN stop plan-missing|PREFLIGHT STOP plan-mis
 run_case 16b-missing-plan-hunt 0 "PLAN advisory stage=hunt|PREFLIGHT OK stage=hunt" \
   --stage hunt --repo "$WORK"
 unset FX_PLAN
+
+# 16c. impl/review refuse unapproved plan (missing approved_plan_blob)
+FX_PIN_BLOB=no build unapproved-plan
+run_case 16c-unapproved-plan-impl 2 "PLAN stop plan-not-approved|PREFLIGHT STOP plan-not-approved" \
+  --stage impl --repo "$WORK"
+unset FX_PIN_BLOB
+
+# 16d. modifying plan.md after approval (keeping approved handoff) STOPs both impl and review!
+FX_NEXT=impl build post-approval-edit
+printf '\n# sneaky verify edit\n' >> "$WORK/.pipeline/$FEATURE/plan.md"
+git -C "$WORK" add ".pipeline/$FEATURE/plan.md"
+git -C "$WORK" commit --quiet -m "edit plan after approval"
+git -C "$WORK" push --quiet origin main
+run_case 16d-modified-plan-impl 2 "PLAN stop plan-blob-mismatch|PREFLIGHT STOP plan-blob-mismatch" \
+  --stage impl --repo "$WORK"
+run_case 16e-modified-plan-review 2 "PLAN stop plan-blob-mismatch|PREFLIGHT STOP plan-blob-mismatch" \
+  --stage review --repo "$WORK"
+unset FX_NEXT
+
+# 16f. uncommitted local edit to plan.md STOPs plan-review/impl/review (coordinated mode where HEAD==expected_commit skips pull)
+FX_NEXT=plan-review build dirty-local-plan
+printf '\n# uncommitted edit\n' >> "$WORK/.pipeline/$FEATURE/plan.md"
+run_case 16f-dirty-local-plan 2 "PLAN stop plan-dirty-local|PREFLIGHT STOP plan-dirty-local" \
+  --stage plan-review --repo "$WORK" \
+  "repo=$WORK" "branch=main" "feature=$FEATURE" "expected_seq=1" "expected_commit=$COMMIT"
+unset FX_NEXT
 
 # 17. plan.md with empty verify stops
 FX_PLAN_BODY='---

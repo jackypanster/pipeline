@@ -28,7 +28,8 @@ Any miss ⇒ STOP and ask:
 - `multica runtime list --output json`: that `runtime_id` has `status: online`.
 - **Model independence:** `model` is non-empty and DISTINCT from the other roles' models
   (`reviewer ≠ planner` and `reviewer ≠ implementer`).
-- **Reviewer only:** agent `instructions` contain marker `pipeline-review-agent v3` (see §Setup).
+- **Reviewer only:** agent `instructions` contain marker `pipeline-review-agent v4` (see §Setup;
+  legacy `v3` agents fail preflight by design and must be updated before dispatching Step 2 or Step 4).
 - **Local clones (Profile B):** every clone staying local is independent (distinct
   `git rev-parse --git-common-dir`), checked out on trunk, sharing one remote URL, with valid
   `control.json` and parseable `journal.md` tail.
@@ -64,8 +65,12 @@ printf '%s\n' "<description>" | multica issue create --title "review <repo>#<n> 
 
 ### Reviewer agent setup (once per reviewer agent)
 
+Existing `v3` reviewer agents only permit `pipeline-review` PR runs and fail preflight by design.
+Apply the `v4` block below via `multica agent update <agent id> --instructions "$(cat <file>)"`
+before dispatching Step 2 (`pipeline-plan-review`) or Step 4 (`pipeline-review`):
+
 ```text
-pipeline-review-agent v3
+pipeline-review-agent v4
 You are a pipeline REVIEWER node. Act only on an issue instructing you to run pipeline-plan-review
 or pipeline-review; otherwise reply out-of-scope and stop. Read the named SKILL.md in full and
 follow it exactly. For pipeline-review, if the PR is closed or its head != dispatched SHA, comment
